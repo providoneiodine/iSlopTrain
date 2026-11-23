@@ -4,8 +4,10 @@
  * (spaced, frequent practice beats long blocks; Cepeda et al., 2006).
  *
  * Each session has a `group` (its section on the Sessions tab, in first-seen
- * order) and a one-line `blurb`. A session whose drills aren't all registered
- * is left off the menu, so playlists can name drills that are still in progress.
+ * order) and a one-line `blurb`. A step's optional `note` is shown after the
+ * drill name on the card (e.g. which car or rule set that run uses). A session
+ * whose drills aren't all registered is left off the menu, so playlists can
+ * name drills that are still in progress.
  */
 (function () {
   'use strict';
@@ -126,6 +128,71 @@
       { drill: 'racing-line', settings: { questions: 6 } },
       { drill: 'apex-snap', settings: { duration: 120 } },
       { drill: 'apex-race', settings: { duration: 180 } },
+    ],
+  });
+
+  // -------------------------------------------------------- multiclass
+  // Class Traffic plus the drills that feed it. Fixed rule sets or roles skip
+  // its pickers; 'ask' lets you match the series you're about to race.
+  IST.registerSession({
+    id: 'mc-briefing',
+    group: 'Multiclass',
+    name: 'Race briefing',
+    minutes: '~6 min',
+    blurb: 'Right before a multiclass race: pick your series’ blue-flag rules, make the calls, then race in traffic.',
+    steps: [
+      { drill: 'multiclass', settings: { questions: 5, rules: 'ask', role: 'mixed', replay: 'wrong' } },
+      { drill: 'apex-race', settings: { duration: 150 } },
+    ],
+  });
+
+  IST.registerSession({
+    id: 'mc-prototype',
+    group: 'Multiclass',
+    name: 'Prototype stint',
+    minutes: '~9 min',
+    blurb: 'The faster class: line first, then when the pass is on and when to wait, then hold the apex with traffic around.',
+    steps: [
+      { drill: 'racing-line', settings: { questions: 3 } },
+      { drill: 'multiclass', settings: { questions: 6, role: 'fast' }, note: 'Prototype' },
+      { drill: 'apex-race', settings: { duration: 150 } },
+    ],
+  });
+
+  IST.registerSession({
+    id: 'mc-gt',
+    group: 'Multiclass',
+    name: 'GT stint',
+    minutes: '~9 min',
+    blurb: 'The slower class: keep reading the relative and spotter, be predictable when lapped, and don’t let it rattle you.',
+    steps: [
+      { drill: 'apex-race', settings: { duration: 150 } },
+      { drill: 'multiclass', settings: { questions: 6, role: 'slow' }, note: 'GT' },
+      { drill: 'clean-slate', settings: { duration: 120 } },
+    ],
+  });
+
+  IST.registerSession({
+    id: 'mc-quick-calls',
+    group: 'Multiclass',
+    name: 'Quick calls',
+    minutes: '~6 min',
+    blurb: 'Ten calls with 10 s each, as at race speed. Replays only for the ones you get wrong.',
+    steps: [
+      { drill: 'multiclass', settings: { questions: 10, timeLimit: '10', replay: 'wrong' }, note: '10 s limit' },
+    ],
+  });
+
+  IST.registerSession({
+    id: 'mc-rule-switch',
+    group: 'Multiclass',
+    name: 'Rule switch',
+    minutes: '~10 min',
+    blurb: 'The same traffic under all three rule sets back to back, so you learn what changes and what never does.',
+    steps: [
+      { drill: 'multiclass', settings: { questions: 4, rules: 'hold', replay: 'wrong' }, note: 'Hold your line' },
+      { drill: 'multiclass', settings: { questions: 4, rules: 'yield', replay: 'wrong' }, note: 'Give way' },
+      { drill: 'multiclass', settings: { questions: 4, rules: 'pointby', replay: 'wrong' }, note: 'Point-by' },
     ],
   });
 })();

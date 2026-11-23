@@ -121,7 +121,7 @@
         const tab = d.tab || 'vision';
         return h('li', null, h('span', { class: 'step-row' },
           h('span', { class: 'step-tab step-' + tab, title: TABS[tab] + ' tab' }),
-          h('span', null, d.name),
+          h('span', null, d.name, st.note ? h('span', { class: 'step-note' }, ' · ' + st.note) : null),
           h('span', { class: 'step-amt' }, stepAmount(d, st))));
       })),
       h('div', { class: 'card-actions' }, h('button', { class: 'btn primary', onclick: () => startSession(s, 0) }, 'Start'))

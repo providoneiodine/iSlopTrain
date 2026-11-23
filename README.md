@@ -59,8 +59,9 @@ Guided sessions chain drills across all three trainers and live on their own **S
 - **Quick:** Pre-drive (~3 min), Line check (~5 min), Reset (~4 min)
 - **Daily:** Daily vision (~8 min), Daily mind (~10 min), Full circuit (~15 min)
 - **Pressure:** Race pressure (~7 min), Composure (~9 min), Racecraft (~10 min)
+- **Multiclass:** Race briefing (~6 min), Prototype stint (~9 min), GT stint (~9 min), Quick calls (~6 min), Rule switch (~10 min)
 
-Each is a `registerSession` entry in `js/sessions.js` with a `group`, a one-line `blurb` and per-step setting overrides. A session that names an unregistered drill is hidden, so playlists can be written ahead of a drill landing.
+Each is a `registerSession` entry in `js/sessions.js` with a `group`, a one-line `blurb`, per-step setting overrides and an optional step `note` shown on the card. A session that names an unregistered drill is hidden, so playlists can be written ahead of a drill landing.
 
 Controls: arrows / WASD to answer, Space / Enter to confirm, Esc to pause, **F** to toggle fullscreen (never automatic unless enabled under Data). Standard gamepads work automatically. Wheels and button boxes can be bound under **Controls** (buttons, POV hats, axes).
 
