@@ -1,5 +1,24 @@
 # iSlopTrain: Vision Trainer (proof of concept)
 
+> [!WARNING]
+> ## ⚠️ This project is vibecoded
+>
+> **Almost all of the code in this repository was written by an AI coding assistant**, directed through prompts rather than typed by hand. Treat it as experimental software: expect rough edges, and review anything before you reuse it.
+>
+> ### AI disclosure rating: **AI-dev-B**
+>
+> Rated on the scale proposed by Benn Jordan in [*We Should Standardize Vibe Coding Ethics*](https://www.bennjordan.com/blog/we-should-standardize-vibe-coding-ethics). **AI-dev-B** means AI-written code is used throughout the software, including in areas that an experienced developer could not fully verify or understand.
+>
+> | Rating | Meaning (summarised) |
+> |---|---|
+> | NoAI | No AI used at all |
+> | AI-aux | AI used only for auxiliary tasks (workflow, tooling); no AI-written code |
+> | AI-UI | AI-written code limited to the UI or graphics |
+> | AI-dev-A | AI-written code throughout, verified and understood by an experienced developer |
+> | **AI-dev-B** ◀ | **AI-written code throughout, including parts the developer can't fully verify** |
+> | AI-dev-C | Mostly AI-written, supervised by a novice developer |
+> | AI-V | Entirely AI-written; support depends on AI |
+
 The first module of a planned suite of sim-racing training tools. It trains the habit of **getting your eyes to the next apex early** and keeping attention wide, using short adaptive drills based on driver eye-tracking research and established motor-learning principles. See [docs/METHODOLOGY.md](docs/METHODOLOGY.md).
 
 No dependencies, no build step: plain HTML + Canvas 2D + classic scripts.
