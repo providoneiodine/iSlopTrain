@@ -51,6 +51,7 @@
           if (done || p === paused) return;
           paused = p;
           overlay.classList.toggle('hidden', !p);
+          showCursor();
           if (p && inst.onPause) inst.onPause();
           if (!p && inst.onResume) inst.onResume();
         }
@@ -76,6 +77,9 @@
           off();
           window.removeEventListener('resize', resize);
           document.removeEventListener('visibilitychange', onVis);
+          screen.removeEventListener('pointermove', showCursor);
+          clearTimeout(idleTimer);
+          screen.classList.remove('cursor-idle');
           overlay.classList.add('hidden');
           overlay.onclick = null;
           IST.Runner.active = null;
@@ -101,6 +105,19 @@
         };
         window.addEventListener('resize', resize);
         document.addEventListener('visibilitychange', onVis);
+
+        // Cursor: always visible in drills you click or draw in (def.pointer). In keyboard /
+        // gamepad drills a mouse left still for 2.5 s is hidden so it doesn't sit on the view,
+        // and comes straight back when moved or when the pause menu opens.
+        const screen = document.getElementById('screen-drill');
+        let idleTimer = 0;
+        const showCursor = () => {
+          screen.classList.remove('cursor-idle');
+          clearTimeout(idleTimer);
+          if (!def.pointer && !done) idleTimer = setTimeout(() => !paused && !done && screen.classList.add('cursor-idle'), 2500);
+        };
+        screen.addEventListener('pointermove', showCursor);
+        showCursor();
 
         resize();
         inst = def.create(ctx);

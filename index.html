@@ -24,17 +24,17 @@
     </header>
 
     <div class="tabs" role="tablist" aria-label="Trainer">
+      <button class="tab" role="tab" id="tab-sessions" data-tab="sessions" aria-controls="panel-sessions">Sessions</button>
       <button class="tab" role="tab" id="tab-vision" data-tab="vision" aria-controls="panel-vision">Vision</button>
       <button class="tab" role="tab" id="tab-mind" data-tab="mind" aria-controls="panel-mind">Mind</button>
       <button class="tab" role="tab" id="tab-reflex" data-tab="reflex" aria-controls="panel-reflex">Reflex</button>
     </div>
 
-    <main class="menu-main tab-panel" id="panel-vision" role="tabpanel" aria-labelledby="tab-vision">
-      <section class="menu-section" aria-labelledby="h-sessions">
-        <h2 class="section-title" id="h-sessions">Sessions</h2>
-        <div id="session-list" class="cards"></div>
-      </section>
+    <main class="menu-main tab-panel" id="panel-sessions" role="tabpanel" aria-labelledby="tab-sessions">
+      <!-- one .menu-section per session group, built from js/sessions.js -->
+    </main>
 
+    <main class="menu-main tab-panel hidden" id="panel-vision" role="tabpanel" aria-labelledby="tab-vision">
       <section class="menu-section" aria-labelledby="h-drills">
         <h2 class="section-title" id="h-drills">Drills</h2>
         <div class="cards drill-list" data-tab="vision"></div>
@@ -103,6 +103,7 @@
   <script src="js/components/hazard-layer.js"></script>
   <script src="js/components/juice.js"></script>
   <script src="js/components/line-lab.js"></script>
+  <script src="js/components/traffic-lab.js"></script>
   <!-- drills (menu order = load order) -->
   <script src="js/drills/start-lights.js"></script>
   <script src="js/drills/two-point.js"></script>
@@ -110,6 +111,7 @@
   <script src="js/drills/eyes-off-wall.js"></script>
   <script src="js/drills/clean-slate.js"></script>
   <script src="js/drills/racing-line.js"></script>
+  <script src="js/drills/multiclass.js"></script>
   <script src="js/sessions.js"></script>
   <!-- shell -->
   <script src="js/app.js"></script>

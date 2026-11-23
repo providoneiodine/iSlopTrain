@@ -72,9 +72,7 @@
 
   // ------------------------------------------------------------------- menu
   function renderMenu() {
-    const sl = $('#session-list');
-    sl.innerHTML = '';
-    IST.sessions.forEach((s) => sl.append(sessionCard(s)));
+    renderSessions();
     // each tab has a .drill-list[data-tab]; drills pick theirs with def.tab (default vision).
     // A list with no drills keeps its static "coming soon" placeholder from index.html.
     document.querySelectorAll('.drill-list').forEach((dl) => {
@@ -85,12 +83,46 @@
     });
   }
 
+  /** Sessions tab: one section per group, skipping sessions that name a drill that isn't registered. */
+  function renderSessions() {
+    const panel = $('#panel-sessions');
+    panel.innerHTML = '';
+    const groups = [];
+    IST.sessions
+      .filter((s) => s.steps.every((st) => IST.getDrill(st.drill)))
+      .forEach((s) => {
+        const name = s.group || 'Sessions';
+        let g = groups.find((x) => x.name === name);
+        if (!g) groups.push((g = { name, list: [] }));
+        g.list.push(s);
+      });
+    groups.forEach((g, i) => {
+      const hid = 'h-sessions-' + i;
+      panel.append(h('section', { class: 'menu-section', 'aria-labelledby': hid },
+        h('h2', { class: 'section-title', id: hid }, g.name),
+        h('div', { class: 'cards session-list' }, g.list.map(sessionCard))));
+    });
+  }
+
+  /** Short "how much" for a step: its duration, or its trial/question count. */
+  function stepAmount(def, st) {
+    const v = Object.assign(IST.Storage.getSettings(def), st.settings || {});
+    if (U.isNum(v.duration)) return v.duration % 60 ? U.fmt(v.duration / 60, 1) + ' min' : v.duration / 60 + ' min';
+    const f = def.settings.find((x) => x.key === 'trials' || x.key === 'questions');
+    return f && U.isNum(v[f.key]) ? v[f.key] + ' ' + f.label.toLowerCase() : '';
+  }
+
   function sessionCard(s) {
     return h('article', { class: 'card' },
       h('div', { class: 'card-head' }, h('span', { class: 'tag' }, s.minutes), h('h3', null, s.name)),
+      s.blurb ? h('p', { class: 'tagline' }, s.blurb) : null,
       h('ol', { class: 'steps' }, s.steps.map((st) => {
         const d = IST.getDrill(st.drill);
-        return h('li', null, d ? d.name : st.drill);
+        const tab = d.tab || 'vision';
+        return h('li', null, h('span', { class: 'step-row' },
+          h('span', { class: 'step-tab step-' + tab, title: TABS[tab] + ' tab' }),
+          h('span', null, d.name),
+          h('span', { class: 'step-amt' }, stepAmount(d, st))));
       })),
       h('div', { class: 'card-actions' }, h('button', { class: 'btn primary', onclick: () => startSession(s, 0) }, 'Start'))
     );
@@ -160,6 +192,13 @@
     openModal(h('div', null,
       h('h2', null, def.name),
       h('p', null, def.description || def.tagline || ''),
+      // optional drill notes: def.info = [{ title, intro?, items?: [[name, text]], outro?: string | string[] }]
+      (def.info || []).map((sec) => [
+        h('h3', null, sec.title),
+        sec.intro ? h('p', null, sec.intro) : null,
+        sec.items ? h('ul', { class: 'research' }, sec.items.map((it) => h('li', null, h('b', null, it[0] + '. '), it[1]))) : null,
+        [].concat(sec.outro || []).map((t) => h('p', { class: 'muted' }, t)),
+      ]),
       h('h3', null, 'Research'),
       h('ul', { class: 'research' }, def.research.map((r) => h('li', null, r.point, h('span', { class: 'src' }, r.source)))),
       h('div', { class: 'modal-actions' }, h('button', { class: 'btn primary', onclick: () => { closeModal(); startDrill(def); } }, 'Start ' + def.name))
@@ -495,10 +534,10 @@
   });
 
   // ------------------------------------------------------------------- tabs
-  const TABS = { vision: 'Vision', mind: 'Mind', reflex: 'Reflex' };
+  const TABS = { sessions: 'Sessions', vision: 'Vision', mind: 'Mind', reflex: 'Reflex' };
   const tabBtns = Array.from(document.querySelectorAll('.tab'));
   function setTab(name, focus) {
-    if (!TABS[name]) name = 'vision';
+    if (!TABS[name]) name = 'sessions';
     tabBtns.forEach((b) => {
       const on = b.dataset.tab === name;
       b.classList.toggle('on', on);
@@ -507,9 +546,9 @@
       if (on && focus) b.focus();
     });
     Object.keys(TABS).forEach((t) => $('#panel-' + t).classList.toggle('hidden', t !== name));
-    $('#brand-sub').textContent = TABS[name] + ' Trainer';
+    $('#brand-sub').textContent = name === 'sessions' ? 'Guided Sessions' : TABS[name] + ' Trainer';
     document.title = 'iSlopTrain ' + TABS[name];
-    history.replaceState(null, '', name === 'vision' ? location.pathname + location.search : '#' + name);
+    history.replaceState(null, '', name === 'sessions' ? location.pathname + location.search : '#' + name);
   }
   tabBtns.forEach((b, i) => {
     b.addEventListener('click', () => setTab(b.dataset.tab));

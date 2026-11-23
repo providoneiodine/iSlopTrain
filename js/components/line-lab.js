@@ -4,6 +4,8 @@
  *   geo   = LineLab.build(spec, { mirror, rnd })   corner complex (5 m segments, same model as track.js)
  *   ideal = LineLab.solveIdeal(geo)                minimum-time line for this complex
  *   lines = LineLab.distractors(geo, ideal, level, n, rnd)  realistic flawed lines, tuned to a time-loss band
+ *   fit   = LineLab.fitDrawn(geo, raw); LineLab.intentGen(geo, fit.ctrl, tolM)  a hand-drawn line, read for intent
+ *   v     = LineLab.judge(geo, ideal, line)            corner-by-corner placement vs the ideal
  *   sim   = LineLab.simulate(geo, keys, { full: true })     speed / time profile along a line
  *
  * A line is a list of keypoints { s (m along the centreline), n (lateral
@@ -188,10 +190,12 @@
   /**
    * Quasi-steady-state speed profile along a line (lateral positions n).
    * Returns the time to the finish (or to o.iStop with a free end), or the
-   * full profile with o.full.
+   * full profile with o.full. o.car swaps the car model (default CAR),
+   * o.vIn the entry speed.
    */
   function simulate(geo, n, o) {
     o = o || {};
+    const car = o.car || CAR;
     const iStop = Math.min(geo.N, o.iStop || geo.iEnd);
     const B = o.full ? alloc(iStop) : geo.buf;
     const { px, py, L, k, v } = B;
@@ -209,7 +213,7 @@
     }
     k[iStop] = k[iStop - 1];
 
-    const aLat = CAR.aLat, vMax = CAR.vMax;
+    const aLat = car.aLat, vMax = car.vMax;
     for (let i = 0; i <= iStop; i++) {
       const c = Math.abs(k[i]);
       v[i] = c > 1e-6 ? Math.min(vMax, Math.sqrt(aLat / c)) : vMax;
@@ -219,7 +223,7 @@
     for (let i = 0; i < iStop; i++) {
       const vi = v[i], u = (vi * vi * Math.abs(k[i])) / aLat;
       const ell = u < 1 ? Math.sqrt(1 - u * u) : 0;
-      const a = Math.min(CAR.aTrac, CAR.power / Math.max(vi, 1)) * ell - CAR.drag * vi * vi;
+      const a = Math.min(car.aTrac, car.power / Math.max(vi, 1)) * ell - car.drag * vi * vi;
       const vn = Math.sqrt(Math.max(0, vi * vi + 2 * L[i] * a));
       if (vn < v[i + 1]) v[i + 1] = vn;
     }
@@ -227,7 +231,7 @@
     for (let i = iStop - 1; i >= 0; i--) {
       const vj = v[i + 1], u = (vj * vj * Math.abs(k[i + 1])) / aLat;
       const ell = u < 1 ? Math.sqrt(1 - u * u) : 0;
-      const b = CAR.aBrake * ell + CAR.drag * vj * vj;
+      const b = car.aBrake * ell + car.drag * vj * vj;
       const vp = Math.sqrt(vj * vj + 2 * L[i] * b);
       if (vp < v[i]) v[i] = vp;
     }
@@ -254,6 +258,7 @@
     const f = () => simulate(geo, ctrlToN(geo, c, nb), o.sim);
     let best = f(), step = o.step || 0.32, evals = 0, lastY = 0;
     const maxEvals = o.maxEvals || 20000, save = new Float64Array(8);
+    const bLo = o.lo, bHi = o.hi; // optional per-control-point bounds (default ±NMAX)
     lo = Math.max(1, lo); // c[0] is the shared start position
     while (step >= 0.006 && evals < maxEvals) {
       let improved = false;
@@ -270,7 +275,7 @@
               let changed = false;
               for (let j = i; j <= e; j++) {
                 save[j - i] = c[j];
-                c[j] = U.clamp(c[j] + sg * step, -NMAX, NMAX);
+                c[j] = U.clamp(c[j] + sg * step, bLo ? bLo[j] : -NMAX, bHi ? bHi[j] : NMAX);
                 if (c[j] !== save[j - i]) changed = true;
               }
               if (!changed) break;
@@ -350,6 +355,16 @@
       if (r.time >= L.time - 1e-4) break;
       c.set(c2);
       L = idealFrom(geo, c, evals);
+    }
+    // smooth-and-repolish: the drawn-line reader starts from a smoothed copy, and must not find a faster line than this
+    const win = windowOf(geo), raw = new Float64Array(geo.N + 1).fill(NaN);
+    for (let round = 0; round < 2; round++) {
+      for (let i = Math.round(win.sA / DS); i <= Math.round(win.sB / DS); i++) raw[i] = L.n[i];
+      const c3 = yield* intentGen(geo, fitDrawn(geo, raw).ctrl, 1.5);
+      const r = yield* optimizeGen(geo, c3, 1, M, { step: 0.04 });
+      evals += r.evals;
+      if (r.time >= L.time - 0.002) break;
+      L = idealFrom(geo, c3, evals);
     }
     return L;
   }
@@ -597,6 +612,147 @@
     return (lo + (T - tc[lo]) / Math.max(1e-9, tc[lo + 1] - tc[lo])) * DS;
   }
 
+  // ---------------------------------------------------------- drawn lines
+  /**
+   * World point (x, y) -> { i, s, n }: nearest centreline sample (searched
+   * within ±range samples of hint, so a stroke can't jump across a hairpin),
+   * s refined along the tangent, n the lateral position (±1 = edges).
+   */
+  function project(geo, x, y, hint, range) {
+    const lo = hint == null ? 0 : Math.max(0, hint - range), hi = hint == null ? geo.iEnd : Math.min(geo.N, hint + range);
+    let bi = lo, bd = Infinity;
+    for (let i = lo; i <= hi; i++) {
+      const dx = x - geo.cx[i], dy = y - geo.cy[i], d = dx * dx + dy * dy;
+      if (d < bd) {
+        bd = d;
+        bi = i;
+      }
+    }
+    const dx = x - geo.cx[bi], dy = y - geo.cy[bi];
+    return { i: bi, s: bi * DS + dx * Math.cos(geo.th[bi]) + dy * Math.sin(geo.th[bi]), n: (dx * geo.nx[bi] + dy * geo.ny[bi]) / HW };
+  }
+
+  /**
+   * A hand-drawn lateral profile (raw[i], NaN where not drawn) -> a line in
+   * the same B-spline form as the ideal: gaps interpolated, the ends held,
+   * hand jitter smoothed out (box filter, ~6 m), control points clamped so
+   * the car stays on track. Drawing on the kerb means "use all the road".
+   */
+  function fitDrawn(geo, raw) {
+    const N = geo.N, def = [];
+    for (let i = 0; i <= N; i++) if (!isNaN(raw[i])) def.push(i);
+    if (def.length < 2) return null;
+    const d = new Float64Array(N + 1);
+    for (let i = 0; i <= def[0]; i++) d[i] = raw[def[0]];
+    for (let k = 1; k < def.length; k++) {
+      const a = def[k - 1], b = def[k];
+      for (let i = a; i <= b; i++) d[i] = raw[a] + ((raw[b] - raw[a]) * (i - a)) / Math.max(1, b - a);
+    }
+    for (let i = def[def.length - 1]; i <= N; i++) d[i] = raw[def[def.length - 1]];
+    for (let i = 0; i <= N; i++) d[i] = U.clamp(d[i], -1, 1);
+    const tmp = new Float64Array(N + 1), R = 2;
+    for (let pass = 0; pass < 3; pass++) {
+      for (let i = 0; i <= N; i++) {
+        let s = 0, m = 0;
+        for (let j = Math.max(0, i - R); j <= Math.min(N, i + R); j++, m++) s += d[j];
+        tmp[i] = s / m;
+      }
+      d.set(tmp);
+    }
+    const K = knots(geo), c = new Float64Array(K.M + 1);
+    for (let j = 0; j <= K.M; j++) c[j] = U.clamp(sampleN(d, K.s0 + j * KNOT, N), -NMAX, NMAX);
+    return { ctrl: c, n: ctrlToN(geo, c), from: def[0] * DS, to: def[def.length - 1] * DS };
+  }
+
+  /**
+   * The line the driver meant: the fastest line within tolM metres (either
+   * side) of the drawn one. Mouse wobble and a slightly-off kerb cost
+   * nothing; where you put the car (turn-in, apex, track-out) still counts.
+   */
+  function* intentGen(geo, ctrl, tolM) {
+    const c = Float64Array.from(ctrl), M = knots(geo).M, t = tolM / HW;
+    const lo = new Float64Array(M + 1), hi = new Float64Array(M + 1);
+    for (let j = 0; j <= M; j++) {
+      lo[j] = Math.max(-NMAX, c[j] - t);
+      hi[j] = Math.min(NMAX, c[j] + t);
+    }
+    if (t > 0) yield* optimizeGen(geo, c, 1, M, { lo, hi, step: Math.max(0.02, t / 2), maxEvals: 8000 });
+    return c;
+  }
+
+  /**
+   * Corner by corner, where line L puts the car compared with the ideal:
+   * turn-in and apex (m later +, earlier -), metres of road left unused at
+   * turn-in, apex and track-out, minimum speed difference, and the time
+   * lost through that corner (segments split midway between the ideal's
+   * apexes; the last one runs to the end of the straight).
+   * Issues are flagged past o.along m / o.lat m.
+   */
+  function judge(geo, ideal, L, o) {
+    o = o || {};
+    const along = o.along || 8, lat = o.lat || 1.2;
+    const C = geo.corners, I = ideal.corners, Y = L.corners, nI = ideal.n, nY = L.n;
+    const dt = (s) => timeAt(L.sim, s) - timeAt(ideal.sim, s);
+    const bounds = [Math.max(0, C[0].startPos - 150)];
+    for (let k = 1; k < C.length; k++) bounds.push(((I[k - 1].ia + I[k].ia) * DS) / 2);
+    bounds.push(geo.sEnd);
+    const out = C.map((c, ci) => {
+      const d = c.dir, fi = I[ci], fy = Y[ci];
+      const fromOut = (n) => Math.max(0, (1 + d * n) * HW - (1 - NMAX) * HW);
+      const fromIn = (n) => Math.max(0, (1 - d * n) * HW - (1 - NMAX) * HW);
+      const r = { ci, dir: d, cost: dt(bounds[ci + 1]) - dt(bounds[ci]), issues: [] };
+      r.dTurn = (fy.ti - fi.ti) * DS;
+      r.dApex = (fy.ia - fi.ia) * DS;
+      r.dv = (fy.vMin - fi.vMin) * 3.6;
+      const linked = ci > 0 && I[ci - 1].to == null;
+      r.entry = linked ? null : fromOut(nY[fy.ti]) - fromOut(nI[fi.ti]);
+      r.apexIn = fromIn(nY[fy.ia]) - fromIn(nI[fi.ia]);
+      r.exit = null;
+      if (fi.to != null) {
+        // closest the line gets to the outside between its apex and just after the ideal's track-out
+        let m = Infinity;
+        const lim = Math.min(L.sim.iStop, fi.to + Math.round(20 / DS));
+        for (let i = fy.ia; i <= lim; i++) m = Math.min(m, fromOut(nY[i]));
+        r.exit = m - fromOut(nI[fi.to]);
+      }
+      // turn-in is only trusted where the corner has its own entry and the detector found a sensible point
+      const tiOk = !linked && Math.abs(r.dTurn) < 45;
+      const sides = (k, sg) => {
+        const agrees = tiOk && sg * r.dTurn >= 4;
+        r.issues.push({ kind: k, phase: agrees ? 'turnin' : 'apex', turn: agrees });
+      };
+      if (r.dApex < -along || (tiOk && r.dTurn < -along && r.dApex <= 3)) sides('early', -1);
+      else if (r.dApex > along || (tiOk && r.dTurn > along && r.dApex >= -3)) sides('late', 1);
+      if (r.entry != null && r.entry > lat) r.issues.push({ kind: 'entry', phase: 'turnin' });
+      if (r.apexIn > lat) r.issues.push({ kind: 'apex', phase: 'apex' });
+      if (r.exit != null && r.exit > lat) r.issues.push({ kind: 'exit', phase: 'exit' });
+      return r;
+    });
+    // faster (or no slower) than the ideal through a corner the ideal compromises, and paid for it in the next one
+    out.forEach((r, ci) => {
+      const nx = out[ci + 1];
+      if (nx && nx.cost > 0.04 && (r.dv >= 2.5 || (r.cost < -0.03 && !nx.issues.length))) r.issues.push({ kind: 'priority', phase: 'apex' });
+    });
+    // a corner that cost real time with nothing over the line: name its biggest deviation if it's at least half way there
+    out.forEach((r, ci) => {
+      if (r.issues.length || r.cost < 0.08 || (ci && out[ci - 1].issues.some((is) => is.kind === 'priority'))) return;
+      const tiOk = !(ci > 0 && I[ci - 1].to == null) && Math.abs(r.dTurn) < 45;
+      const cand = [
+        ['apexT', Math.abs(r.dApex) / along],
+        ['turnT', tiOk ? Math.abs(r.dTurn) / along : 0],
+        ['entry', r.entry != null ? r.entry / lat : 0],
+        ['apex', r.apexIn / lat],
+        ['exit', r.exit != null ? r.exit / lat : 0],
+      ].sort((a, b) => b[1] - a[1])[0];
+      if (cand[1] < 0.5) return;
+      if (cand[0] === 'apexT') r.issues.push({ kind: r.dApex < 0 ? 'early' : 'late', phase: 'apex' });
+      else if (cand[0] === 'turnT') r.issues.push({ kind: r.dTurn < 0 ? 'early' : 'late', phase: 'turnin', turn: true });
+      else r.issues.push({ kind: cand[0], phase: cand[0] === 'entry' ? 'turnin' : cand[0] });
+    });
+    out.bounds = bounds;
+    return out;
+  }
+
   // ------------------------------------------------------------- top-down
   /** Display window: the complex plus a stub of each straight. */
   function windowOf(geo) {
@@ -604,18 +760,19 @@
     return { sA: Math.max(0, C[0].startPos - 75), sB: Math.min(geo.sEnd, C[C.length - 1].endPos + 80) };
   }
 
-  /** Fit the complex into a w x h box: best rotation (10° steps), approach kept pointing up-ish on ties. */
-  function fitView(geo, w, h, pad) {
+  /** Fit the complex (or window win = {sA, sB}) into a w x h box: best rotation (10° steps), approach kept pointing up-ish on ties, or rotation rot (rad) if given. */
+  function fitView(geo, w, h, pad, win, rot) {
     pad = pad == null ? 18 : pad;
-    const win = windowOf(geo);
+    win = win || windowOf(geo);
+    const fixed = rot != null ? Math.round((rot * 180) / Math.PI) : null; // keep another view's orientation
     const i0 = Math.round(win.sA / DS), i1 = Math.round(win.sB / DS);
     const pts = [];
     for (let i = i0; i <= i1; i += 3) {
       for (const e of [-1.3, 1.3]) pts.push([geo.cx[i] + e * HW * geo.nx[i], geo.cy[i] + e * HW * geo.ny[i]]);
     }
     let best = null;
-    for (let deg = 0; deg < 360; deg += 10) {
-      const r = (deg * Math.PI) / 180, c = Math.cos(r), s = Math.sin(r);
+    for (let deg = fixed != null ? fixed : 0; deg < (fixed != null ? fixed + 1 : 360); deg += 10) {
+      const r = fixed != null ? rot : (deg * Math.PI) / 180, c = Math.cos(r), s = Math.sin(r);
       let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
       for (const p of pts) {
         const X = p[0] * c - p[1] * s, Y = p[0] * s + p[1] * c;
@@ -637,6 +794,10 @@
     return {
       w, h, scale: b.scale, rot: b.r, win, i0, i1,
       map: (x, y) => [ox + (x * b.c - y * b.s) * b.scale, oy + (x * b.s + y * b.c) * b.scale],
+      unmap: (X, Y) => {
+        const x = (X - ox) / b.scale, y = (Y - oy) / b.scale;
+        return [x * b.c + y * b.s, -x * b.s + y * b.c];
+      },
     };
   }
 
@@ -760,7 +921,7 @@
   IST.LineLab = {
     SEG, HW, DS, NMAX, CAR, FLAWS, BANDS, MAX_LEVEL,
     build, knots, template, ctrlToN, simulate, optimize, optimizeGen, run, solveGen, solveIdeal, priorityGen, priorityLines, lineFrom, applyFlaw, distractors,
-    phases, timeAt, sampleAt, posAtTime, maxDev,
+    phases, timeAt, sampleAt, sampleN, posAtTime, maxDev, project, fitDrawn, intentGen, judge,
     windowOf, fitView, drawTrack, drawLine, pointAt,
   };
 })();
