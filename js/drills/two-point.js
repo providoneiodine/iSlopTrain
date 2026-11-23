@@ -2,9 +2,10 @@
  * Two-Point Focus: a Useful-Field-of-View-style drill set in a corner approach.
  *
  * Fixate the far apex board. For a brief, masked moment, a symbol (▲/▼)
- * appears on the board AND a yellow marshal flag appears somewhere in the
- * near-field periphery (left or right). Report both. Exposure adapts.
- * This trains the far point + near point split of skilled steering.
+ * appears on the board AND a yellow marshal flag appears on the verge of the
+ * approach road (left or right), where the near point of steering lives.
+ * Report both. Exposure adapts. This trains the far point + near point split
+ * of skilled steering.
  */
 (function () {
   'use strict';
@@ -12,14 +13,18 @@
   const BOARD_M = 2.4; // board edge, metres
   const BOARD_KERB = 1.07; // board stands on the inside kerb at the apex (half-widths), so fixating it = fixating the apex
   const MASK_MS = 260;
+  const FLAG_M = 1.1; // flag cloth width, metres
+  const NEAR_MAX = 60; // flags stand at most this far ahead (m): the near road, not the next straight
+  const VERGE = 1.4; // flag pole stands this far outside the road edge (m)
+  const ECC = { near: [0.17, 0.3], wide: [0.3, 0.44] }; // flag distance from the board, share of screen width
 
   IST.registerDrill({
     id: 'two-point',
     name: 'Two-Point Focus',
     category: 'Core',
-    usesView: true, // FOV, horizon and cockpit from IST.View; flags and HUD draw over the cockpit
+    usesView: true, // FOV, horizon and cockpit from IST.View; flags stand on the verge, placed clear of the cockpit
     tagline: 'Eyes far, attention wide.',
-    description: 'Keep your eyes on the ringed apex board. Report its symbol (↑/↓) and which side the yellow flag was on (←/→).',
+    description: 'Keep your eyes on the ringed apex board. Report its symbol (↑/↓) and which side of the road the yellow flag was on (←/→).',
     research: [
       { point: 'Steering uses a far point viewed directly and the near road seen peripherally.', source: 'Land & Horwood (1995), Nature 377; Salvucci & Gray (2004), Perception 33(10).' },
       { point: 'Lane keeping works on peripheral vision alone.', source: 'Summala, Nieminen & Punto (1996), Human Factors 38(3).' },
@@ -137,24 +142,69 @@
         return { c, cam, pr: R.project(c.apexPos, c.dir * HW * BOARD_KERB, 0) };
       }
 
-      function newTrial(clock) {
-        const W = ctx.W, H = ctx.H;
-        const sc = pickScene(W, H);
-        const size = Math.max(26, W * 0.032);
-        const side = rnd() < 0.5 ? -1 : 1;
-        const ecc = (S.ecc === 'wide' ? 0.36 : 0.25) + (rnd() - 0.5) * 0.06;
-        const target = { fx: 0.5 + side * ecc, fy: 0.64 + rnd() * 0.18 };
-        const mirror = { fx: 0.5 - side * ecc, fy: target.fy };
-        const bx = sc.pr ? sc.pr.x / W : 0.5, by = sc.pr ? sc.pr.y / H : 0.45;
+      // flag geometry at a trackside spot: ground point, cloth centre and size (px); null if off screen
+      function flagAt(pos, x, W, H) {
+        const pr = R.project(pos, x, 0);
+        if (!pr) return null;
+        const size = U.clamp(FLAG_M * pr.s, W * 0.02, W * 0.05);
+        const cy = pr.y - size * 1.25; // cloth on top of a pole 1.6 cloths tall
+        if (pr.y > pr.clip + 0.5 || pr.x < size || pr.x > W - size || cy - size < H * 0.08 || pr.y > H) return null;
+        return { pos, x, gx: pr.x, gy: pr.y, cx: pr.x + size * 0.5, cy, size };
+      }
+      function clearOf(f, steer) {
+        if (!CP) return true;
+        return CP.hidden([f.gx - 2, f.cy - f.size * 0.35, f.gx + f.size, f.gy], steer) <= 0.1;
+      }
+
+      // yellow target + mirror (mask only) on opposite verges at the same distance, white distractors
+      function placeFlags(sc, W, H, side) {
+        IST.View.apply(R, W, H, V);
+        R.prepare(W, H, sc.cam);
+        if (CP) CP.frameFor(R, SEAT);
+        const steer = IST.Cockpit.steerAt(track, sc.cam.pos);
+        const bx = sc.pr.x, by = sc.pr.y;
+        const ecc = ECC[S.ecc] || ECC.near;
+        const want = ecc[0] + rnd() * (ecc[1] - ecc[0]);
+        const maxPos = Math.min(sc.c.apexPos - 15, sc.cam.pos + NEAR_MAX); // near road, short of the board
+        let best = null;
+        for (let pos = sc.cam.pos + 5; pos < maxPos; pos += 1.5) {
+          const t = flagAt(pos, side * (HW + VERGE), W, H), m = flagAt(pos, -side * (HW + VERGE), W, H);
+          if (!t || !m || !clearOf(t, steer) || !clearOf(m, steer)) continue;
+          const e = Math.min(Math.hypot(t.cx - bx, t.cy - by), Math.hypot(m.cx - bx, m.cy - by)) / W;
+          if (e < 0.12) continue;
+          const miss = e < ecc[0] ? ecc[0] - e : e > ecc[1] ? e - ecc[1] : 0;
+          const score = miss * 10 + Math.abs(e - want);
+          if (!best || score < best.score) best = { score, miss, t, m };
+        }
+        if (!best || best.miss > 0.06) return null;
         const dist = [];
+        const sep = (a, b) => Math.hypot(a.cx - b.cx, a.cy - b.cy);
         for (let k = 0; k < 400 && dist.length < NDIST; k++) {
-          const d = { fx: 0.06 + rnd() * 0.88, fy: 0.52 + rnd() * 0.38 };
-          const px = (a, b) => Math.hypot((a.fx - b.fx) * W, (a.fy - b.fy) * H);
-          if (px(d, target) < size * 2.2) continue;
-          if (px(d, { fx: bx, fy: by }) < size * 3) continue;
-          if (dist.some((o) => px(d, o) < size * 1.8)) continue;
+          const pos = sc.cam.pos + 5 + rnd() * (maxPos - sc.cam.pos - 5);
+          const d = flagAt(pos, (rnd() < 0.5 ? -1 : 1) * (HW + VERGE + rnd() * 3), W, H);
+          if (!d || !clearOf(d, steer)) continue;
+          if (sep(d, best.t) < d.size * 2.2 || sep(d, best.m) < d.size * 1.5) continue;
+          if (Math.hypot(d.cx - bx, d.cy - by) < d.size * 3) continue;
+          if (dist.some((o) => sep(d, o) < d.size * 1.8)) continue;
           dist.push(d);
         }
+        return { target: best.t, mirror: best.m, dist };
+      }
+
+      function newTrial(clock) {
+        const W = ctx.W, H = ctx.H;
+        const side = rnd() < 0.5 ? -1 : 1;
+        let sc = null, fl = null;
+        for (let k = 0; k < 25 && !fl; k++) {
+          sc = pickScene(W, H);
+          if (sc.pr) fl = placeFlags(sc, W, H, side);
+        }
+        if (!fl) {
+          // fallback: verge flags 20 m ahead whatever the view
+          const mk = (sd) => ({ pos: sc.cam.pos + 20, x: sd * (HW + VERGE) });
+          fl = { target: mk(side), mirror: mk(-side), dist: [] };
+        }
+        const { target, mirror, dist } = fl;
         tr = {
           phase: 'fixate', t0: clock,
           fix: trials.length === 0 ? 2600 : 700 + rnd() * 600,
@@ -197,6 +247,19 @@
         Sym.board(g, pr.x, cy, size, tr.phase === 'stim' ? tr.dir : 'mask', th);
         if (tr.phase === 'fixate') Sym.ring(g, pr.x, cy, size * 0.95 + 3 * Math.sin(performance.now() / 140), '#ffb000', 2.5);
         tr.boardScr = { x: pr.x, y: cy, size };
+      }
+
+      // marshal flag on its pole, pole foot on the verge at the projected ground point
+      function flagSize(pr) {
+        return U.clamp(FLAG_M * pr.s, ctx.W * 0.02, ctx.W * 0.05);
+      }
+      function drawFlag(g, pr, color) {
+        const size = flagSize(pr), pole = Math.max(2, size * 0.08);
+        Sym.flag(g, pr.x + pole + size / 2, pr.y - size * 1.25, size, color);
+      }
+      function drawNoise(g, pr) {
+        const size = flagSize(pr);
+        Sym.noise(g, pr.x + size * 0.5, pr.y - size * 1.25, size * 1.35, rnd);
       }
 
       return {
@@ -268,19 +331,17 @@
             }
           }
           IST.View.apply(R, W, H, V);
-          R.render(g, W, H, tr.cam, [{ pos: tr.c.apexPos, x: tr.c.dir * HW * BOARD_KERB, draw: drawBoard }]);
+          const sprites = [{ pos: tr.c.apexPos, x: tr.c.dir * HW * BOARD_KERB, draw: drawBoard }];
+          if (tr.phase === 'stim') {
+            for (const d of tr.dist) sprites.push({ pos: d.pos, x: d.x, draw: (g2, pr) => drawFlag(g2, pr, '#eef0f4') });
+            sprites.push({ pos: tr.target.pos, x: tr.target.x, draw: (g2, pr) => drawFlag(g2, pr, '#f5c400') });
+          } else if (tr.phase === 'mask') {
+            for (const f of [tr.target, tr.mirror].concat(tr.dist)) sprites.push({ pos: f.pos, x: f.x, draw: drawNoise });
+          }
+          R.render(g, W, H, tr.cam, sprites);
           if (CP) {
             CP.frameFor(R, SEAT);
             CP.draw(g, IST.Cockpit.steerAt(track, tr.cam.pos), IST.Cockpit.dash(track.speedAt(tr.cam.pos)));
-          }
-
-          const size = Math.max(26, W * 0.032);
-          const P = (p) => [p.fx * W, p.fy * H];
-          if (tr.phase === 'stim') {
-            for (const d of tr.dist) Sym.flag(g, P(d)[0], P(d)[1], size, '#eef0f4');
-            Sym.flag(g, P(tr.target)[0], P(tr.target)[1], size, '#f5c400');
-          } else if (tr.phase === 'mask') {
-            for (const p of [tr.target, tr.mirror].concat(tr.dist)) Sym.noise(g, P(p)[0], P(p)[1], size * 1.35, rnd);
           }
 
           // response prompt / feedback
@@ -309,8 +370,8 @@
             Sym.text(g, 'Eyes on the ringed board', W / 2, H * 0.16, { align: 'center', size: Math.max(22, W * 0.02), weight: 850 });
             Sym.text(g, '↑/↓ symbol  ·  ←/→ flag side', W / 2, H * 0.16 + 32, { align: 'center', size: 15, weight: 350, alpha: 0.85 });
           }
-          // chain block top-left under the trial counter: boards stay right of 15% width and below 8% height,
-          // flags in the lower half; callouts at the very top
+          // chain block top-left under the trial counter: boards and flags stay right of 15% width and below
+          // 8% height; callouts at the very top
           J.render(g, W, H, { x: 62, y: 44, size: 28, side: 1, callY: 34, vignette: false });
         },
 
