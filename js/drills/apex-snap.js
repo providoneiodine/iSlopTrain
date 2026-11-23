@@ -189,6 +189,10 @@
           })
         : null;
       const stair = new IST.Staircase({ start, min: 33, max: 1500, factor: 1.35, nDown: 2 });
+      // game feel: chain + grades; silent under "summary only" feedback
+      const J = new IST.Juice({ history: ctx.history, live: S.feedback === 'every' });
+      const bestThr = ctx.history.reduce((b, r) => (r.summary && r.summary.threshold > 0 ? Math.min(b, r.summary.threshold) : b), Infinity);
+      let pbPace = false;
 
       const st = {
         pos: 0, heading: 0, lat: track.lateralAt(0), v: 0,
@@ -262,6 +266,16 @@
         });
         stair.update(correct);
         if (S.feedback === 'every') st.fb = { corner: p.corner, correct, until: performance.now() + 450 };
+        if (correct) {
+          // early flash = eyes moved straight after the apex; shorter flashes pay more
+          const snap = f < 1 / 3;
+          const bonus = (snap ? 8 : 0) + U.clamp(Math.round((300 - p.exposure) / 25), 0, 10);
+          J.hit({ bonus, label: snap ? 'SNAP!' : p.exposure < 100 ? 'ELITE FLASH' : null, color: snap ? '#f6d98f' : null });
+        } else J.miss({ label: timeout ? 'MISSED' : outcome === 'hazard' ? 'EYES ON THE WALL' : 'WRONG' });
+        if (!pbPace && isFinite(bestThr) && st.trials.length >= 6 && stair.value < bestThr) {
+          pbPace = true;
+          J.callout('PB PACE', '#f6d98f', 'flash ' + Math.round(stair.value) + ' ms, best was ' + Math.round(bestThr));
+        }
       }
 
       function updateFlags(clock, ts) {
@@ -399,14 +413,16 @@
             else {
               st.fa++;
               st.faUntil = performance.now() + 600;
+              J.miss({ label: 'GUESS' }); // pressing without a target breaks the chain
             }
           } else if (a === 'confirm' && (S.flags || race)) {
             const f = st.flag;
             if (f && f.onTs != null && !f.done) {
               f.done = true;
               st.flagRTs.push(t - f.onTs);
+              J.bonus(15, 'LIGHT');
             } else if (race && race.onConfirm(t)) {
-              /* threat handled */
+              J.bonus(15, 'THREAT');
             } else {
               st.flagFA++;
               if (race) race.falseConfirm();
@@ -420,14 +436,17 @@
           if (st.flag && !st.flag.done) st.flag = null;
           if (race) race.pause();
           if (hz) hz.pause();
+          J.pause();
         },
         onResume() {
           if (race) race.resume();
           if (hz) hz.resume();
+          J.resume();
         },
         destroy() {
           if (race) race.destroy();
           if (hz) hz.destroy();
+          J.destroy();
         },
 
         render(g, W, H, ts, paused) {
@@ -479,6 +498,8 @@
             Sym.text(g, sub, W / 2, iy + 32, { align: 'center', size: 15, weight: 350, alpha: a * 0.9 });
           }
           if (performance.now() < st.faUntil && S.feedback === 'every') Sym.text(g, 'no target', W / 2, H * 0.08, { align: 'center', size: 14, color: '#ff453a' });
+          // chain block top-right, clear of the road, the radio box (top-left) and the dash (top-centre)
+          J.render(g, W, H, { x: W - 58, y: 66, size: 30, side: -1, callY: H * 0.3, vignette: false });
         },
 
         result() {
@@ -522,6 +543,7 @@
               flagHit: S.flags && nFlags ? st.flagRTs.length / nFlags : null,
               flagRT: S.flags && st.flagRTs.length ? U.median(st.flagRTs) : null,
               falseConfirms: S.flags && !race ? st.flagFA : null,
+              ...J.summary(),
               ...(race ? race.summary() : {}),
               ...(hz ? def.hazardSummary(T, st.hzTrials, hz.level) : {}),
               loadCost: race && baseline && T.length >= 4 ? stair.threshold() - baseline : null,
@@ -599,6 +621,8 @@
   };
 
   BASE.metrics.splice(BASE.metrics.length - 1, 0, { key: 'falseConfirms', label: 'False confirms', digits: 0, better: 'lower' });
+  BASE.metrics.splice(BASE.metrics.length - 1, 0, ...IST.Juice.METRICS);
+  RACE.metrics.splice(RACE.metrics.length, 0, ...IST.Juice.METRICS);
 
   IST.registerDrill(BASE);
   IST.registerDrill(Object.assign({}, BASE, RACE));

@@ -77,6 +77,7 @@
       { key: 'earlyAcc', label: 'Snap score', pct: true, digits: 0, better: 'higher', hint: 'Accuracy on flashes just after the previous apex.' },
       { key: 'falseAlarms', label: 'False presses', digits: 0, better: 'lower' },
       { key: 'probes', label: 'Hazard probes', digits: 0 },
+      ...IST.Juice.METRICS,
       { key: 'trials', label: 'Targets', digits: 0 },
     ],
 

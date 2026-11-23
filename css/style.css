@@ -375,3 +375,37 @@ table.grid td b { font-weight: var(--w-bold); }
 .note-ic { font-weight: var(--w-black); }
 .viz-tip-row b { font-weight: var(--w-heavy); }
 .foot { font-weight: var(--w-thin); }
+
+/* ---- results: session grade, record badges, score, record moment ---- */
+.grade {
+  display: grid; place-items: center; align-content: center; width: 92px; height: 92px; flex: none;
+  border: 3px solid var(--line-strong); background: var(--bg-deep); box-shadow: var(--shadow-sm);
+  animation: grade-pop .5s cubic-bezier(.2, 1.6, .4, 1) both;
+}
+.grade-l { font-size: 56px; line-height: .9; font-weight: var(--w-black); }
+.grade-s { font-size: 11px; font-weight: 800; letter-spacing: .06em; color: var(--muted); text-transform: uppercase; }
+.grade-S { border-color: var(--butter); color: var(--butter); box-shadow: 0 0 0 3px rgba(246, 217, 143, .18), 0 0 28px rgba(246, 217, 143, .35); }
+.grade-A { border-color: var(--mint); color: var(--mint); }
+.grade-B { border-color: var(--sky); color: var(--sky); }
+.grade-C { color: var(--text2); }
+.badges { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+.badge {
+  background: var(--butter); color: var(--ink); font-weight: 900; font-size: 12px; letter-spacing: .08em;
+  padding: 4px 10px; box-shadow: var(--shadow-sm); animation: grade-pop .45s cubic-bezier(.2, 1.6, .4, 1) .15s both;
+}
+.res-score-v { font-size: 34px; line-height: 1; font-weight: var(--w-heavy); font-variant-numeric: tabular-nums; color: var(--butter); }
+/* record moment: one sheen pass across the tile + a single ring pulse, no full-screen effects */
+.celebrate { position: relative; }
+.celebrate::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(105deg, transparent 35%, rgba(255, 255, 255, .55) 50%, transparent 65%) no-repeat;
+  background-size: 250% 100%; background-position: 130% 0; animation: tile-sheen .9s ease-out .35s both;
+}
+.celebrate::after {
+  content: ''; position: absolute; inset: -3px; pointer-events: none; border: 2px solid var(--butter);
+  animation: tile-ring .8s ease-out .3s both;
+}
+@keyframes tile-sheen { to { background-position: -30% 0; } }
+@keyframes tile-ring { from { transform: scale(1); opacity: .9; } to { transform: scale(1.35); opacity: 0; } }
+@keyframes grade-pop { from { transform: scale(.4); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .grade, .badge, .celebrate::before, .celebrate::after { animation: none; } .celebrate::before, .celebrate::after { display: none; } }

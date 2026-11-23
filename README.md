@@ -50,6 +50,8 @@ Guided sessions chain drills: **Daily** (~8 min), **Race pressure** (~7 min) and
 
 Controls: arrows / WASD to answer, Space / Enter to confirm, Esc to pause, **F** to toggle fullscreen (never automatic unless enabled under Data). Standard gamepads work automatically. Wheels and button boxes can be bound under **Controls** (buttons, POV hats, axes).
 
+**Game feel:** every drill builds a chain with multiplier tiers, scores points (with bonuses for early snaps, short flashes and fast starts), plays rising tones and calls out new best chains and PB pace. The results screen grades each session S / A / B / C against your own history, with record badges, a score count-up and a short highlight on records. **Data → Game feel** sets Full, Silent or Off; "summary only" feedback keeps it hidden during a drill. Design rules: METHODOLOGY section 5c.
+
 ## Stats page
 
 **Stats** in the header (or **Full stats →** on any results screen) opens an aim-trainer-style dashboard:
@@ -83,6 +85,7 @@ js/render/symbols.js  arrows, pattern masks, boards, flags, HUD text
 js/render/track.js    procedural circuit + speed profile + racing line + pseudo-3D renderer (themes)
 js/components/race-layer.js  reusable race clutter: traffic, relative box, dash, radio/spotter, audio
 js/components/hazard-layer.js  outside-of-corner threats with a decoy board (walls, wrecks, yellows, spins), threat levels
+js/components/juice.js  shared game feel: chain tiers, score, grades, tones, callouts
 js/drills/*.js        one file per drill
 js/sessions.js        guided session playlists
 js/app.js             menu, settings, controls, data, results (all generated from definitions)

@@ -43,6 +43,7 @@
       { key: 'centralAcc', label: 'Apex symbol correct', pct: true, digits: 0, better: 'higher' },
       { key: 'periphAcc', label: 'Flag side correct', pct: true, digits: 0, better: 'higher' },
       { key: 'early', label: 'Early presses', digits: 0, better: 'lower' },
+      ...IST.Juice.METRICS,
       { key: 'trials', label: 'Trials', digits: 0 },
     ],
     coach(s) {
@@ -102,6 +103,10 @@
       const NDIST = { none: 0, low: 3, high: 6 }[S.distractors] || 0;
       const trials = [];
       let tr = null, early = 0, lastTs = performance.now();
+      // game feel: chain on "both right"; silent under "summary only" feedback
+      const J = new IST.Juice({ history: ctx.history, live: S.feedback === 'every' });
+      const bestThr = ctx.history.reduce((b, r) => (r.summary && r.summary.threshold > 0 ? Math.min(b, r.summary.threshold) : b), Infinity);
+      let pbPace = false;
 
       function pickScene(W, H) {
         for (let k = 0; k < 60; k++) {
@@ -156,6 +161,14 @@
         const okP = tr.ansP === (tr.side < 0 ? 'left' : 'right');
         trials.push({ exposure: tr.exposure, okC, okP, both: okC && okP, timeout, rt: tr.rt, side: tr.side, dist: tr.dist.length });
         stair.update(okC && okP);
+        if (okC && okP) {
+          const bonus = U.clamp(Math.round((350 - tr.exposure) / 25), 0, 12) + tr.dist.length;
+          J.hit({ bonus, label: tr.exposure < 90 ? 'ELITE' : tr.exposure < 160 ? 'SHARP' : null });
+        } else J.miss({ label: timeout ? 'TOO SLOW' : !okC && !okP ? 'BOTH MISSED' : !okC ? 'APEX MISSED' : 'FLAG MISSED' });
+        if (!pbPace && isFinite(bestThr) && trials.length >= 6 && stair.value < bestThr) {
+          pbPace = true;
+          J.callout('PB PACE', '#f6d98f', 'flash ' + Math.round(stair.value) + ' ms, best was ' + Math.round(bestThr));
+        }
         tr.okC = okC;
         tr.okP = okP;
         tr.phase = 'feedback';
@@ -219,6 +232,13 @@
 
         onPause() {
           if (tr && tr.phase !== 'feedback') tr = null;
+          J.pause();
+        },
+        onResume() {
+          J.resume();
+        },
+        destroy() {
+          J.destroy();
         },
 
         render(g, W, H, ts, paused) {
@@ -274,6 +294,9 @@
             Sym.text(g, 'Eyes on the ringed board', W / 2, H * 0.16, { align: 'center', size: Math.max(22, W * 0.02), weight: 850 });
             Sym.text(g, '↑/↓ symbol  ·  ←/→ flag side', W / 2, H * 0.16 + 32, { align: 'center', size: 15, weight: 350, alpha: 0.85 });
           }
+          // chain block top-left under the trial counter: boards stay right of 15% width and below 8% height,
+          // flags in the lower half; callouts at the very top
+          J.render(g, W, H, { x: 62, y: 44, size: 28, side: 1, callY: 34, vignette: false });
         },
 
         result() {
@@ -295,6 +318,7 @@
               centralAcc: frac('okC'),
               periphAcc: frac('okP'),
               early,
+              ...J.summary(),
               trials: n,
             },
           };

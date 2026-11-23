@@ -240,6 +240,9 @@
   function openData() {
     const fs = h('input', { type: 'checkbox', checked: IST.Storage.getPref('fullscreen', false) });
     fs.addEventListener('change', () => IST.Storage.setPref('fullscreen', fs.checked));
+    const curJuice = IST.Storage.getPref('juice', 'full');
+    const juice = h('select', null, [['full', 'Full (effects + sounds)'], ['silent', 'Silent (effects, no sounds)'], ['off', 'Off (no in-drill effects)']].map((o) => h('option', { value: o[0], selected: o[0] === curJuice }, o[1])));
+    juice.addEventListener('change', () => IST.Storage.setPref('juice', juice.value));
     const file = h('input', { type: 'file', accept: 'application/json,.json', class: 'hidden' });
     file.addEventListener('change', () => {
       const f = file.files[0];
@@ -269,6 +272,8 @@
     openModal(h('div', null,
       h('h2', null, 'Data'),
       h('label', { class: 'field' }, h('span', { class: 'field-l' }, 'Auto fullscreen on drill start'), fs),
+      h('label', { class: 'field' }, h('span', { class: 'field-l' }, 'Game feel'), juice,
+        h('span', { class: 'hint' }, 'Chains, scores, sounds and celebrations. "Summary only" feedback hides them during a drill either way.')),
       h('h3', null, 'History'),
       h('p', { class: 'muted' }, 'Stored in this browser only.'),
       h('div', { class: 'modal-actions' },
@@ -371,15 +376,34 @@
 
     const usesFlashes = def.settings.some((f) => f.key === 'startExposure');
     const frameMs = usesFlashes && result.refreshHz ? 1000 / result.refreshHz : null;
+    const grade = sessionGrade(def, hist, s);
+    const records = sessionRecords(hist, s);
+    const gradeEl = grade
+      ? h('div', { class: 'grade grade-' + grade.letter, title: grade.pb ? 'Personal best' : 'Better than ' + Math.round(grade.beaten * 100) + '% of your previous sessions' },
+          h('span', { class: 'grade-l' }, grade.letter),
+          h('span', { class: 'grade-s' }, grade.pb ? 'PB' : 'top ' + Math.max(1, Math.round((1 - grade.beaten) * 100)) + '%'))
+      : null;
+    const badges = [];
+    if (grade && grade.pb) badges.push('NEW PB');
+    if (!grade && hist.length === 1) badges.push('FIRST RUN');
+    records.forEach((r) => badges.push(r));
+    const scoreEl = U.isNum(s.score)
+      ? h('div', { class: 'res-score' },
+          h('div', { class: 'res-score-v' }, Math.round(s.score).toLocaleString()),
+          h('div', { class: 'res-label' }, 'Score' + (U.isNum(s.bestChain) ? ' · best chain ' + s.bestChain : '')))
+      : null;
     root.append(
       h('div', { class: 'res-head' },
         h('div', null,
           h('span', { class: 'tag' }, sess ? sess.session.name + ' · step ' + (sess.step + 1) + '/' + sess.session.steps.length + (sess.step === sess.session.steps.length - 1 ? ' · complete' : '') : def.category || 'Drill'),
           h('h1', null, def.name))),
+      badges.length ? h('div', { class: 'badges' }, badges.map((b) => h('span', { class: 'badge' }, b))) : null,
       pm ? h('div', { class: 'res-hero' },
+        gradeEl,
         h('div', null,
           h('div', { class: 'res-big' }, fmtMetric(pm, s[pm.key]), h('small', null, unitOf(pm))),
           h('div', { class: 'res-label' }, pm.label, ' ', prev ? deltaEl(pm, s[pm.key], prev.summary[pm.key]) : h('span', { class: 'muted' }, ''))),
+        scoreEl,
         h('div', { class: 'trend', style: 'flex:1;min-width:200px;max-width:420px' },
           h('div', { html: sparkline(trendVals, 420, 70) }),
           h('div', { class: 'res-label' }, trendVals.filter(U.isNum).length >= 2 ? 'Last ' + trendVals.length + ' sessions' : ''))) : null,
@@ -394,8 +418,64 @@
       h('div', { class: 'res-actions' }, actions)
     );
     show('screen-results');
+    const scoreV = root.querySelector('.res-score-v');
+    if (scoreV) countUp(scoreV, Math.round(s.score));
+    if ((grade && grade.pb) || records.length) celebrate(gradeEl || (scoreV && scoreV.parentNode));
     // focus after a beat so a held Space/Enter from the drill doesn't trigger it
     setTimeout(() => primaryBtn && primaryBtn.focus(), 450);
+  }
+
+  /** S = personal best, then A/B/C by the share of your previous sessions this one beats. */
+  function sessionGrade(def, hist, s) {
+    const pm = IST.primaryMetric(def);
+    const v = pm && s[pm.key];
+    if (!pm || !pm.better || !U.isNum(v)) return null;
+    const prior = hist.slice(0, -1).map((r) => r.summary && r.summary[pm.key]).filter(U.isNum);
+    if (!prior.length) return null;
+    const better = (a, b) => (pm.better === 'lower' ? a < b : a > b);
+    const beaten = prior.filter((x) => better(v, x)).length / prior.length;
+    const pb = beaten === 1;
+    return { letter: pb ? 'S' : beaten >= 0.75 ? 'A' : beaten >= 0.4 ? 'B' : 'C', pb, beaten };
+  }
+
+  function sessionRecords(hist, s) {
+    const prior = hist.slice(0, -1).map((r) => r.summary || {});
+    const out = [];
+    const rec = (key, label) => {
+      const prev = prior.map((p) => p[key]).filter(U.isNum);
+      if (prev.length && U.isNum(s[key]) && s[key] > 0 && s[key] > Math.max.apply(null, prev)) out.push(label);
+    };
+    rec('bestChain', 'NEW BEST CHAIN');
+    rec('score', 'HIGH SCORE');
+    return out;
+  }
+
+  /**
+   * Record moment: a light sheen across the grade (or score) tile, one ring pulse and the fanfare.
+   * Kept small and on the tile itself. Skipped with Game feel off; motion skipped with reduced motion.
+   */
+  function celebrate(target) {
+    const mode = IST.Juice.mode();
+    if (mode === 'off') return;
+    if (mode === 'full') {
+      const au = IST.Juice.makeAudio();
+      if (au) {
+        au.best();
+        setTimeout(() => au.close(), 1500);
+      }
+    }
+    if (target) target.classList.add('celebrate');
+  }
+
+  /** Score ticks up from zero so the number lands rather than just appears. */
+  function countUp(el, to) {
+    if (!el || IST.Juice.mode() === 'off' || (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches)) return;
+    const t0 = performance.now(), dur = U.clamp(400 + Math.abs(to) / 20, 500, 1100);
+    (function frame(t) {
+      const p = Math.min(1, (t - t0) / dur), e = 1 - Math.pow(1 - p, 3);
+      el.textContent = Math.round(to * e).toLocaleString();
+      if (p < 1) requestAnimationFrame(frame);
+    })(t0);
   }
 
   // ------------------------------------------------------------- fullscreen

@@ -84,124 +84,8 @@
   const WORDS = ['SLOW', 'AGAIN?', 'WRONG', 'MISS', 'TOO LATE', 'HURRY', 'LOSING IT', '−0.4', 'PUSH', 'NOPE', 'FOCUS?', 'PRESSURE'];
   const POP_COLORS = ['#ffffff', '#f5c400', '#ff5a4f'];
 
-  // Chain tiers: the multiplier and colour climb as the streak grows.
-  const TIERS = [
-    { at: 0, m: 1, c: '#e8ecf2' },
-    { at: 5, m: 2, c: '#9fe3b0' },
-    { at: 10, m: 3, c: '#9fcbef' },
-    { at: 20, m: 4, c: '#f6d98f' },
-    { at: 35, m: 5, c: '#ffb26b' },
-    { at: 50, m: 6, c: '#ff7ad9' },
-    { at: 75, m: 8, c: '#c69bff' },
-    { at: 100, m: 10, c: '#ffffff' },
-  ];
-  const tierOf = (n) => {
-    let k = 0;
-    for (let j = 0; j < TIERS.length; j++) if (n >= TIERS[j].at) k = j;
-    return k;
-  };
-  const PENTA = [0, 2, 4, 7, 9];
-
-  const hexCache = {};
-  function hex(c) {
-    if (hexCache[c]) return hexCache[c];
-    const n = parseInt(c.slice(1), 16);
-    return (hexCache[c] = [(n >> 16) & 255, (n >> 8) & 255, n & 255]);
-  }
-
-  // ------------------------------------------------------------------ audio
-  function makeAudio() {
-    try {
-      const AC = window.AudioContext || window.webkitAudioContext;
-      if (!AC) return null;
-      const ac = new AC();
-      const master = ac.createGain();
-      master.gain.value = 0.32;
-      master.connect(ac.destination);
-      const nb = ac.createBuffer(1, Math.floor(ac.sampleRate * 0.4), ac.sampleRate);
-      const nd = nb.getChannelData(0);
-      for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
-
-      const tone = (f, dur, type, vol, delay, slideTo) => {
-        const t = ac.currentTime + (delay || 0);
-        const o = ac.createOscillator(), gn = ac.createGain();
-        o.type = type || 'triangle';
-        o.frequency.setValueAtTime(f, t);
-        if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t + dur);
-        gn.gain.setValueAtTime(0.0001, t);
-        gn.gain.exponentialRampToValueAtTime(vol, t + 0.006);
-        gn.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-        o.connect(gn);
-        gn.connect(master);
-        o.start(t);
-        o.stop(t + dur + 0.02);
-      };
-      const noise = (dur, vol, freq, type) => {
-        const t = ac.currentTime;
-        const s = ac.createBufferSource(), f = ac.createBiquadFilter(), gn = ac.createGain();
-        s.buffer = nb;
-        f.type = type || 'lowpass';
-        f.frequency.value = freq || 900;
-        gn.gain.setValueAtTime(vol, t);
-        gn.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-        s.connect(f);
-        f.connect(gn);
-        gn.connect(master);
-        s.start(t);
-        s.stop(t + dur + 0.02);
-      };
-      const note = (step) => 262 * Math.pow(2, (PENTA[step % 5] + 12 * Math.floor(step / 5)) / 12);
-      return {
-        ok(chain, perfect) {
-          tone(note((chain - 1) % 15), 0.11, 'triangle', 0.22);
-          if (perfect) tone(note(((chain - 1) % 15) + 5), 0.08, 'sine', 0.08, 0.02);
-        },
-        tick() {
-          noise(0.03, 0.06, 6000, 'highpass');
-        },
-        tier(ti) {
-          const b = 2 + Math.min(ti, 6);
-          [0, 2, 4].forEach((k, j) => tone(note(b * 2 + k), 0.16, 'triangle', 0.24, j * 0.055));
-          tone(note(b * 2 + 7), 0.3, 'sine', 0.16, 0.17);
-        },
-        best() {
-          [0, 4, 7, 12].forEach((k, j) => tone(523 * Math.pow(2, k / 12), 0.18, 'sine', 0.2, j * 0.07));
-        },
-        recovered() {
-          tone(392, 0.12, 'sine', 0.22);
-          tone(587, 0.22, 'sine', 0.22, 0.09);
-        },
-        err(k) {
-          const d = 0.24 + Math.min(4, k) * 0.05, lo = Math.max(45, 110 - k * 12);
-          tone(lo, d, 'sawtooth', 0.42, 0, lo * 0.62);
-          tone(lo * 1.06, d, 'square', 0.22, 0, lo * 0.6);
-          noise(0.12 + k * 0.03, 0.3, 700);
-        },
-        chirp() {
-          tone(1900, 0.08, 'sine', 0.16, 0, 950);
-          tone(2400, 0.06, 'sine', 0.1, 0.09, 1400);
-        },
-        reset() {
-          tone(196, 0.5, 'sine', 0.18, 0, 147);
-        },
-        suspend() {
-          ac.suspend().catch(() => {});
-        },
-        resume() {
-          ac.resume().catch(() => {});
-        },
-        close() {
-          try {
-            ac.close();
-          } catch (e) {
-            /* already closed */
-          }
-        },
-      };
-    } catch (e) {
-      return null;
-    }
-  }
+  // Chain tiers, sounds and colour helpers are shared with the other drills (components/juice.js).
+  const TIERS = IST.Juice.TIERS, tierOf = IST.Juice.tierOf, makeAudio = IST.Juice.makeAudio, hex = IST.Juice.hex;
 
   const levelOpts = (withOff) =>
     [['auto', 'Auto (adapts)']].concat(withOff ? [['off', 'Off']] : []).concat([1, 2, 3, 4, 5, 6].map((n) => [String(n), String(n)]));
@@ -431,7 +315,7 @@
       const bLevel = DEF.levelFor(S.burst, hist, 'nextBurstLevel', 'burstLevel');
       const dLevel = DEF.levelFor(S.distract, hist, 'nextDistractLevel', 'distractLevel');
       const BL = BURST_LEVELS[bLevel], DL = DIST_LEVELS[dLevel];
-      const audio = S.sound ? makeAudio() : null;
+      const audio = S.sound && IST.Juice.mode() === 'full' ? makeAudio() : null; // Data → Game feel: Silent mutes it too
       const distTypes = DL.types.filter((t) => audio || (t !== 'chirp' && t !== 'fakebuzz'));
       const allTimeBest = hist.reduce((m, r) => Math.max(m, (r.summary && r.summary.bestChain) || 0), 0);
       const endMs = S.duration * 1000;

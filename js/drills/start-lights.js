@@ -39,6 +39,7 @@
       { key: 'mean', label: 'Mean reaction', unit: 'ms', digits: 0, better: 'lower' },
       { key: 'sd', label: 'Spread (SD)', unit: 'ms', digits: 0, better: 'lower' },
       { key: 'jumps', label: 'Jump starts', digits: 0, better: 'lower' },
+      ...IST.Juice.METRICS,
       { key: 'valid', label: 'Valid starts', digits: 0 },
     ],
     coach(s) {
@@ -79,6 +80,19 @@
       const rnd = U.rng(U.randomSeed());
       const trials = [];
       let tr = null;
+      // game feel: chain of clean starts, graded by reaction time
+      const J = new IST.Juice({ history: ctx.history });
+      const bestEver = ctx.history.reduce((b, r) => (r.summary && r.summary.best > 0 ? Math.min(b, r.summary.best) : b), Infinity);
+      let bestNow = bestEver;
+      const GRADES = [[180, 'LIGHTNING', 20, '#f6d98f'], [215, 'SHARP', 12, '#9fcbef'], [260, 'GOOD', 5, null]];
+      function scoreStart(rt) {
+        const gr = GRADES.find((x) => rt < x[0]);
+        J.hit({ bonus: gr ? gr[2] : 0, label: gr ? gr[1] : null, color: gr ? gr[3] : null });
+        if (rt < bestNow) {
+          if (isFinite(bestNow)) J.callout('NEW BEST START', '#f6d98f', Math.round(rt) + ' ms');
+          bestNow = rt;
+        }
+      }
 
       const newTrial = (clock) => {
         tr = { phase: 'ready', t0: clock, hold: 200 + rnd() * Math.max(0, S.holdMax - 200), lights: 0, msg: '', rt: null };
@@ -106,6 +120,7 @@
           } else if (tr.phase === 'out' && ts - tr.outTs > 1500) {
             trials.push({ rt: null, miss: true });
             toResult(clock, 'Too slow', null);
+            J.miss({ label: 'TOO SLOW' });
           } else if (tr.phase === 'result' && e > 1600) {
             if (trials.length >= S.trials) ctx.finish();
             else newTrial(clock);
@@ -117,20 +132,30 @@
           if (tr.phase === 'build' || tr.phase === 'arm') {
             trials.push({ rt: null, jump: true });
             toResult(ctx.clock(), 'JUMP START', null);
+            J.miss({ label: 'JUMP' });
           } else if (tr.phase === 'out') {
             const rt = t - tr.outTs;
             if (rt < 100) {
               trials.push({ rt, jump: true });
               toResult(ctx.clock(), 'JUMP START', null);
+              J.miss({ label: 'JUMP' });
             } else {
               trials.push({ rt });
               toResult(ctx.clock(), '', rt);
+              scoreStart(rt);
             }
           }
         },
 
         onPause() {
           if (tr && tr.phase !== 'result') tr = null;
+          J.pause();
+        },
+        onResume() {
+          J.resume();
+        },
+        destroy() {
+          J.destroy();
         },
 
         render(g, W, H, ts, paused) {
@@ -185,6 +210,7 @@
           }
           Sym.text(g, 'Start ' + Math.min(S.trials, trials.length + (tr && tr.phase !== 'result' ? 1 : 0)) + ' / ' + S.trials, 18, 30, { size: 16, alpha: 0.7 });
           Sym.text(g, 'Esc', W - 18, 30, { size: 13, align: 'right', alpha: 0.45 });
+          J.render(g, W, H, { x: W / 2, y: H * 0.74, size: U.clamp(H * 0.06, 34, 54), side: 1, callY: Math.max(36, H * 0.07) });
         },
 
         result() {
@@ -197,6 +223,7 @@
               mean: v.length ? U.mean(v) : null,
               sd: v.length > 1 ? U.sd(v) : null,
               jumps: trials.filter((t) => t.jump).length,
+              ...J.summary(),
               valid: v.length,
             },
           };

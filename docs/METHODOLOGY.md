@@ -138,6 +138,15 @@ Reaction-light drills are a staple of driver warm-ups and fitness programmes and
 - **Weak-spot breakdowns** need at least 6 targets per bucket before they are judged. Smaller buckets are drawn faded.
 - **In-sim transfer:** each weakness maps to a concrete in-sim exercise (e.g. say "next" at every apex, rehearse one chicane, learn crest references). This bridges the drill and real driving, because transfer is not automatic (Appelbaum & Erickson, 2018). Check the result on lap and sector times.
 
+## 5c. Game feel (chains, scores, grades)
+Every drill shares one game-feel layer (`components/juice.js`): a chain of correct answers with multiplier tiers at 5, 10, 20, 35, 50, 75 and 100, points with bonuses for harder work, rising tones, and "new best chain" / "PB pace" callouts. The results screen grades each session against your own history: **S** for a new personal best on the primary metric, then A / B / C by the share of your earlier sessions it beats, with record badges, a score that counts up, and a sheen and ring pulse on the grade for new PBs, best chains and high scores. The aim is to make you want to come back tomorrow, which is what spaced practice needs (section 5).
+
+Rules that keep it from working against the training:
+- **The bonuses reward the trained behaviour.** Apex Snap pays extra for early flashes ("SNAP!": eyes moved right after the apex) and for shorter flashes; Two-Point pays for shorter exposures and more distractors; Start Lights grades reaction time; Clean Slate rewards quick recovery. Guessing without a target breaks the chain.
+- **Nothing covers what you have to look at.** The chain block sits in a corner chosen per drill (Apex Snap top-right, clear of the Race Mode dash, radio and relative; Two-Point top-left, outside the board and flag zones). Vision drills get no red edge flash and no screen shake, so the scene is never disturbed between flashes.
+- **"Summary only" feedback stays summary only.** With that setting the chain is hidden and silent during the drill (Winstein & Schmidt, 1990); the score appears on the results screen.
+- **Data → Game feel** switches between Full, Silent (no sounds) and Off.
+
 ## 6. Honest limits
 - Generic "brain/vision training" transfers unevenly to on-field performance (Appelbaum & Erickson, 2018, *Int. Rev. Sport Exerc. Psychol.* 11(1)). These drills stay task-specific to give transfer the best chance, but **the real test is your lap times and consistency in the sim.** Track them.
 - Without an eye tracker the app cannot see where you look. It infers gaze from what you could read. A good guesser can inflate scores slightly: 4-choice arrows give 25 % chance, and presses with no target are counted separately.
