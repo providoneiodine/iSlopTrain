@@ -78,6 +78,51 @@ Drivers and riders call it target fixation: you look at the wall, the gravel or 
 
 **Limits.** Hazards in a pseudo-3D drill are not a real wall at 200 km/h, and the drill can't produce real fear. What it trains is the attentional habit (goal-directed gaze despite a salient, threat-coded distractor) and the choice of self-talk. Check transfer in the sim at walled corners.
 
+## 3d. Recovering from a run of errors (Clean Slate, Mind tab)
+One mistake rarely costs a race. The second and third do: the tentative lap after an off, or the lunge to win the time back. Clean Slate trains the moment after the mistake, using an abstract task instead of a staged race incident, because a fake punt doesn't make anyone genuinely angry. The errors here are real: you are pushed past your limit and you fail.
+
+| Finding | Source | Used in |
+|---|---|---|
+| People slow down after errors, and the next answer is often less accurate, not more. | Rabbitt (1966), *J. Exp. Psychol.* 71(2); Notebaert et al. (2009), *Cognition* 111(2) | Post-error shift, accuracy after an error |
+| Post-error slowing is confounded by slow drifts in speed; compare the trials just before and just after each error. | Dutilh et al. (2012), *J. Math. Psychol.* 56(3) | Post-error shift (robust method) |
+| Flanker arrows measure how well conflicting information is ignored. | Eriksen & Eriksen (1974), *Perception & Psychophysics* 16(1) | Grey arrows beside the blue one |
+| Switching between task rules carries a reliable cost. | Monsell (2003), *Trends Cogn. Sci.* 7(3) | Orange rows (press the opposite way), Flip bursts |
+| A weighted up/down staircase converges on any target accuracy. | Kaernbach (1991), *Perception & Psychophysics* 49(3) | Reveal lead held at ~88 % correct |
+| Anxiety shifts attention towards irrelevant, salient and threatening stimuli. | Eysenck et al. (2007), *Emotion* 7(2) | Distraction ladder |
+| Entirely irrelevant distractors still cost performance. | Forster & Lavie (2008), *J. Exp. Psychol. Applied* 14(1) | Distraction ladder |
+| Training under mild anxiety protects against choking at higher anxiety; pressure training transfers (g ≈ 0.67). | Oudejans & Pijpers (2010), *Psychol. Sport Exerc.* 11(1); Low et al. (2021) | Burst ladder, compounding penalty |
+
+**Task.** It plays like a rhythm game. Rows of five arrows scroll down a lane and reach the hit line every 850 ms. Each row shows grey pattern masks (all four arrows superimposed) until it crosses the reveal line, then turns into arrows. One arrow, in a random slot, is coloured: **blue** means press its direction, **orange** (15 % of normal rows) means press the opposite direction. The grey arrows point the same way as the coloured one or not (half each). Press as the row crosses the hit window, ±150 ms around the line. Pressing after the reveal but before the window is an **early** error, a wrong direction is **wrong**, and letting the row pass is a **miss**. Correct presses are graded PERFECT (≤45 ms from the line), GREAT (≤95 ms) or GOOD.
+
+The rows keep a steady beat, so timing is anticipated, not reacted to. Reading is the reacted part: the staircase moves the **reveal lead** (how long before the line the arrows appear) on normal rows only. It descends quickly until the first error, then takes a weighted walk (error: ×1.15 then ×1.08; correct: ÷ the same step to the power 0.12/0.88) that holds about 88 % correct. Reaction time is measured from the reveal.
+
+**Bursts** come without warning after a 12-row warm-up. During a burst the reveal lead is frozen at its pre-burst value and then:
+- **Squeeze:** reveal cut to 60 % (level 1) down to 48 % (level 6) of the lead.
+- **Rush** (level 2+): the beat drops to 480 ms, so rows come almost twice as fast, at 85 % of the lead.
+- **Clutter** (level 3+): seven arrows, all grey ones against the coloured one, scattered, with a blue-grey lookalike and visual noise, at 85 % of the lead.
+- **Flip** (level 4+): 65 % of rows are orange, at 90 % of the lead.
+- **Double hit** (level 4+): a second burst starts 2-4 rows into the recovery from the first. The first burst's recovery is not scored; the second's is.
+
+For the 10 rows after a burst the beat is normal and the reveal lead stays at its pre-burst value, so any dip is yours, not the task's. Burst level 1-6 sets burst length (3 up to 5-7 rows), the gap between bursts (24-32 down to 15-22 rows), the types and the double-hit chance (0 / 20 / 35 / 50 %).
+
+**Metrics.**
+- **Recovery** (primary) = the number of post-burst rows before the first run of 3 clean answers (correct and no slower than 1.25× baseline median from reveal). 0 = straight back. Never recovered within 10 rows scores 10.
+- **Recovery cost** = baseline accuracy minus accuracy over the 10 post-burst rows. **Post-burst slowdown** = their median correct time vs baseline.
+- **Error chaining** = P(error | previous error) − P(error | previous correct), consecutive normal rows only.
+- **Post-error shift** = mean of RT(n+1) − RT(n−1) around errors with correct neighbours (Dutilh et al., 2012). Because presses land in the hit window, a positive shift means pressing later in the window. Labelled **hesitant** at ≥ +40 ms, **rushing** at ≤ −25 ms or when accuracy after an error falls 12+ pts below baseline without slowing, otherwise **steady**.
+- **Perfect hits** and **timing error** (mean distance from the line on correct presses) track rhythm.
+- **Recovery curves** on the Stats page pool accuracy and relative speed at each of the 8 post-burst positions: your last 5 sessions against the 10 before them. Progress shows as a curve that gets flatter and shorter.
+
+**Distraction ladder** (0-6) puts distractors on 25-50 % of normal rows, timed from 200 ms before to 150 ms after the reveal: peripheral flashes (1+), taunt words such as "WRONG" or "TOO LATE" (2+), decoy arrows outside the lane, some of them blue (3+), chirps and a row that drifts sideways after the reveal (4+), a fake error buzz on a row you haven't answered (5+), a HUD glitch that makes the chain look broken, and two at once (6). Distractors never cover the hit zone, and bursts never carry them. **Distraction cost** = accuracy on distraction-free normal rows minus accuracy with distractors.
+
+**Auto levels.** Burst level goes up after ≤1.5 rows recovery and ≤10 pts recovery cost, and down after ≥4 rows or ≥30 pts (at least 3 measured bursts). Distraction level goes up after ≤4 pts and ≤30 ms cost, and down after ≥15 pts or ≥90 ms (at least 15 distractor rows).
+
+**Chain.** Correct answers build a chain with multiplier tiers at 5, 10, 20, 35, 50, 75 and 100 (×2 up to ×10), timing grades (PERFECT +10, GREAT +5 before the multiplier), rising tones, a hit-line flash, tier fanfares and a best-chain record. Errors in a row cost 20, 40, 80, then 160 points each (the cap keeps a bad burst from wiping out a session's chain points). Recovering after a burst pays a bonus that shrinks with every row it takes. The chain is there to make clean answers rewarding enough to balance the sting of errors, and the bonus rewards exactly the skill being measured.
+
+**Reset cue** (optional): press Confirm the moment you consciously let a bad run go. The drill compares recovery with and without the press, as a first step towards a cue you can use in the car.
+
+**Limits.** Post-error behaviour in a lab task isn't proven to carry over to driving. The yardstick is in the sim: compare the lap straight after a mistake with your average lap, before and after a few weeks of training.
+
 ## 4. Warm-up and readiness
 Reaction-light drills are a staple of driver warm-ups and fitness programmes and part of a pre-performance routine (Cotterill, 2010, *Int. Rev. Sport Exerc. Psychol.* 3(2)). **Start Lights** uses a random hold so you cannot time the start from rhythm (Niemi & Näätänen, 1981, *Psych. Bull.* 89(1)). Responses under 100 ms count as anticipations, the same limit used in athletics false-start rules (Pain & Hibbs, 2007, *J. Sports Sci.* 25(1)). It also provides a daily readiness baseline: a much slower median than usual is a sign of fatigue.
 

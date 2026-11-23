@@ -111,8 +111,8 @@
       ? h('div', { class: 'grid-bd' }, rep.breakdowns.map((b) =>
           h('div', { class: 'card' },
             h('div', { class: 'card-h' }, h('h3', null, b.title),
-              h('span', { class: 'muted small' }, (b.subtitle || '') + (b.items && b.items.some((i) => i.n != null && i.n < A.MIN_N) ? ' · faded = too few' : ''))),
-            chartBox((box) => (b.type === 'histogram' ? Ch.histogram(box, b) : Ch.bars(box, b))))))
+              h('span', { class: 'muted small' }, (b.subtitle || '') + (b.items && b.items.some((i) => i.n != null && i.n < (b.minN || A.MIN_N)) ? ' · faded = too few' : ''))),
+            chartBox((box) => (b.type === 'histogram' ? Ch.histogram(box, b) : b.type === 'curve' ? Ch.curve(box, b) : Ch.bars(box, b))))))
       : null;
 
     // table view (accessibility + fine grain): newest first

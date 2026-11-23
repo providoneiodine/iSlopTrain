@@ -224,9 +224,10 @@
   }
 
   // ------------------------------------------------------------------ bars
-  /** Horizontal bars. spec: { items: [{label, value, n, tag}], pct, fmt } */
+  /** Horizontal bars. spec: { items: [{label, value, n, tag}], pct, fmt, minN?, nLabel? } */
   function bars(box, spec) {
     const items = spec.items.filter((i) => U.isNum(i.value));
+    const minN = spec.minN || IST.Analysis.MIN_N, nLabel = spec.nLabel || 'targets';
     if (!items.length) {
       box.textContent = '';
       box.append(Object.assign(document.createElement('p'), { className: 'muted small', textContent: 'Not enough data yet.' }));
@@ -260,12 +261,12 @@
       el('path', {
         d: 'M' + x0 + ' ' + y + 'h' + (w - rr) + 'a' + rr + ' ' + rr + ' 0 0 1 ' + rr + ' ' + rr + 'v' + (barH - 2 * rr) + 'a' + rr + ' ' + rr + ' 0 0 1 ' + -rr + ' ' + rr + 'h' + -(w - rr) + 'z',
         fill: C.series,
-        'fill-opacity': it.n != null && it.n < IST.Analysis.MIN_N ? 0.45 : 1,
+        'fill-opacity': it.n != null && it.n < minN ? 0.45 : 1,
       }, svg);
       txt(svg, x0 + w + 6, y + barH - 2, fmt(it.value), { fill: C.text, 'font-size': 12, 'font-weight': 600 });
       const hit = el('rect', { x: 0, y: k * rowH, width: W, height: rowH, fill: 'transparent' }, svg);
       hit.addEventListener('pointermove', () => {
-        tip.show(x0 + w, y, it.label, [{ value: fmt(it.value), label: it.n != null ? 'from ' + it.n + ' targets' + (it.n < IST.Analysis.MIN_N ? ' (too few to judge)' : '') : '' }]);
+        tip.show(x0 + w, y, it.label, [{ value: fmt(it.value), label: it.n != null ? 'from ' + it.n + ' ' + nLabel + (it.n < minN ? ' (too few to judge)' : '') : '' }]);
       });
       hit.addEventListener('pointerleave', () => tip.hide());
     });
@@ -314,6 +315,107 @@
     txt(svg, U.clamp(mx, pad.l + 30, W - 40), pad.t - 4, 'median ' + Math.round(med) + ' ' + (spec.unit || ''), { 'text-anchor': 'middle', fill: C.text2 });
   }
 
+  // ------------------------------------------------------------------ curve
+  /**
+   * Profile over positions (e.g. trials after an event) against a baseline.
+   * spec: { labels, series: [{label, values, muted?}], baseline, baselineLabel, pct, fmt, height, title }
+   * First series = current (series hue), muted series = comparison (recessive grey).
+   */
+  function curve(box, spec) {
+    const series = spec.series.filter((s) => s.values.some(U.isNum));
+    if (!series.length) {
+      box.textContent = '';
+      box.append(Object.assign(document.createElement('p'), { className: 'muted small', textContent: 'Not enough data yet.' }));
+      return;
+    }
+    const H = spec.height || 210, n = spec.labels.length;
+    const { W, svg } = start(box, H);
+    svg.setAttribute('role', 'img');
+    svg.setAttribute('aria-label', spec.title || 'Curve');
+    svg.setAttribute('tabindex', '0');
+    const fmt = spec.fmt || ((v) => (spec.pct ? Math.round(v * 100) + '%' : U.fmt(v, 0)));
+    const pad = { l: 46, r: 74, t: 30, b: 24 };
+    const all = series.flatMap((s) => s.values.filter(U.isNum)).concat(U.isNum(spec.baseline) ? [spec.baseline] : []);
+    let lo = Math.min.apply(null, all), hi = Math.max.apply(null, all);
+    const span = hi - lo || Math.abs(hi) * 0.2 || 0.1;
+    lo -= span * 0.15;
+    hi += span * 0.15;
+    if (spec.pct) lo = Math.max(0, lo);
+    const ticks = niceTicks(lo, hi, 4);
+    lo = Math.min(lo, ticks[0]);
+    hi = Math.max(hi, ticks[ticks.length - 1]);
+    const pw = W - pad.l - pad.r, ph = H - pad.t - pad.b;
+    const X = (i) => pad.l + (n === 1 ? pw / 2 : (i / (n - 1)) * pw);
+    const Y = (v) => pad.t + (1 - (v - lo) / (hi - lo)) * ph;
+
+    for (const t of ticks) {
+      el('line', { x1: pad.l, x2: W - pad.r, y1: Y(t), y2: Y(t), stroke: C.grid, 'stroke-width': 1 }, svg);
+      txt(svg, pad.l - 8, Y(t) + 4, fmt(t), { 'text-anchor': 'end' });
+    }
+    spec.labels.forEach((l, i) => txt(svg, X(i), H - 6, l, { 'text-anchor': 'middle' }));
+
+    if (U.isNum(spec.baseline)) {
+      const y = Y(spec.baseline);
+      el('line', { x1: pad.l, x2: W - pad.r, y1: y, y2: y, stroke: C.text2, 'stroke-width': 1, 'stroke-dasharray': '4 4' }, svg);
+      txt(svg, W - pad.r + 6, y + 4, (spec.baselineLabel || 'baseline') + ' ' + fmt(spec.baseline), { fill: C.text2, 'font-size': 11 });
+    }
+
+    // legend
+    let lx = pad.l;
+    series.forEach((s) => {
+      const col = s.muted ? C.muted : C.series;
+      el('line', { x1: lx, x2: lx + 14, y1: 12, y2: 12, stroke: col, 'stroke-width': 2 }, svg);
+      const t = txt(svg, lx + 19, 16, s.label, { fill: C.text2 });
+      lx += 19 + (t.getComputedTextLength ? t.getComputedTextLength() : s.label.length * 6) + 16;
+    });
+
+    // muted series first so the current one sits on top
+    series.slice().sort((a, b) => (b.muted ? 1 : 0) - (a.muted ? 1 : 0)).forEach((s) => {
+      const col = s.muted ? C.muted : C.series;
+      let d = '';
+      s.values.forEach((v, i) => {
+        if (U.isNum(v)) d += (d ? 'L' : 'M') + X(i).toFixed(1) + ' ' + Y(v).toFixed(1);
+      });
+      el('path', { d, fill: 'none', stroke: col, 'stroke-width': 2, 'stroke-opacity': s.muted ? 0.7 : 1, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }, svg);
+      s.values.forEach((v, i) => {
+        if (U.isNum(v)) el('circle', { cx: X(i), cy: Y(v), r: 4, fill: col, stroke: C.surface, 'stroke-width': 2 }, svg);
+      });
+    });
+
+    const cross = el('line', { y1: pad.t, y2: H - pad.b, stroke: C.muted, 'stroke-width': 1, visibility: 'hidden' }, svg);
+    const hit = el('rect', { x: pad.l - 10, y: 0, width: pw + 20, height: H, fill: 'transparent' }, svg);
+    const tip = tooltip(box);
+    let cur = 0;
+    const showAt = (i) => {
+      cur = U.clamp(i, 0, n - 1);
+      cross.setAttribute('x1', X(cur));
+      cross.setAttribute('x2', X(cur));
+      cross.setAttribute('visibility', 'visible');
+      const rows = series.map((s) => ({ value: U.isNum(s.values[cur]) ? fmt(s.values[cur]) : '–', label: s.label, key: s.muted ? 'dot' : 'line' }));
+      if (U.isNum(spec.baseline)) rows.push({ value: fmt(spec.baseline), label: spec.baselineLabel || 'baseline' });
+      const v0 = series[0].values[cur];
+      tip.show(X(cur), U.isNum(v0) ? Y(v0) : pad.t, (spec.xTitle || 'Trial') + ' ' + spec.labels[cur], rows);
+    };
+    const hide = () => {
+      cross.setAttribute('visibility', 'hidden');
+      tip.hide();
+    };
+    hit.addEventListener('pointermove', (e) => {
+      const rect = svg.getBoundingClientRect();
+      const x = ((e.clientX - rect.left) / rect.width) * W;
+      showAt(n === 1 ? 0 : Math.round(((x - pad.l) / pw) * (n - 1)));
+    });
+    hit.addEventListener('pointerleave', hide);
+    svg.addEventListener('focus', () => showAt(cur));
+    svg.addEventListener('blur', hide);
+    svg.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowLeft') showAt(cur - 1);
+      else if (e.key === 'ArrowRight') showAt(cur + 1);
+      else return;
+      e.preventDefault();
+    });
+  }
+
   // --------------------------------------------------------------- calendar
   /** Activity heatmap: last `weeks` weeks, Monday-first columns. spec: { counts: {dayKey: n}, weeks } */
   function calendar(box, spec) {
@@ -354,5 +456,5 @@
     txt(svg, left + 30 + C.seq.length * (cell + gap) + 4, ly + 10, 'More', { 'font-size': 10 });
   }
 
-  IST.Charts = { line, bars, histogram, calendar, COLORS: C };
+  IST.Charts = { line, bars, histogram, curve, calendar, COLORS: C };
 })();
