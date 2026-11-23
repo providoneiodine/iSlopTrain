@@ -435,5 +435,6 @@
     };
   };
 
+  RaceLayer.drawCar = drawCar; // reused by other drills (ghost cars)
   IST.RaceLayer = RaceLayer;
 })();

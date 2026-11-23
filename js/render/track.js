@@ -334,13 +334,15 @@
   }
   Renderer.THEMES = THEMES;
 
-  /** Project the visible track for camera cam = {pos, x (lateral m), heading (rad)}. */
+  /** Project the visible track for camera cam = {pos, x (lateral m), heading (rad), yaw (rad, car vs track, + = right)}. */
   Renderer.prototype.prepare = function (W, H, cam) {
     const t = this.track, N = this.drawDist;
     this.W = W;
     this.H = H;
     this.cam = cam;
     this.proj = W / 2 / Math.tan((this.fov * Math.PI) / 360);
+    // small yaw of the car relative to the track = a sideways shift of the whole image
+    this.yawShift = -this.proj * Math.tan(cam.yaw || 0);
     // camera follows the terrain and pitches with the local gradient (smoothed)
     const pitch = (t.heightAt(cam.pos + 10) - t.heightAt(Math.max(0, cam.pos - 5))) / 15;
     this.horizonY = Math.round(U.clamp(H * this.horizonFrac + pitch * this.proj * 0.9, H * 0.18, H * 0.72));
@@ -363,7 +365,7 @@
     for (let j = 0; j <= N; j++) {
       const s = this.proj / this.dzs[j];
       this.ys[j] = j === 0 ? t.heightAt(cam.pos) : t.heightAt((baseIdx + j) * SEG);
-      this.sx[j] = W / 2 + (this.xs[j] - cam.x) * s;
+      this.sx[j] = W / 2 + (this.xs[j] - cam.x) * s + this.yawShift;
       this.sy[j] = this.horizonY + (this.camY - this.ys[j]) * s;
       this.sw[j] = HALF_W * s;
       if (j > 0) minY = Math.min(minY, this.sy[j]);
@@ -384,7 +386,7 @@
     const s = this.proj / dz;
     const ground = this.track.heightAt(pos);
     return {
-      x: this.W / 2 + (xc + xOff - this.cam.x) * s,
+      x: this.W / 2 + (xc + xOff - this.cam.x) * s + this.yawShift,
       y: this.horizonY + (this.camY - ground - (h || 0)) * s,
       s, dz,
       clip: j0 > 0 ? this.clip[j0] : Infinity, // anything below this screen y is hidden by a nearer crest
@@ -392,7 +394,7 @@
   };
 
   Renderer.prototype.hills = function (g, color, amp, f1, f2, phase) {
-    const W = this.W, H = this.H, hz = this.horizonY, proj = this.proj, hd = this.cam.heading || 0;
+    const W = this.W, H = this.H, hz = this.horizonY, proj = this.proj, hd = (this.cam.heading || 0) + (this.cam.yaw || 0);
     g.beginPath();
     g.moveTo(0, hz + 1);
     for (let x = 0; x <= W + 10; x += 10) {

@@ -1,6 +1,12 @@
-# iSlopTrain Vision: training methodology
+# iSlopTrain: training methodology
 
-The target behaviour: **eyes as far down the track as possible, moving to the apex of the next corner as early as possible, without conscious effort.** This document explains why each drill is built the way it is.
+iSlopTrain trains three things, one tab each:
+
+- **Vision** (sections 1-3b): **eyes as far down the track as possible, moving to the apex of the next corner as early as possible, without conscious effort.**
+- **Mind** (sections 3c-3e): keeping that habit under threat, recovering from a run of mistakes, and reading the racing line.
+- **Reflex** (section 4): start reactions and a daily readiness baseline.
+
+This document explains why each drill is built the way it is, and the feedback, dosing and game-feel rules they share (section 5).
 
 > References were compiled from the literature as known at the time of writing and have not been re-checked line by line. Verify a citation before quoting it externally.
 
@@ -123,6 +129,34 @@ For the 10 rows after a burst the beat is normal and the reveal lead stays at it
 
 **Limits.** Post-error behaviour in a lab task isn't proven to carry over to driving. The yardstick is in the sim: compare the lap straight after a mistake with your average lap, before and after a few weeks of training.
 
+## 3e. Reading the racing line (Pick the Line, Mind tab)
+Drivers are taught a small set of line rules: use all the track, turn in from the outside, clip a (usually late) apex, let the car run out to the exit kerb, and in a combination give priority to the corner that leads onto the longest straight. Pick the Line rehearses applying them to a complex you haven't seen, as a quiz, then shows from the driver's seat why the answer is right.
+
+| Finding | Source | Used in |
+|---|---|---|
+| The corner before a long straight matters most: exit speed is carried all the way down it. | Lopez (2001), *Going Faster!*, Bentley Publishers | "Wrong corner prioritised" lines; exit-straight label on every panel |
+| In a combination, compromise the earlier corner to set up the one onto the straight. | Bentley (1998), *Speed Secrets*, Motorbooks | Complexes (S-bend, double apex, chicane, esses, sweeper into hairpin) |
+| Quasi-steady-state lap simulation shows how the line changes lap time. | Brayshaw & Harrison (2005), *Proc. IMechE Part D* 219(6) | Lap-time model |
+| Minimum-time lines trade path length against curvature and can be found numerically. | Kapania, Subosits & Gerdes (2016), *J. Dyn. Sys., Meas., Control* 138(9) | Ideal-line solver |
+| Being tested beats re-studying for long-term retention. | Roediger & Karpicke (2006), *Psychological Science* 17(3) | Quiz format |
+| Feedback after multiple-choice tests stops wrong options being learned as true. | Butler & Roediger (2008), *Memory & Cognition* 36(3) | Reveal + replay after every answer |
+| Comparing contrasting cases helps learners notice the features that matter. | Schwartz & Bransford (1998), *Cognition and Instruction* 16(4) | Six near-identical lines side by side; replay with the ideal as a ghost |
+| Imagery works best from the performer's own viewpoint and in real time. | Holmes & Collins (2001), *J. Appl. Sport Psychol.* 13(1) | In-car replay at real speed |
+
+**Lap-time model** (`components/line-lab.js`). A point mass on a 12 m wide track: speed is limited by lateral grip on the line's own curvature (13.5 m/s²), with a friction ellipse shared between cornering and braking (14 m/s²) or driving (traction 9 m/s², power 330 W/kg), and drag. A forward pass (accelerate) and a backward pass (brake) give the speed everywhere and the time to the end of the exit straight.
+
+**Ideal line.** The line is a cubic B-spline of lateral position with a control point every 7.5 m through the complex, kept 1 m inside each edge. A multi-scale pattern search minimises the time to the end of the straight, then tries each mistake move below on the result and restarts from any that is faster. Every complex is mirrored at random and its radii, angles and straights are jittered, so the ideal is solved fresh each question. A variant where any tested move still beats the "ideal" is thrown away.
+
+**Wrong lines** are built from the ideal so each has one clear fault: **early** or **late turn-in** (that corner's whole lateral profile shifted earlier or later), **narrow entry**, **missed apex** and **narrow exit** (the line pulled towards the middle around that point), and in complexes **wrong corner prioritised** (corner *j*'s own fastest line, optimised for the time to just after it with nothing beyond counting, then the best possible line from there). The level (1-6) sets the time-loss band the wrong lines are tuned into, from 0.35-1.4 s down to 0.05-0.17 s, and options must differ from the ideal and from each other by at least 0.7-0.9 m somewhere. Level moves 2-down / 1-up within a session (~71 % correct) and carries over.
+
+**Replay.** Any of the lines can be driven from the seat (Apex Snap's pseudo-3D renderer, with the car yawed along its own path), next to the top-down view and a speed trace against the ideal. It pauses at each phase, found from the line itself: **braking** (speed peak before the corner), **turn-in** (steering passes 12 % of its peak), **apex** (closest to the inside), **track-out** (back at the outside). The caption gives speed and the gap to the ideal there, and at the faulty phase what went wrong, measured against the ideal ("the apex comes 9 m too soon"). The ideal's notes say where it apexes and, when a corner was sacrificed, by how many km/h.
+
+**Metrics.** **Line level** (primary) = mean level over the second half of the session. **Fastest line found**, **closest call** (median gap to the nearest wrong line on correct answers), **time lost per pick**, **decision time**. Stats show accuracy by complex and how often each kind of wrong line was picked when on offer; in-sim tips LINE_EARLY, LINE_LATE, LINE_WIDTH, LINE_PRIORITY.
+
+**Chain.** Correct answers build the shared chain; the bonus grows with level and pays extra for a quick read (under 5 s). Wrong answers break the chain and show the time they'd have cost.
+
+**Limits.** No weight transfer, yaw inertia, aero, camber or elevation, and grip is the same everywhere. That is enough to rank lines through flat, generic corners and to show where the time goes, not to give the exact line or lap time for a real circuit, where kerbs, bumps and camber move it. Turn-in points from the model can sit further back than a driver would call "turn-in" on corners taken in one long arc.
+
 ## 4. Warm-up and readiness
 Reaction-light drills are a staple of driver warm-ups and fitness programmes and part of a pre-performance routine (Cotterill, 2010, *Int. Rev. Sport Exerc. Psychol.* 3(2)). **Start Lights** uses a random hold so you cannot time the start from rhythm (Niemi & Näätänen, 1981, *Psych. Bull.* 89(1)). Responses under 100 ms count as anticipations, the same limit used in athletics false-start rules (Pain & Hibbs, 2007, *J. Sports Sci.* 25(1)). It also provides a daily readiness baseline: a much slower median than usual is a sign of fatigue.
 
@@ -149,7 +183,7 @@ Rules that keep it from working against the training:
 
 ## 6. Honest limits
 - Generic "brain/vision training" transfers unevenly to on-field performance (Appelbaum & Erickson, 2018, *Int. Rev. Sport Exerc. Psychol.* 11(1)). These drills stay task-specific to give transfer the best chance, but **the real test is your lap times and consistency in the sim.** Track them.
-- Without an eye tracker the app cannot see where you look. It infers gaze from what you could read. A good guesser can inflate scores slightly: 4-choice arrows give 25 % chance, and presses with no target are counted separately.
+- Without an eye tracker the Vision and Mind gaze drills cannot see where you look. It infers gaze from what you could read. A good guesser can inflate scores slightly: 4-choice arrows give 25 % chance, and presses with no target are counted separately.
 - Flash durations are quantised to display frames (16.7 ms at 60 Hz, 8.3 ms at 120 Hz). Compare thresholds on the same display.
 - Pseudo-3D rendering approximates real perspective; very tight corners look more extreme than in a real sim.
 
@@ -157,5 +191,5 @@ Rules that keep it from working against the training:
 - **Objective gaze:** optional webcam eye tracking (e.g. WebGazer.js) to measure gaze lead directly, or Tobii integration.
 - **Head rotation:** Land & Tatler (2001) found head yaw leads into corners. A small local bridge from OpenTrack/SlimeVR (UDP → WebSocket) could train head lead as well.
 - **Real circuits:** import track centre-lines from sim telemetry / track maps so the habit is rehearsed on the circuit you race next.
-- **Imagery:** PETTLEP-structured lap visualisation (Holmes & Collins, 2001, *J. Appl. Sport Psychol.* 13(1)) with reference-point callouts.
+- **Imagery:** Pick the Line's in-car replay is a first step (section 3e). Still open: PETTLEP-structured lap visualisation (Holmes & Collins, 2001, *J. Appl. Sport Psychol.* 13(1)) with reference-point callouts.
 - **Pressure training:** threat-under-load is covered by Eyes Off the Wall (section 3c). Still open: score stakes/time pressure (one-shot qualifying attempts), and a peripheral "call the hazard" response so hazards are acknowledged without being fixated.

@@ -1,4 +1,4 @@
-# iSlopTrain: Vision Trainer (proof of concept)
+# iSlopTrain: sim-racing trainer (proof of concept)
 
 > [!WARNING]
 > ## ⚠️ This project is vibecoded
@@ -19,7 +19,13 @@
 > | AI-dev-C | Mostly AI-written, supervised by a novice developer |
 > | AI-V | Entirely AI-written; support depends on AI |
 
-The first module of a planned suite of sim-racing training tools. It trains the habit of **getting your eyes to the next apex early** and keeping attention wide, using short adaptive drills based on driver eye-tracking research and established motor-learning principles. See [docs/METHODOLOGY.md](docs/METHODOLOGY.md).
+A growing suite of short, adaptive sim-racing training drills, grouped into three tabs:
+
+- **Vision:** getting your eyes to the next apex early and keeping attention wide.
+- **Mind:** holding the apex under threat, recovering from a run of mistakes and reading the racing line.
+- **Reflex:** start reactions and a daily readiness check.
+
+The drills draw on driver eye-tracking research, sport psychology, vehicle-dynamics modelling and established motor-learning principles. More modules are planned. See [docs/METHODOLOGY.md](docs/METHODOLOGY.md).
 
 No dependencies, no build step: plain HTML + Canvas 2D + classic scripts.
 
@@ -35,14 +41,15 @@ then go to http://localhost:8765. Run fullscreen on the monitor you race on and 
 
 ## Drills
 
-| Drill | Trains | Primary metric |
-|---|---|---|
-| **Start Lights** (warm-up) | Alertness, simple visual reaction, no anticipating | Median reaction (ms) |
-| **Two-Point Focus** | Far fixation + peripheral near-field awareness (UFOV-style) | Exposure threshold (ms) |
-| **Apex Snap** (core) | "Clip the apex → eyes to the next apex" reflex at speed, optional peripheral dual task | Flash threshold (ms), Snap score |
-| **Apex Snap: Race Mode** (under load) | The same reflex with traffic (brake lights, car alongside), a relative timing box, dash (shift lights, delta, warnings), engineer radio, spotter calls, optional engine/speech audio. Confirm only for threats (go/no-go) | Load cost (ms), threats caught |
-| **Eyes Off the Wall** (Mind tab) | Holding the apex while a threat on the outside competes for your eyes: walls, wrecks, waved yellows, spinning cars. Threat level adapts between sessions. Optional self-talk comparison | Eyes captured (%), threat cost |
-| **Clean Slate** (Mind tab) | Recovering from a run of errors. Rhythm-game lane: rows of arrows scroll to a hit line on a beat; press the blue arrow's direction (orange = opposite) in the hit window, with a chain multiplier and timing grades. Unannounced bursts (squeeze, rush, clutter, flip, double hit) force real mistakes, then difficulty snaps back so the dip afterwards is yours. Burst and distraction ladders (1-6) adapt between sessions. Optional reset cue | Recovery (rows), error chaining, post-error shift |
+| Drill | Tab | Trains | Primary metric |
+|---|---|---|---|
+| **Start Lights** (warm-up) | Reflex | Alertness, simple visual reaction, no anticipating | Median reaction (ms) |
+| **Two-Point Focus** | Vision | Far fixation + peripheral near-field awareness (UFOV-style) | Exposure threshold (ms) |
+| **Apex Snap** (core) | Vision | "Clip the apex → eyes to the next apex" reflex at speed, optional peripheral dual task | Flash threshold (ms), Snap score |
+| **Apex Snap: Race Mode** (under load) | Vision | The same reflex with traffic (brake lights, car alongside), a relative timing box, dash (shift lights, delta, warnings), engineer radio, spotter calls, optional engine/speech audio. Confirm only for threats (go/no-go) | Load cost (ms), threats caught |
+| **Eyes Off the Wall** | Mind | Holding the apex while a threat on the outside competes for your eyes: walls, wrecks, waved yellows, spinning cars. Threat level adapts between sessions. Optional self-talk comparison | Eyes captured (%), threat cost |
+| **Clean Slate** | Mind | Recovering from a run of errors. Rhythm-game lane: rows of arrows scroll to a hit line on a beat; press the blue arrow's direction (orange = opposite) in the hit window, with a chain multiplier and timing grades. Unannounced bursts (squeeze, rush, clutter, flip, double hit) force real mistakes, then difficulty snaps back so the dip afterwards is yours. Burst and distraction ladders (1-6) adapt between sessions. Optional reset cue | Recovery (rows), error chaining, post-error shift |
+| **Pick the Line** | Mind | Reading the racing line. A corner complex from above with 4 or 6 lines; pick the fastest to the end of the straight. Wrong lines are real mistakes (early / late turn-in, narrow entry, missed apex, narrow exit, the wrong corner prioritised) with their time loss computed by a lap-time model, and they get closer to the ideal as the level rises. After each answer, replay any line from the driver's seat beside the top-down view and a speed trace, paused at braking, turn-in, apex and track-out | Line level, fastest line found (%) |
 
 Circuits are generated fresh each run from a corner vocabulary: kinks, sweepers, tight corners, hairpins, decreasing- and increasing-radius corners, chicanes, esses and double apexes. Each driving drill also has **Track** (Mixed / Technical / Fast) and **Elevation** (Flat / Rolling / Hilly, with blind crests and compressions) settings. The corner types, mixes and elevation profiles are defined in `track.js` (`CORNER_TYPES`, `MIXES`, `ELEVATION`).
 
@@ -62,7 +69,7 @@ Controls: arrows / WASD to answer, Space / Enter to confirm, Esc to pause, **F**
 - **Work on in-sim:** prioritised advice for real driving, generated from your weakest areas, with the evidence behind each item and a button to keep training it. Examples: early-flash misses, weak corner types (hairpins, chicanes, decreasing radius…), left/right asymmetry, high-speed corners, blind crests, tunnel vision, HUD load cost, missed spotter threats, jump starts.
 - **Per-drill deep dive:** primary metric (sessions plus 5-session average, PB marked), small multiples for every other metric, weak-spot breakdowns, and a full session table.
 
-Apex Snap breakdowns: accuracy by flash timing, corner type, left/right, approach speed and blind crest. Eyes Off the Wall: where your eyes were on hazard probes, clean vs hazard corners, accuracy and capture by hazard type, sudden vs already-there hazards, and capture by self-talk cue. Clean Slate: recovery curves (accuracy and speed for the 8 rows after a burst, recent vs earlier sessions), rows to recover by burst type, error rate after a correct answer vs after an error, blue vs orange accuracy, accuracy by distraction type, and reset cue vs none. Two-Point Focus: far vs peripheral, and flag side. Start Lights: reaction-time distribution.
+Apex Snap breakdowns: accuracy by flash timing, corner type, left/right, approach speed and blind crest. Eyes Off the Wall: where your eyes were on hazard probes, clean vs hazard corners, accuracy and capture by hazard type, sudden vs already-there hazards, and capture by self-talk cue. Pick the Line: accuracy by corner complex and which wrong lines you pick most. Clean Slate: recovery curves (accuracy and speed for the 8 rows after a burst, recent vs earlier sessions), rows to recover by burst type, error rate after a correct answer vs after an error, blue vs orange accuracy, accuracy by distraction type, and reset cue vs none. Two-Point Focus: far vs peripheral, and flag side. Start Lights: reaction-time distribution.
 
 Per-trial detail is stored for the latest 50 sessions of each drill, and summaries for the latest 300. Drills plug into the stats page through an optional `analyze(results, A)` on their definition (see `js/core/analysis.js`).
 
@@ -86,6 +93,7 @@ js/render/track.js    procedural circuit + speed profile + racing line + pseudo-
 js/components/race-layer.js  reusable race clutter: traffic, relative box, dash, radio/spotter, audio
 js/components/hazard-layer.js  outside-of-corner threats with a decoy board (walls, wrecks, yellows, spins), threat levels
 js/components/juice.js  shared game feel: chain tiers, score, grades, tones, callouts
+js/components/line-lab.js  corner complexes, lap-time model, minimum-time line solver, flawed lines, top-down drawing
 js/drills/*.js        one file per drill
 js/sessions.js        guided session playlists
 js/app.js             menu, settings, controls, data, results (all generated from definitions)
