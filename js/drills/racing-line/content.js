@@ -6,7 +6,6 @@
  * Files in js/drills/racing-line/ load in this order and share the drill's
  * private namespace IST.RacingLine:
  *   content.js  this file
- *   ui.js       canvas widgets (panel, outline, button, wrapped text)
  *   sketch.js   your strokes -> a drawn line, and whether it is complete
  *   replay.js   replay timeline: stepping through braking, turn-in, apex, track-out
  *   scene.js    top-down map, in-car view, speed trace
@@ -19,13 +18,16 @@
   const LL = IST.LineLab;
   const DS = LL.DS;
   const RL = (IST.RacingLine = {});
-  const COL = { ideal: '#5fd38a', pick: '#ff8a4d', quiz: '#f6d98f', dim: '#8a93a6', text: '#e8ecf2', bg: '#0c100e', panel: '#131915', panelHi: '#1a231d', bad: '#ff6b5e', ink: '#ffffff' };
+  // the app's palette (IST.Theme), plus what each colour means in this drill; the two
+  // line colours are stronger than the pastels so they read on the map and on the road
+  const TH = IST.Theme;
+  const COL = Object.assign({}, TH, { ideal: '#5fd38a', pick: '#ff8a4d', quiz: TH.gold, bad: '#ff6b5e', drawn: '#ffffff', map: TH.deep });
   const PH = {
-    brake: { label: 'Braking', short: 'B', color: '#ff6b5e' },
-    turnin: { label: 'Turn-in', short: 'T', color: '#f6d98f' },
+    brake: { label: 'Braking', short: 'B', color: COL.bad },
+    turnin: { label: 'Turn-in', short: 'T', color: TH.butter },
     apex: { label: 'Apex', short: 'A', color: '#6fd3ff' },
     exit: { label: 'Track-out', short: 'X', color: '#c69bff' },
-    end: { label: 'End of the straight', short: '■', color: '#e8ecf2' },
+    end: { label: 'End of the straight', short: '■', color: TH.text },
   };
   const HOLD = 2000; // ms paused at each phase in the replay
   const BUDGET = 7; // ms per frame spent on background work
@@ -59,8 +61,7 @@
     priority: 'In a complex, look past it first: the corner that leads onto the straight gets priority, and the one before is compromised for it.',
   };
 
-  const kmh = (v) => Math.round(v * 3.6);
-  const sec = (t) => (t >= 0 ? '+' : '−') + Math.abs(t).toFixed(2) + ' s';
+  const kmh = IST.util.kmh, sec = IST.util.signedSec;
   const T = (ci) => 'T' + (ci + 1);
 
   // ------------------------------------------------------------ questions

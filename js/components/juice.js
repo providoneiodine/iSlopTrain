@@ -2,7 +2,7 @@
  * Juice: shared game-feel layer (chain, multiplier tiers, score, timing
  * grades, tones, callouts, chain-break and miss feedback).
  *
- *   const J = new IST.Juice({ history, live, penalty, sound });
+ *   const J = new IST.Juice({ history, live, sound });
  *   J.hit({ base, bonus, label, color })   -> points awarded
  *   J.miss({ label })                      -> breaks the chain
  *   J.bonus(pts, label)                    -> side points (e.g. marshal light)
@@ -19,14 +19,14 @@
  */
 (function () {
   'use strict';
-  const U = IST.util, Sym = IST.Symbols;
+  const U = IST.util, Sym = IST.Symbols, TH = IST.Theme;
 
   // Chain tiers: the multiplier and colour climb as the streak grows.
   const TIERS = [
     { at: 0, m: 1, c: '#e8ecf2' },
     { at: 5, m: 2, c: '#9fe3b0' },
     { at: 10, m: 3, c: '#9fcbef' },
-    { at: 20, m: 4, c: '#f6d98f' },
+    { at: 20, m: 4, c: TH.gold },
     { at: 35, m: 5, c: '#ffb26b' },
     { at: 50, m: 6, c: '#ff7ad9' },
     { at: 75, m: 8, c: '#c69bff' },
@@ -47,7 +47,7 @@
   }
 
   /** 'full' | 'silent' (effects, no sound) | 'off' (no per-trial effects) */
-  const mode = () => (IST.Storage ? IST.Storage.getPref('juice', 'full') : 'full');
+  const mode = () => IST.Storage.getPref('juice', 'full');
 
   // ------------------------------------------------------------------ audio
   function makeAudio() {
@@ -162,7 +162,6 @@
       const m = mode();
       this.live = o.live !== false && m !== 'off';
       this.audio = this.live && m === 'full' && o.sound !== false ? makeAudio() : null;
-      this.penalty = !!o.penalty;
       this.allTimeBest = (o.history || []).reduce((b, r) => Math.max(b, (r.summary && r.summary.bestChain) || 0), 0);
       this.chain = 0;
       this.best = 0;
@@ -196,7 +195,7 @@
       } else if (this.audio) this.audio.ok(this.chain, !!o.label);
       if (!this.newBestShown && this.allTimeBest >= 5 && this.chain === this.allTimeBest + 1) {
         this.newBestShown = true;
-        this.callout('NEW BEST CHAIN', '#f6d98f');
+        this.callout('NEW BEST CHAIN', TH.gold);
         if (this.audio) this.audio.best();
       }
       return pts;
@@ -205,26 +204,21 @@
     miss(o) {
       o = o || {};
       const t = performance.now();
-      if (this.live && this.chain >= 5) this.fx.push({ k: 'call', t0: t, dur: 900, text: 'CHAIN BROKEN · ' + this.chain, color: '#ff453a', small: true });
+      if (this.live && this.chain >= 5) this.fx.push({ k: 'call', t0: t, dur: 900, text: 'CHAIN BROKEN · ' + this.chain, color: TH.miss, small: true });
       this.brokenChain = this.chain;
       this.breakT = t;
       this.chain = 0;
       this.errRun++;
-      let pen = 0;
-      if (this.penalty) {
-        pen = Math.min(160, 20 * Math.pow(2, this.errRun - 1));
-        this.score -= pen;
-      }
       if (!this.live) return;
       this.missT = t;
-      if (o.label || pen) this.fx.push({ k: 'float', t0: t, dur: 900, text: o.label || '', sub: pen ? '−' + pen : null, color: '#ff6b5e' });
-      if (this.audio) this.audio.err(this.errRun, !this.penalty);
+      if (o.label) this.fx.push({ k: 'float', t0: t, dur: 900, text: o.label, color: '#ff6b5e' });
+      if (this.audio) this.audio.err(this.errRun, true);
     }
 
     bonus(pts, label, color) {
       this.score += pts;
       if (!this.live) return;
-      this.fx.push({ k: 'float', t0: performance.now(), dur: 900, text: '+' + pts, sub: label || null, color: color || '#f6d98f' });
+      this.fx.push({ k: 'float', t0: performance.now(), dur: 900, text: '+' + pts, sub: label || null, color: color || TH.gold });
       if (this.audio) this.audio.coin();
     }
 
@@ -235,7 +229,7 @@
 
     callout(text, color, sub) {
       if (!this.live) return;
-      this.fx.push({ k: 'call', t0: performance.now(), dur: 1400, text, sub: sub || null, color: color || '#f6d98f' });
+      this.fx.push({ k: 'call', t0: performance.now(), dur: 1400, text, sub: sub || null, color: color || TH.gold });
     }
 
     summary() {
@@ -281,7 +275,7 @@
       g.restore();
       const bp = (t - this.breakT) / 650;
       if (bp < 1 && this.brokenChain >= 3) {
-        Sym.text(g, String(this.brokenChain), cx, cy + bp * size, { align: 'center', baseline: 'middle', size: size * (1 - bp * 0.3), weight: 900, color: '#ff453a', alpha: 1 - bp, shadow: false });
+        Sym.text(g, String(this.brokenChain), cx, cy + bp * size, { align: 'center', baseline: 'middle', size: size * (1 - bp * 0.3), weight: 900, color: TH.miss, alpha: 1 - bp, shadow: false });
       }
       const ly = top + size + 10;
       Sym.text(g, 'CHAIN ×' + T.m, cx, ly, { align: 'center', size: 11, weight: 820, color: ti ? T.c : '#a1a9b7', alpha: 0.9 });

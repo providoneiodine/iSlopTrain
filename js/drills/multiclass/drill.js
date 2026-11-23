@@ -35,7 +35,7 @@
  */
 (function () {
   'use strict';
-  const U = IST.util, Sym = IST.Symbols, TL = IST.TrafficLab, MC = IST.Multiclass;
+  const U = IST.util, Sym = IST.Symbols, UI = IST.CanvasUI, TL = IST.TrafficLab, MC = IST.Multiclass;
   const MAX_LEVEL = TL.MAX_LEVEL;
   const { COL, BUDGET, REVEAL, PREF, RULE_IDS, shuffle, optText, GRADES, gradeOf, tagOf, explain } = MC;
 
@@ -97,11 +97,7 @@
 
     levelFor(S, history) {
       if (S.level && S.level !== 'auto') return U.clamp(Number(S.level) || 1, 1, MAX_LEVEL);
-      for (let i = history.length - 1; i >= 0; i--) {
-        const s = history[i].summary;
-        if (s && U.isNum(s.nextLevel)) return s.nextLevel;
-      }
-      return 1;
+      return IST.Analysis.latest(history, 'nextLevel') || 1;
     },
 
     coach: MC.coach,
@@ -118,12 +114,7 @@
       const limitFor = (q) => (q && q.timeLimit ? (timeLimit ? Math.min(timeLimit, q.timeLimit) : q.timeLimit) : timeLimit);
       const J = new IST.Juice({ history: ctx.history });
       const canvas = document.getElementById('stage');
-      let lastRules = 'hold';
-      try {
-        lastRules = IST.Storage.getPref(PREF, 'hold');
-      } catch (e) {
-        /* default */
-      }
+      const lastRules = IST.Storage.getPref(PREF, 'hold');
 
       const st = {
         mode: S.rules && S.rules !== 'ask' ? 'loading' : 'rules',
@@ -199,11 +190,7 @@
 
       function chooseRules(i) {
         st.rules = RULE_IDS[i];
-        try {
-          IST.Storage.setPref(PREF, st.rules);
-        } catch (e) {
-          /* not saved */
-        }
+        IST.Storage.setPref(PREF, st.rules);
         st.mode = 'loading';
       }
 
@@ -216,20 +203,13 @@
         st.pick = i;
         st.mode = 'reveal';
         st.tMode = ctx.clock();
+        const count = IST.Analysis.count;
         q.opts.forEach((x) => {
-          if (x.correct) return;
-          const e = (lure[x.id] = lure[x.id] || [0, 0]);
-          e[0]++;
-          if (x === o) e[1]++;
+          if (!x.correct) count(lure, x.id, x === o); // how often each wrong option was the one picked
         });
-        const bump = (t, k) => {
-          const e = (t[k] = t[k] || [0, 0]);
-          e[0]++;
-          if (good) e[1]++;
-        };
-        bump(bySit, q.sit);
-        bump(byRole, q.role);
-        bump(byRules, q.rules);
+        count(bySit, q.sit, good);
+        count(byRole, q.role, good);
+        count(byRules, q.rules, good);
         const risky = !!(o && (o.risk.level !== 'safe' || o.offline || o.legal === false));
         rows.push({
           scen: q.spec.id, variant: q.variant, role: q.role, rules: q.rules, sit: q.sit, level: q.level, correct: correct ? 1 : 0, good: good ? 1 : 0, credit,
@@ -265,7 +245,6 @@
         else st.mode = 'loading';
       }
 
-
       // ------------------------------------------------------------ replay
       function startReplay(oi) {
         st.mode = 'replay';
@@ -284,8 +263,9 @@
       const gridCols = () => screens.quizLayout(ctx.W, ctx.H).cols;
       function onAct(a) {
         if (st.mode === 'rules') {
-          if (a === 'left' || a === 'up') st.ruleSel = (st.ruleSel + 2) % 3;
-          else if (a === 'right' || a === 'down') st.ruleSel = (st.ruleSel + 1) % 3;
+          const n = RULE_IDS.length;
+          if (a === 'left' || a === 'up') st.ruleSel = (st.ruleSel + n - 1) % n;
+          else if (a === 'right' || a === 'down') st.ruleSel = (st.ruleSel + 1) % n;
           else if (a === 'confirm') chooseRules(st.ruleSel);
         } else if (st.mode === 'question') {
           const n = nOpts(), cols = gridCols();
@@ -310,7 +290,7 @@
       }
 
       const ptr = (e) => [e.offsetX, e.offsetY];
-      const hit = (x, y) => st.buttons.find((b) => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h);
+      const hit = (x, y) => UI.hit(st.buttons, x, y);
       function onMove(e) {
         const [x, y] = ptr(e);
         const b = hit(x, y);
@@ -362,12 +342,7 @@
 
         render(g, W, H, ts) {
           st.buttons = [];
-          g.fillStyle = COL.bg;
-          g.fillRect(0, 0, W, H);
-          // the page's faint 32 px blueprint grid
-          g.fillStyle = 'rgba(255,255,255,0.025)';
-          for (let gx = 0; gx < W; gx += 32) g.fillRect(gx, 0, 1, H);
-          for (let gy = 0; gy < H; gy += 32) g.fillRect(0, gy, W, 1);
+          UI.backdrop(g, W, H);
           if (st.mode === 'rules') screens.renderRules(g, W, H);
           else if (st.mode === 'loading' || !st.q) {
             screens.header(g, W, 'Class Traffic', null);

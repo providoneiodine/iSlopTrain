@@ -1,68 +1,12 @@
 /*
- * Class Traffic: canvas widgets in the main page's theme
- * (css/style.css): square slate blocks, 1 px border, hard offset shadow,
- * pastel meaning, caps labels. Stateless; button() records its hit box in
- * the buttons array it is given.
+ * Class Traffic: the widgets only this drill uses, on top of the shared
+ * ones (IST.CanvasUI): the verdict glyphs and the livery chip that carries
+ * them. MC.ui is the shared set plus these.
  */
 (function () {
   'use strict';
-  const Sym = IST.Symbols, MC = IST.Multiclass, COL = MC.COL;
-
-  function wrapText(g, text, x, y, maxW, size, lh, color, maxLines, weight) {
-    g.font = (weight || 520) + ' ' + size + 'px ' + Sym.FONT;
-    const words = (text || '').split(' ');
-    let line = '', n = 0;
-    for (let i = 0; i < words.length; i++) {
-      const t = line ? line + ' ' + words[i] : words[i];
-      if (g.measureText(t).width > maxW && line) {
-        Sym.text(g, line, x, y + n * lh, { size, weight: weight || 520, color, shadow: false });
-        line = words[i];
-        if (++n >= maxLines) return n;
-      } else line = t;
-    }
-    if (line) Sym.text(g, line, x, y + n * lh, { size, weight: weight || 520, color, shadow: false });
-    return n + 1;
-  }
-
-  function box(g, x, y, w, h, o) {
-    o = o || {};
-    const d = o.shadow == null ? 4 : o.shadow;
-    if (d) {
-      g.fillStyle = 'rgba(12,14,18,0.5)';
-      g.fillRect(x + d, y + d, w, h);
-    }
-    g.fillStyle = o.fill || COL.panel;
-    g.fillRect(x, y, w, h);
-    g.lineWidth = 1;
-    g.strokeStyle = o.line || COL.line;
-    g.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
-    if (o.accent) {
-      g.fillStyle = o.accent;
-      if (o.side) g.fillRect(x, y, o.side, h);
-      else g.fillRect(x, y, w, o.accentH || 4);
-    }
-  }
-  const spaced = (g, px) => {
-    if ('letterSpacing' in g) g.letterSpacing = px + 'px';
-  };
-  /** Uppercase, letter-spaced label (the page's h2 / .tag type). Returns its width. */
-  function caps(g, text, x, y, o) {
-    o = o || {};
-    const t = String(text).toUpperCase(), size = o.size || 10.5, weight = o.weight || 720;
-    spaced(g, o.spacing == null ? size * 0.13 : o.spacing);
-    g.font = weight + ' ' + size + 'px ' + Sym.FONT;
-    const w = g.measureText(t).width;
-    Sym.text(g, t, x, y, Object.assign({ size, weight, shadow: false }, o));
-    spaced(g, 0);
-    return w;
-  }
-  function capsWidth(g, text, size, weight) {
-    spaced(g, size * 0.13);
-    g.font = (weight || 720) + ' ' + size + 'px ' + Sym.FONT;
-    const w = g.measureText(String(text).toUpperCase()).width;
-    spaced(g, 0);
-    return w;
-  }
+  const UI = IST.CanvasUI, MC = IST.Multiclass, COL = MC.COL;
+  const { caps, capsWidth } = UI;
 
   /** Small line icons drawn in the chip's ink cell, one per verdict (and role). */
   function glyph(g, kind, cx, cy, r, color) {
@@ -197,42 +141,5 @@
     return w;
   }
 
-  /** Key-cap number: the key you'd press, raised when it's the one selected. */
-  function keycap(g, n, x, y, s, on) {
-    g.fillStyle = on ? '#b89a52' : '#2a2f37';
-    g.fillRect(x, y + 3, s, s);
-    g.fillStyle = on ? COL.quiz : COL.panel2;
-    g.fillRect(x, y, s, s);
-    g.strokeStyle = on ? COL.quiz : COL.lineStrong;
-    g.lineWidth = 1;
-    g.strokeRect(x + 0.5, y + 0.5, s - 1, s - 1);
-    Sym.text(g, String(n), x + s / 2, y + s / 2 + 1, { align: 'center', baseline: 'middle', size: Math.round(s * 0.52), weight: 820, color: on ? COL.ink : COL.text, shadow: false });
-  }
-
-
-  function button(g, buttons, x, y, label, act, o) {
-    o = o || {};
-    g.font = '720 13px ' + Sym.FONT;
-    const w = Math.max(o.min || 0, g.measureText(label).width + 26), h = 30;
-    const x0 = x - (o.right ? w : 0);
-    box(g, x0, y, w, h, { fill: o.primary ? COL.peach : COL.panel2, line: o.primary ? COL.peach : COL.lineStrong, shadow: 2 });
-    Sym.text(g, label, x0 + w / 2, y + h / 2 + 0.5, { align: 'center', baseline: 'middle', size: 13, weight: 720, color: o.primary ? COL.ink : COL.text, shadow: false });
-    buttons.push({ x: x0, y, w, h, act });
-    return w;
-  }
-
-  function countLines(g, text, maxW, size) {
-    g.font = '420 ' + size + 'px ' + Sym.FONT;
-    let line = '', n = 1;
-    for (const word of (text || '').split(' ')) {
-      const t = line ? line + ' ' + word : word;
-      if (g.measureText(t).width > maxW && line) {
-        n++;
-        line = word;
-      } else line = t;
-    }
-    return n;
-  }
-
-  MC.ui = { wrapText, box, caps, capsWidth, glyph, chipWidth, chip, keycap, button, countLines };
+  MC.ui = Object.assign({}, UI, { glyph, chipWidth, chip });
 })();

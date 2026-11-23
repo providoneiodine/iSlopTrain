@@ -43,7 +43,7 @@
   const analyze = function (results, A) {
     const recent = results.slice(-10);
     const out = { breakdowns: [], notes: [], insim: [] };
-    const sub = 'Last ' + recent.length + ' session' + (recent.length === 1 ? '' : 's');
+    const sub = A.lastN(recent);
     const bySit = A.sumTallies(recent, 'bySit');
     if (Object.keys(bySit).length) out.breakdowns.push({ title: 'Responsible calls, by situation', subtitle: sub, pct: true, minN: 3, nLabel: 'questions', items: A.items(bySit, SIT_ORDER, SITS) });
     const byRules = A.sumTallies(recent, 'byRules');

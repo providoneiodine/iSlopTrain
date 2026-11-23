@@ -16,7 +16,7 @@
   const U = IST.util, Sym = IST.Symbols, LL = IST.LineLab, TL = IST.TrafficLab, MC = IST.Multiclass;
   const DS = LL.DS, CARLEN = TL.CARLEN, CARW = TL.CARW;
   const { COL, LEADUP, kmh } = MC;
-  const { box, caps } = MC.ui;
+  const { box, pane, caps } = MC.ui;
 
   MC.createScene = function (env) {
     const { S, VIEW, SEAT, cockpit } = env;
@@ -67,11 +67,7 @@
 
     function renderMap(g, q, x, y, w, h, opts) {
       const geo = q.geo;
-      box(g, x, y, w, h, { fill: COL.deep });
-      g.save();
-      g.beginPath();
-      g.rect(x + 1, y + 1, w - 2, h - 2);
-      g.clip();
+      pane(g, x, y, w, h, { fill: COL.deep });
       g.translate(x, y);
       const win = mapWindow(q);
       const V = viewFor(q, 'map', w, h, win[0], win[1]);
@@ -296,11 +292,7 @@
       const lat = (s) => TL.latAt(mine.plan, s);
       const dn = (lat(mine.s + 3) - lat(Math.max(0, mine.s - 3))) / 6;
       const cam = { pos: mine.s, x: mine.l, heading: 0, yaw: Math.atan(dn) };
-      box(g, x, y, w, h, { fill: COL.deep });
-      g.save();
-      g.beginPath();
-      g.rect(x + 1, y + 1, w - 2, h - 2);
-      g.clip();
+      pane(g, x, y, w, h, { fill: COL.deep });
       g.translate(x, y);
       IST.View.apply(R, w, h, VIEW);
       R.prepare(w, h, cam);

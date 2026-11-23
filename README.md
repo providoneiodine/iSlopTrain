@@ -99,6 +99,7 @@ js/ui/charts.js       dependency-free SVG charts (line, bars, histogram, calenda
 js/ui/stats.js        Stats page
 js/ui/view-settings.js  View screen (in-car view setup with live preview)
 js/render/symbols.js  arrows, pattern masks, boards, flags, HUD text
+js/render/canvas-ui.js  the palette (IST.Theme) and page-style canvas widgets (IST.CanvasUI)
 js/render/track.js    procedural circuit + speed profile + racing line + pseudo-3D renderer (themes)
 js/render/cockpit.js  vector cockpit drawn over the in-car view
 js/render/view.js     shared in-car view settings (FOV, horizon, seat, cockpit)

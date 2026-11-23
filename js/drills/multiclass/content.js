@@ -6,7 +6,7 @@
  * Files in js/drills/multiclass/ load in this order and share the drill's
  * private namespace IST.Multiclass:
  *   content.js  this file
- *   ui.js       canvas widgets in the page's theme (box, caps, chip, keycap, button)
+ *   ui.js       this drill's own widgets (verdict glyph and chip) on top of IST.CanvasUI
  *   replay.js   replay timeline: events, interpolation, stepping
  *   scene.js    the top-down map, the in-car view (mirror, relative box) and the approach strip
  *   screens.js  rule picker, quiz and replay screens
@@ -17,14 +17,12 @@
   'use strict';
   const TL = IST.TrafficLab;
   const MC = (IST.Multiclass = {});
-  // the main page's palette (css/style.css :root): slate structure, pastel meaning
-  const COL = {
-    text: '#eef0f4', text2: '#c9cfd9', dim: '#a1a9b7', ink: '#1f232a',
-    bg: '#272c34', deep: '#1f232a', panel: '#323842', panel2: '#3c434f', line: '#4a525f', lineStrong: '#5d6675',
-    quiz: '#f6d98f', mint: '#a6e3c4', lilac: '#c4b4ef', peach: '#f5b09a',
-    fast: '#9fcbef', slow: '#f5b09a', good: '#a6e3c4', warn: '#f6d98f', bad: '#f09ca6',
+  // the app's palette (IST.Theme), plus what each colour means in this drill
+  const TH = IST.Theme;
+  const COL = Object.assign({}, TH, {
+    quiz: TH.gold, fast: TH.sky, slow: TH.peach, good: TH.mint, warn: TH.butter, bad: TH.rose,
     gt2: '#e7b8d8', limp: '#b9bfca', // a second GT, and a GT limping to the pits
-  };
+  });
   const BUDGET = 8; // ms per frame spent building the next question
   const LEADUP = 2.2, DECIDE_HOLD = 1.6; // s of looped run-up to the decision frame, and the hold on it
   const HOLD = 1900; // ms paused at each event in the replay
@@ -33,17 +31,17 @@
   const RULE_IDS = ['hold', 'yield', 'pointby'];
 
   const EV = {
-    close: { label: 'Closing', color: '#c4b4ef' },
-    brake: { label: 'Braking', color: '#f5b09a' },
-    turnin: { label: 'GT turns in', color: '#f6d98f' },
-    apex: { label: 'Apex', color: '#9fcbef' },
-    pass: { label: 'Pass complete', color: '#a6e3c4' },
-    contact: { label: 'Contact', color: '#f09ca6' },
-    squeeze: { label: 'Squeezed', color: '#f6d98f' },
-    cut: { label: 'Cut across', color: '#f6d98f' },
-    hard: { label: 'Hard braking', color: '#f6d98f' },
-    exit: { label: 'Track-out', color: '#c4b4ef' },
-    end: { label: 'End of the straight', color: '#eef0f4' },
+    close: { label: 'Closing', color: TH.lilac },
+    brake: { label: 'Braking', color: TH.peach },
+    turnin: { label: 'GT turns in', color: TH.butter },
+    apex: { label: 'Apex', color: TH.sky },
+    pass: { label: 'Pass complete', color: TH.mint },
+    contact: { label: 'Contact', color: TH.rose },
+    squeeze: { label: 'Squeezed', color: TH.butter },
+    cut: { label: 'Cut across', color: TH.butter },
+    hard: { label: 'Hard braking', color: TH.butter },
+    exit: { label: 'Track-out', color: TH.lilac },
+    end: { label: 'End of the straight', color: TH.text },
   };
   const PRIO = { contact: 9, squeeze: 8, cut: 8, hard: 7, pass: 6, turnin: 5, brake: 4, apex: 3, close: 2, exit: 2, end: 10 };
 
@@ -70,8 +68,7 @@
   };
   const OPT_ORDER = TL.FAST.concat(TL.SLOW, ['overtake', 'after', 'brakeMove']);
 
-  const kmh = (v) => Math.round(v * 3.6);
-  const sec = (t) => (t >= 0 ? '+' : '−') + Math.abs(t).toFixed(2) + ' s';
+  const kmh = IST.util.kmh, sec = IST.util.signedSec;
   const m1 = (x) => (Math.abs(x) < 9.95 ? Math.abs(x).toFixed(1) : String(Math.round(Math.abs(x))));
   const r10 = (x) => Math.round(x / 10) * 10;
 
@@ -178,7 +175,6 @@
     return { call, tiles: tiles.slice(0, 4), late: q.variant === 'late' };
   }
 
-  /** Short verdict for a card, and its colour. */
   /*
    * Grades. The best call (fastest for you, no risk, allowed) gets full credit; a safe,
    * allowed answer close behind it still earns most of it, a slower safe one some.
@@ -201,6 +197,7 @@
     return o.cost <= CLOSE && o.id !== 'defend' ? 'close' : 'safe';
   }
 
+  /** Short verdict for a card, its colour and its glyph. */
   function tagOf(o) {
     if (o.correct) return { text: 'Responsible', color: COL.good, kind: 'ok' };
     if (o.grade === 'close') return { text: 'Good call ' + sec(o.cost), color: COL.good, kind: 'near' };

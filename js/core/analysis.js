@@ -89,7 +89,38 @@
     }
     return out;
   };
+  /** Count one more in a tally's bucket ([n, hits]), and a hit if it was one. */
+  A.count = function (tally, key, hit) {
+    const e = (tally[key] = tally[key] || [0, 0]);
+    e[0]++;
+    if (hit) e[1]++;
+  };
+  /** Tally rows into buckets: { key: [n, hits] }. Rows whose key is null are left out. */
+  A.tally = function (rows, keyFn, hitFn) {
+    const out = {};
+    for (const r of rows) {
+      const k = keyFn(r);
+      if (k != null) A.count(out, k, hitFn(r));
+    }
+    return out;
+  };
   A.total = (tally) => Object.values(tally).reduce((a, e) => [a[0] + e[0], a[1] + e[1]], [0, 0]);
+
+  /**
+   * The newest session's value for a summary key (the first of `keys` it has, as a
+   * positive number): where a level or threshold carries over from, e.g.
+   * A.latest(history, 'nextLevel', 'level'). null if no session has one.
+   */
+  A.latest = function (results, ...keys) {
+    for (let i = results.length - 1; i >= 0; i--) {
+      const s = results[i].summary || {};
+      const k = keys.find((key) => U.isNum(s[key]) && s[key] > 0);
+      if (k) return s[k];
+    }
+    return null;
+  };
+  /** Best value of a summary key across sessions, or null. */
+  A.best = (results, key, better) => A.pb(A.values(results, key), better).value;
 
   A.rolling = function (values, w) {
     const out = [];
@@ -140,6 +171,8 @@
     const d = new Date(t);
     return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   };
+  /** Breakdown subtitle: how many sessions it covers. */
+  A.lastN = (results) => 'Last ' + results.length + ' session' + (results.length === 1 ? '' : 's');
   A.shortDate = (t) => new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
 
   /** Bucket list -> breakdown items; weakest bucket with enough data gets a tag. */

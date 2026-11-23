@@ -50,6 +50,9 @@
     return Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
   };
 
+  U.kmh = (v) => Math.round(v * 3.6); // m/s -> km/h, for display
+  U.signedSec = (t) => (t >= 0 ? '+' : '−') + Math.abs(t).toFixed(2) + ' s';
+
   /** Tiny hyperscript DOM builder: h('div', {class:'x', onclick: fn}, 'text', child) */
   U.h = function (tag, attrs) {
     const el = document.createElement(tag);

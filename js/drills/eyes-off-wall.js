@@ -86,14 +86,7 @@
     /** Threat level for a new run: fixed by setting, or the last run's recommendation. */
     levelFor(S, history) {
       if (S.threat && S.threat !== 'auto') return U.clamp(Number(S.threat) || 1, 1, HL.MAX_LEVEL);
-      const last = (hist) => {
-        for (let i = hist.length - 1; i >= 0; i--) {
-          const s = hist[i].summary;
-          if (s && U.isNum(s.nextLevel)) return s.nextLevel;
-          if (s && U.isNum(s.level)) return s.level;
-        }
-        return null;
-      };
+      const last = (hist) => IST.Analysis.latest(hist, 'nextLevel', 'level');
       // a first Call the Hazard run starts at the standard drill's level
       const lv = last(history) || (this.callMode ? last(IST.Storage.getResults('eyes-off-wall')) : null);
       return lv || 1;
@@ -107,16 +100,7 @@
       const count = (arr, o) => arr.filter((i) => H[i].outcome === o).length;
       const acc = (arr) => (arr.length ? arr.filter((i) => T[i].correct).length / arr.length : null);
       const capOf = (arr) => corrected(count(arr, 'hazard'), count(arr, 'other'), arr.length);
-      const tally = (arr, keyFn, hitFn) => {
-        const o = {};
-        for (const i of arr) {
-          const k = keyFn(i);
-          const e = (o[k] = o[k] || [0, 0]);
-          e[0]++;
-          if (hitFn(i)) e[1]++;
-        }
-        return o;
-      };
+      const tally = IST.Analysis.tally;
       const isHit = (i) => T[i].correct, isCap = (i) => H[i].outcome === 'hazard';
 
       const nP = probes.length;
@@ -197,7 +181,7 @@
     analyze(results, A) {
       const recent = results.slice(-10);
       const out = { breakdowns: [], notes: [], insim: [] };
-      const name = this.name, sub = 'Last ' + recent.length + ' session' + (recent.length === 1 ? '' : 's');
+      const name = this.name, sub = A.lastN(recent);
       const pc = (x) => Math.round(x * 100) + '%';
 
       // where the eyes were on probes
@@ -323,7 +307,7 @@
     analyze(results, A) {
       const out = DEF.analyze.call(this, results, A);
       const recent = results.slice(-10);
-      const sub = 'Last ' + recent.length + ' session' + (recent.length === 1 ? '' : 's');
+      const sub = A.lastN(recent);
       const pc = (x) => Math.round(x * 100) + '%';
       const gr = { seen: 0, looked: 0, missed: 0, missedCap: 0 };
       for (const r of recent) {

@@ -9,7 +9,7 @@
  */
 (function () {
   'use strict';
-  const U = IST.util, Sym = IST.Symbols;
+  const U = IST.util, Sym = IST.Symbols, TH = IST.Theme;
   const BOARD = IST.View.BOARD; // board size, kerb position and visibility rule shared with Apex Snap
   const BAND = 0.15; // the board stays a little more central than in Apex Snap, leaving room for flags on both sides
   const SCENES_PER_FRAME = 6; // scene picks tried per frame before trying again next frame
@@ -72,7 +72,7 @@
       if (c == null || p == null) return out;
       const n = recent.reduce((s, r) => s + ((r.summary && r.summary.trials) || 0), 0);
       const side = A.sumTallies(recent, 'byFlagSide');
-      const sub = 'Last ' + recent.length + ' session' + (recent.length === 1 ? '' : 's');
+      const sub = A.lastN(recent);
       out.breakdowns.push(
         { title: 'Far vs peripheral', subtitle: sub, items: [{ label: 'Apex symbol', value: c, n }, { label: 'Flag side', value: p, n }], pct: true },
         { title: 'Flag side', subtitle: sub, items: A.items(side, ['L', 'R'], { L: 'Left', R: 'Right' }), pct: true }
@@ -97,23 +97,15 @@
       const R = new IST.TrackRenderer(track, { theme: S.style, decor: false });
       const V = IST.View.get(), SEAT = IST.View.seat(V), cockpit = S.cockpit !== false ? IST.View.cockpit(V, S.style) : null;
       const th = R.theme, HW = track.HALF_W;
-      let start = S.startExposure;
-      if (S.carryOver) {
-        for (let i = ctx.history.length - 1; i >= 0; i--) {
-          const t = ctx.history[i].summary && ctx.history[i].summary.threshold;
-          if (t > 0) {
-            start = U.clamp(t * 1.5, 50, 1000);
-            break;
-          }
-        }
-      }
+      const lastThr = S.carryOver ? IST.Analysis.latest(ctx.history, 'threshold') : null;
+      const start = lastThr ? U.clamp(lastThr * 1.5, 50, 1000) : S.startExposure;
       const stair = new IST.Staircase({ start, min: 17, max: 1000, factor: 1.3, nDown: 2 });
       const NDIST = { none: 0, low: 3, high: 6 }[S.distractors] || 0;
       const trials = [];
       let tr = null, early = 0, lastTs = performance.now(), noScene = 0;
       // game feel: chain on "both right"; silent under "summary only" feedback
       const J = new IST.Juice({ history: ctx.history, live: S.feedback === 'every' });
-      const bestThr = ctx.history.reduce((b, r) => (r.summary && r.summary.threshold > 0 ? Math.min(b, r.summary.threshold) : b), Infinity);
+      const bestThr = IST.Analysis.best(ctx.history, 'threshold', 'lower');
       let pbPace = false;
 
       function pickScene(W, H) {
@@ -133,11 +125,12 @@
         return null; // no readable scene: never run a trial on a board you can't see
       }
 
+      const flagSize = (pr) => U.clamp(FLAG_M * pr.s, ctx.W * 0.02, ctx.W * 0.05); // cloth width, px
       // flag geometry at a trackside spot: ground point, cloth centre and size (px); null if off screen
       function flagAt(pos, x, W, H) {
         const pr = R.project(pos, x, 0);
         if (!pr) return null;
-        const size = U.clamp(FLAG_M * pr.s, W * 0.02, W * 0.05);
+        const size = flagSize(pr);
         const cy = pr.y - size * 1.25; // cloth on top of a pole 1.6 cloths tall
         if (pr.y > pr.clip + 0.5 || pr.x < size || pr.x > W - size || cy - size < H * 0.08 || pr.y > H) return null;
         return { pos, x, gx: pr.x, gy: pr.y, cx: pr.x + size * 0.5, cy, size };
@@ -218,9 +211,9 @@
           const bonus = U.clamp(Math.round((350 - tr.exposure) / 25), 0, 12) + tr.dist.length;
           J.hit({ bonus, label: tr.exposure < 90 ? 'ELITE' : tr.exposure < 160 ? 'SHARP' : null });
         } else J.miss({ label: timeout ? 'TOO SLOW' : !okC && !okP ? 'BOTH MISSED' : !okC ? 'APEX MISSED' : 'FLAG MISSED' });
-        if (!pbPace && isFinite(bestThr) && trials.length >= 6 && stair.value < bestThr) {
+        if (!pbPace && bestThr != null && trials.length >= 6 && stair.value < bestThr) {
           pbPace = true;
-          J.callout('PB PACE', '#f6d98f', 'flash ' + Math.round(stair.value) + ' ms, best was ' + Math.round(bestThr));
+          J.callout('PB PACE', TH.gold, 'flash ' + Math.round(stair.value) + ' ms, best was ' + Math.round(bestThr));
         }
         tr.okC = okC;
         tr.okP = okP;
@@ -243,9 +236,6 @@
       }
 
       // marshal flag on its pole, pole foot on the verge at the projected ground point
-      function flagSize(pr) {
-        return U.clamp(FLAG_M * pr.s, ctx.W * 0.02, ctx.W * 0.05);
-      }
       function drawFlag(g, pr, color) {
         const size = flagSize(pr), pole = Math.max(2, size * 0.08);
         Sym.flag(g, pr.x + pole + size / 2, pr.y - size * 1.25, size, color);
@@ -349,8 +339,8 @@
             const fb = tr.phase === 'feedback' && S.feedback === 'every';
             const cTxt = 'APEX  ' + (tr.ansC ? (tr.ansC === 'up' ? '↑' : '↓') : '↑ / ↓');
             const pTxt = 'FLAG  ' + (tr.ansP ? (tr.ansP === 'left' ? '←' : '→') : '← / →');
-            const cCol = fb ? (tr.okC ? '#30d158' : '#ff453a') : tr.ansC ? '#ffffff' : '#c3c9d4';
-            const pCol = fb ? (tr.okP ? '#30d158' : '#ff453a') : tr.ansP ? '#ffffff' : '#c3c9d4';
+            const cCol = fb ? (tr.okC ? TH.hit : TH.miss) : tr.ansC ? '#ffffff' : '#c3c9d4';
+            const pCol = fb ? (tr.okP ? TH.hit : TH.miss) : tr.ansP ? '#ffffff' : '#c3c9d4';
             g.fillStyle = 'rgba(0,0,0,.55)';
             Sym.roundRect(g, W / 2 - fs * 11, by - fs * 1.6, fs * 22, fs * 2.4, 10);
             g.fill();
@@ -362,7 +352,7 @@
             }
           }
 
-          Sym.text(g, 'Trial ' + Math.min(S.trials, trials.length + 1) + ' / ' + S.trials, 18, 30, { size: 16, alpha: 0.75 });
+          Sym.hud(g, 'Trial ' + Math.min(S.trials, trials.length + 1) + ' / ' + S.trials, 18);
           Sym.text(g, 'flash ' + Math.round(tr.exposure) + ' ms', W - 18, 30, { size: 14, weight: 420, align: 'right', alpha: 0.6 });
           if (trials.length === 0 && tr.phase === 'fixate') {
             Sym.text(g, 'Eyes on the ringed board', W / 2, H * 0.16, { align: 'center', size: Math.max(22, W * 0.02), weight: 820 });

@@ -41,7 +41,7 @@
  */
 (function () {
   'use strict';
-  const U = IST.util, CS = IST.CleanSlate;
+  const U = IST.util, CS = IST.CleanSlate, TH = IST.Theme;
   const { DIRS, OPP, PERP, APPROACH, APPROACH_OPTS, BEAT, RUSH_BEAT, HW, PERFECT, GREAT, ORANGE_BASE, WARMUP, REC_WIN, CLEAN_RUN, SLOW_X, TARGET } = CS;
   const { LEAD_MIN, MAX_LEVEL, COL, BURST_LEVELS, DIST_LEVELS, DIST_DUR, WORDS, POP_COLORS, levelOpts } = CS;
 
@@ -108,12 +108,7 @@
     levelFor(setting, history, nextKey, key) {
       if (setting === 'off') return 0;
       if (setting && setting !== 'auto') return U.clamp(Number(setting) || 1, 1, MAX_LEVEL);
-      for (let i = history.length - 1; i >= 0; i--) {
-        const s = history[i].summary;
-        if (s && U.isNum(s[nextKey]) && s[nextKey] > 0) return s[nextKey];
-        if (s && U.isNum(s[key]) && s[key] > 0) return s[key];
-      }
-      return 1;
+      return IST.Analysis.latest(history, nextKey, key) || 1;
     },
 
     coach: CS.coach,
@@ -128,20 +123,14 @@
       const BL = BURST_LEVELS[bLevel], DL = DIST_LEVELS[dLevel];
       const audio = S.sound && IST.Juice.mode() === 'full' ? makeAudio() : null; // Data → Game feel: Silent mutes it too
       const distTypes = DL.types.filter((t) => audio || (t !== 'chirp' && t !== 'fakebuzz'));
-      const allTimeBest = hist.reduce((m, r) => Math.max(m, (r.summary && r.summary.bestChain) || 0), 0);
+      const allTimeBest = IST.Analysis.best(hist, 'bestChain', 'higher') || 0;
       const endMs = S.duration * 1000;
       const APP = Number(S.approach) || APPROACH, LEAD_MAX = APP;
       const hitTop = S.hitTop !== false;
 
       // reveal lead: start from last session's value, a little easier
-      let lead = 800;
-      for (let i = hist.length - 1; i >= 0; i--) {
-        const s = hist[i].summary;
-        if (s && U.isNum(s.lead)) {
-          lead = U.clamp(s.lead * 1.1, LEAD_MIN, LEAD_MAX);
-          break;
-        }
-      }
+      const lastLead = IST.Analysis.latest(hist, 'lead');
+      let lead = lastLead ? U.clamp(lastLead * 1.1, LEAD_MIN, LEAD_MAX) : 800;
       let baseSteps = 0, descending = true;
       const stair = (ok) => {
         // fast descent until the first error, then the weighted up/down walk
@@ -282,7 +271,7 @@
           score += pts;
           chainPopT = now;
           hitFlashT = now;
-          addFx({ k: 'judge', dur: 600, text: r.judge, sub: '+' + pts, color: r.judge === 'PERFECT' ? '#f6d98f' : T.c });
+          addFx({ k: 'judge', dur: 600, text: r.judge, sub: '+' + pts, color: r.judge === 'PERFECT' ? TH.gold : T.c });
           addFx({ k: 'burst', dur: 380, x: r.hitX, color: r.orange ? COL.orange : COL.blue });
           if (ti > prevTier) {
             addFx({ k: 'tier', dur: 900, text: '×' + T.m, color: T.c });
@@ -291,14 +280,14 @@
           } else if (audio) audio.ok(chain, r.judge === 'PERFECT');
           if (!newBestShown && allTimeBest >= 10 && chain === allTimeBest + 1) {
             newBestShown = true;
-            addFx({ k: 'call', dur: 1400, text: 'NEW BEST CHAIN', color: '#f6d98f' });
+            addFx({ k: 'call', dur: 1400, text: 'NEW BEST CHAIN', color: TH.gold });
             if (audio) audio.best();
           }
           if (r.ph === 'base') okRTs.push(rt);
         } else {
           if (chain >= 5) {
             brokenN++;
-            addFx({ k: 'call', dur: 900, text: 'CHAIN BROKEN · ' + chain, color: '#ff453a', small: true });
+            addFx({ k: 'call', dur: 900, text: 'CHAIN BROKEN · ' + chain, color: TH.miss, small: true });
           }
           brokenChain = chain;
           breakT = now;
@@ -307,7 +296,7 @@
           const pen = Math.min(160, 20 * Math.pow(2, errRun - 1));
           score -= pen;
           errT = now;
-          addFx({ k: 'judge', dur: 700, text: why === 'early' ? 'EARLY' : why === 'miss' ? 'MISS' : 'WRONG', sub: '−' + pen, color: '#ff453a' });
+          addFx({ k: 'judge', dur: 700, text: why === 'early' ? 'EARLY' : why === 'miss' ? 'MISS' : 'WRONG', sub: '−' + pen, color: TH.miss });
           if (audio) audio.err(errRun);
         }
 

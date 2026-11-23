@@ -31,7 +31,7 @@
  */
 (function () {
   'use strict';
-  const U = IST.util, Sym = IST.Symbols, LL = IST.LineLab, RL = IST.RacingLine;
+  const U = IST.util, Sym = IST.Symbols, UI = IST.CanvasUI, LL = IST.LineLab, RL = IST.RacingLine;
   const MAX_LEVEL = LL.MAX_LEVEL;
   const { COL, BUDGET, PASS, sec, questionGen, describeIdeal, describeUser } = RL;
 
@@ -78,11 +78,9 @@
 
     levelFor(S, history) {
       if (S.level && S.level !== 'auto') return U.clamp(Number(S.level) || 1, 1, MAX_LEVEL);
-      for (let i = history.length - 1; i >= 0; i--) {
-        const r = history[i], s = r.summary;
-        if (s && s.mode === 'draw' && U.isNum(s.nextLevel)) return s.nextLevel;
-      }
-      return 1;
+      // sessions from the old multiple-choice version don't count
+      const drawn = history.filter((r) => r.summary && r.summary.mode === 'draw');
+      return IST.Analysis.latest(drawn, 'nextLevel') || 1;
     },
 
     coach: RL.coach,
@@ -204,17 +202,12 @@
           if (r.exit != null) possible.push('exit');
           if (ci < L.verdict.length - 1) possible.push('priority');
           possible.forEach((k) => {
-            const e = (errs[k] = errs[k] || [0, 0]);
-            e[0]++;
-            if (r.issues.some((is) => is.kind === k)) {
-              e[1]++;
-              made[k] = (made[k] || 0) + 1;
-            }
+            const did = r.issues.some((is) => is.kind === k);
+            IST.Analysis.count(errs, k, did);
+            if (did) made[k] = (made[k] || 0) + 1;
           });
         });
-        const sc = (byScen[q.spec.id] = byScen[q.spec.id] || [0, 0]);
-        sc[0]++;
-        if (pass) sc[1]++;
+        IST.Analysis.count(byScen, q.spec.id, pass);
         rows.push({
           scen: q.spec.id, mirror: q.geo.mirror ? 1 : 0, level: q.level, pass: pass ? 1 : 0, loss: +L.loss.toFixed(3), tol: tolM,
           corners: L.verdict.length, placed: L.verdict.filter((r) => !r.issues.length).length, errs: made,
@@ -284,7 +277,7 @@
       }
 
       const ptr = (e) => [e.offsetX, e.offsetY];
-      const hit = (x, y) => st.buttons.find((b) => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h);
+      const hit = (x, y) => UI.hit(st.buttons, x, y);
       const inArea = (x, y) => st.area && x >= st.area.x && x <= st.area.x + st.area.w && y >= st.area.y && y <= st.area.y + st.area.h;
       function onMove(e) {
         const [x, y] = ptr(e);
@@ -363,12 +356,11 @@
 
         render(g, W, H, ts) {
           st.buttons = [];
-          g.fillStyle = COL.bg;
-          g.fillRect(0, 0, W, H);
+          UI.backdrop(g, W, H);
           if (st.mode === 'loading' || !st.q) {
             screens.header(g, W, 'Draw the Line', null);
             const dots = '.'.repeat(1 + (Math.floor(ts / 300) % 3));
-            Sym.text(g, 'Working out the fastest line' + dots, W / 2, H / 2, { align: 'center', size: 18, weight: 620, color: '#cfd5df' });
+            Sym.text(g, 'Working out the fastest line' + dots, W / 2, H / 2, { align: 'center', size: 18, weight: 620, color: COL.text2 });
             if (!rows.length) Sym.text(g, 'Drag to draw the line you would drive, from the start mark to the finish. Space to submit.', W / 2, H / 2 + 30, { align: 'center', size: 14, color: COL.dim });
           } else if (st.mode === 'replay') screens.renderReplay(g, W, H, ts);
           else if (st.mode === 'result') screens.renderResult(g, W, H);

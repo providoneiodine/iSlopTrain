@@ -13,7 +13,7 @@
   const U = IST.util, Sym = IST.Symbols, LL = IST.LineLab, RL = IST.RacingLine;
   const HW = LL.HW, DS = LL.DS;
   const { COL, PH, kmh, sec, T } = RL;
-  const { panel, outline } = RL.ui;
+  const { box, pane } = IST.CanvasUI;
 
   RL.createScene = function (env) {
     const { S, VIEW, SEAT, cockpit } = env;
@@ -161,9 +161,7 @@
         const braking = LL.sampleAt(rp.ghost.sim.v, rp.ghost.sim, gs + 4) < LL.sampleAt(rp.ghost.sim.v, rp.ghost.sim, gs) - 0.3;
         sprites.push({ pos: gs, x: gn * HW, draw: (g2, pr) => IST.RaceLayer.drawCar(g2, Object.assign({}, pr, { fog: Math.max(pr.fog, 0.55) }), { color: lineColor(rp.ghost) }, braking) });
       }
-      g.save();
-      Sym.roundRect(g, x, y, w, h, 10);
-      g.clip();
+      pane(g, x, y, w, h, { fill: COL.map });
       g.translate(x, y);
       // road first, then the lines painted on it, then posts and the ghost car (far to near)
       IST.View.apply(R, w, h, VIEW);
@@ -199,17 +197,14 @@
         Sym.text(g, label.toUpperCase(), w / 2, h * 0.2, { align: 'center', baseline: 'middle', size: Math.round(Math.max(20, Math.min(34, w * 0.04)) * sc), weight: 900, color: P.color });
       }
       g.restore();
-      outline(g, x, y, w, h);
     }
 
     function renderTop(g, q, rp, x, y, w, h, ts) {
       const L = rp.line, geo = q.geo;
-      g.save();
-      panel(g, x, y, w, h);
-      g.clip();
+      pane(g, x, y, w, h, { fill: COL.map });
       g.translate(x, y);
       const V = view(q, 'top', w, h, 26);
-      LL.drawTrack(g, geo, V, { bg: COL.panel, fontSize: 12 });
+      LL.drawTrack(g, geo, V, { bg: COL.map, fontSize: 12 });
       LL.drawLine(g, geo, V, rp.ghost.sim, { color: lineColor(rp.ghost), width: 2.2, alpha: 0.6, dash: L.isIdeal ? [6, 5] : null });
       LL.drawLine(g, geo, V, L.sim, { color: lineColor(L), width: 3.2 });
       // phase markers
@@ -239,7 +234,6 @@
       g.strokeStyle = lineColor(L);
       g.stroke();
       g.restore();
-      outline(g, x, y, w, h);
     }
 
     function renderTrace(g, q, rp, x, y, w, h) {
@@ -256,7 +250,7 @@
       const px = (s) => x + 44 + ((s - s0) / (s1 - s0)) * (w - 56);
       const py = (v) => y + h - 18 - ((v * 3.6 - lo) / (hi - lo)) * (h - 30);
       g.save();
-      panel(g, x, y, w, h);
+      box(g, x, y, w, h, { fill: COL.map });
       for (let v = lo; v <= hi; v += hi - lo > 160 ? 50 : 20) {
         const yy = py(v / 3.6);
         g.fillStyle = 'rgba(255,255,255,0.06)';

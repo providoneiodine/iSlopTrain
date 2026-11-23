@@ -14,7 +14,7 @@
  */
 (function () {
   'use strict';
-  const U = IST.util, Sym = IST.Symbols;
+  const U = IST.util, Sym = IST.Symbols, A = IST.Analysis, TH = IST.Theme;
   const DIRS = Sym.DIRS;
   const GRIP = {
     // aero: extra grip with speed (see Track.generate); GT3 ~ modest, prototype ~ lots
@@ -71,6 +71,8 @@
       { key: 'falseAlarms', label: 'False presses', digits: 0, better: 'lower' },
       { key: 'flagHit', label: 'Marshal lights', pct: true, digits: 0, better: 'higher' },
       { key: 'flagRT', label: 'Marshal response', unit: 'ms', digits: 0, better: 'lower' },
+      { key: 'falseConfirms', label: 'False confirms', digits: 0, better: 'lower' },
+      ...IST.Juice.METRICS,
       { key: 'trials', label: 'Targets', digits: 0 },
     ],
     coach(s) {
@@ -95,7 +97,7 @@
       if (overall == null) return out;
       const name = this.name;
       const pc = (e) => Math.round(A.acc(e) * 100) + '%';
-      const sub = 'Last ' + recent.length + ' session' + (recent.length === 1 ? '' : 's');
+      const sub = A.lastN(recent);
 
       const catItems = A.items(cat, null, A.CAT_LABELS).sort((a, b) => a.value - b.value);
       out.breakdowns.push(
@@ -168,19 +170,12 @@
       const th = R.theme, HW = track.HALF_W, SEG = track.SEG;
       const rnd = U.rng(U.randomSeed());
 
-      const lastThreshold = (hist) => {
-        for (let i = hist.length - 1; i >= 0; i--) {
-          const t = hist[i].summary && hist[i].summary.threshold;
-          if (t > 0) return t;
-        }
-        return null;
-      };
       // baseline from the standard drill: the "load cost" metric in Race Mode, and the
       // starting flash for a first run of a variant
-      const baseline = raceMode || hazardMode ? lastThreshold(IST.Storage.getResults('apex-snap')) : null;
+      const baseline = raceMode || hazardMode ? A.latest(IST.Storage.getResults('apex-snap'), 'threshold') : null;
       let start = S.startExposure;
       if (S.carryOver) {
-        const t = lastThreshold(ctx.history) || baseline;
+        const t = A.latest(ctx.history, 'threshold') || baseline;
         if (t) start = U.clamp(t * 1.5, 60, 1200);
       }
       const race = raceMode
@@ -193,7 +188,7 @@
       const stair = new IST.Staircase({ start, min: 33, max: 1500, factor: 1.35, nDown: 2 });
       // game feel: chain + grades; silent under "summary only" feedback
       const J = new IST.Juice({ history: ctx.history, live: S.feedback === 'every' });
-      const bestThr = ctx.history.reduce((b, r) => (r.summary && r.summary.threshold > 0 ? Math.min(b, r.summary.threshold) : b), Infinity);
+      const bestThr = A.best(ctx.history, 'threshold', 'lower');
       let pbPace = false;
 
       const st = {
@@ -215,25 +210,31 @@
        * you reach it can't swallow it mid-flash: later frames are checked by projecting
        * from where the car will be.
        */
-      function boardAt(pos, x) {
+      function boardAt(pos, x, band) {
         if (!R.ready) return null;
-        return IST.View.boardVisible(R, pos, x, { minPx: S.minTargetPx, cockpit, seat: SEAT, steer: IST.Cockpit.steerAt(track, R.cam.pos) });
+        return IST.View.boardVisible(R, pos, x, { minPx: S.minTargetPx, cockpit, seat: SEAT, steer: IST.Cockpit.steerAt(track, R.cam.pos), band });
       }
-      /** Does test() hold in every frame over the next exposure (+120 ms)? Restores this frame after. */
+      /**
+       * Does test() hold in every frame from now over the next exposure (+120 ms)? Sampled
+       * finer than a frame, since real frames don't land on the samples. Restores this frame after.
+       */
       function holdsFor(exposure, test) {
         const t0 = track.timeAt(st.pos), span = exposure + 120;
         let ok = true;
-        for (let t = 40; ok && t <= span; t += 40) {
-          R.prepare(R.W, R.H, camAt(track.posAtTime(t0 + t / 1000)));
+        for (let t = 0; ok && t <= span; t += 8) {
+          R.prepare(R.W, R.H, camAt(t ? track.posAtTime(t0 + t / 1000) : st.pos));
           ok = test();
         }
         R.prepare(R.W, R.H, camAt(st.pos));
         return ok;
       }
+      // arming checks a slightly narrower band, so a board right on the edge can't
+      // drift out of it between the predicted frames and the drawn ones
+      const ARM_BAND = IST.View.BOARD.BAND + 0.01;
       /** Screen board at (pos, x) now, if it stays readable for the whole exposure; else null. */
       function boardThrough(pos, x, exposure) {
-        const now = boardAt(pos, x);
-        return now && holdsFor(exposure, () => !!boardAt(pos, x)) ? now : null;
+        const now = boardAt(pos, x, ARM_BAND);
+        return now && holdsFor(exposure, () => !!boardAt(pos, x, ARM_BAND)) ? now : null;
       }
       const hz = hazardMode
         ? new IST.HazardLayer({
@@ -308,14 +309,14 @@
           const bonus = (snap ? 8 : 0) + U.clamp(Math.round((300 - p.exposure) / 25), 0, 10);
           // call mode: a live hazard already called while the eyes held the apex
           const seen = callMode && p.probe && p.hazard && p.hazard.live && p.hazard.calledTs != null;
-          J.hit({ bonus, label: seen ? 'SEEN' : snap ? 'SNAP!' : p.exposure < 100 ? 'ELITE FLASH' : null, color: seen || snap ? '#f6d98f' : null });
+          J.hit({ bonus, label: seen ? 'SEEN' : snap ? 'SNAP!' : p.exposure < 100 ? 'ELITE FLASH' : null, color: seen || snap ? TH.gold : null });
         } else {
           const looked = callMode && outcome === 'hazard' && p.hazard.live && p.hazard.calledTs != null;
           J.miss({ label: timeout ? 'MISSED' : looked ? 'CALLED BY LOOKING' : outcome === 'hazard' ? 'EYES ON THE WALL' : 'WRONG' });
         }
-        if (!pbPace && isFinite(bestThr) && st.trials.length >= 6 && stair.value < bestThr) {
+        if (!pbPace && bestThr != null && st.trials.length >= 6 && stair.value < bestThr) {
           pbPace = true;
-          J.callout('PB PACE', '#f6d98f', 'flash ' + Math.round(stair.value) + ' ms, best was ' + Math.round(bestThr));
+          J.callout('PB PACE', TH.gold, 'flash ' + Math.round(stair.value) + ' ms, best was ' + Math.round(bestThr));
         }
       }
 
@@ -357,7 +358,7 @@
         g.fill();
         g.globalAlpha = 1;
         Sym.trackBoard(g, pr, pr.x, cy, size * 0.6, i, (L) => Sym.board(L, pr.x, cy, size, content, th));
-        if (st.fb && st.fb.corner === i && ts < st.fb.until) Sym.ring(g, pr.x, cy, size * 0.85, st.fb.correct ? '#30d158' : '#ff453a', Math.max(2, size * 0.1));
+        if (st.fb && st.fb.corner === i && ts < st.fb.until) Sym.ring(g, pr.x, cy, size * 0.85, st.fb.correct ? TH.hit : TH.miss, Math.max(2, size * 0.1));
       }
 
       function drawMarshal(g, pr, m, ts) {
@@ -555,8 +556,8 @@
 
           // HUD
           const n = st.trials.length, hits = st.trials.filter((x) => x.correct).length;
-          Sym.text(g, U.fmtTime(S.duration - ctx.clock() / 1000), 18, 32, { size: 20, weight: 820, alpha: 0.85 });
-          Sym.text(g, Math.round(st.v * 3.6) + ' km/h', W - 18, 32, { size: 20, weight: 820, align: 'right', alpha: 0.85 });
+          Sym.hud(g, U.fmtTime(S.duration - ctx.clock() / 1000), 18);
+          Sym.hud(g, U.kmh(st.v) + ' km/h', W - 18, 'right');
           Sym.text(g, 'flash ' + Math.round(stair.value) + ' ms  ·  ' + hits + '/' + n, W - 18, 54, { size: 13, weight: 420, align: 'right', alpha: 0.6 });
           if (ctx.clock() < INTRO_MS) {
             const a = U.clamp((INTRO_MS - ctx.clock()) / 600, 0, 1);
@@ -570,7 +571,7 @@
               : hz ? 'Walls and wrecks will pull at your eyes  ·  press the arrow you saw' : 'Arrow keys' + extra;
             Sym.text(g, sub, W / 2, iy + 32, { align: 'center', size: 15, weight: 340, alpha: a * 0.9 });
           }
-          if (performance.now() < st.faUntil && S.feedback === 'every') Sym.text(g, 'no target', W / 2, H * 0.08, { align: 'center', size: 14, color: '#ff453a' });
+          if (performance.now() < st.faUntil && S.feedback === 'every') Sym.text(g, 'no target', W / 2, H * 0.08, { align: 'center', size: 14, color: TH.miss });
           // chain block top-right, clear of the road, the radio box (top-left) and the dash (top-centre)
           J.render(g, W, H, { x: W - 58, y: 66, size: 30, side: -1, callY: H * 0.3, vignette: false });
         },
@@ -581,17 +582,7 @@
           const hits = T.filter((x) => x.correct);
           const nFlags = st.flagRTs.length + st.flagMiss;
           // fine-grained breakdowns ([n, hits]) for the Stats page
-          const tally = (keyFn) => {
-            const o = {};
-            for (const x of T) {
-              const k = keyFn(x);
-              if (k == null) continue;
-              const e = (o[k] = o[k] || [0, 0]);
-              e[0]++;
-              if (x.correct) e[1]++;
-            }
-            return o;
-          };
+          const tally = (keyFn) => A.tally(T, keyFn, (x) => x.correct);
           // call mode: calls can come after the flash, so read them off the hazards now
           for (const x of st.hzTrials) {
             x.live = !!(x.ref && x.ref.live);
@@ -663,13 +654,15 @@
       .map((f) => (f.key === 'flags' ? Object.assign({}, f, { default: true }) : f))
       .filter((f) => f.key !== 'seed')
       .concat(RACE_SETTINGS),
+    // Apex Snap's own metrics, then the race ones; a false confirm here is a reaction to noise
     metrics: BASE.metrics
-      .filter((m) => m.key !== 'falseConfirms')
+      .filter((m) => m.key !== 'falseConfirms' && !IST.Juice.METRICS.includes(m))
       .concat([
         { key: 'loadCost', label: 'Load cost', unit: 'ms', digits: 0, better: 'lower', hint: 'Threshold here minus your latest Apex Snap threshold.' },
         { key: 'threatHit', label: 'Threats caught', pct: true, digits: 0, better: 'higher' },
         { key: 'threatRT', label: 'Threat response', unit: 'ms', digits: 0, better: 'lower' },
         { key: 'falseConfirms', label: 'Reacted to noise', digits: 0, better: 'lower' },
+        ...IST.Juice.METRICS,
       ]),
     coach(s) {
       const tips = [];
@@ -697,10 +690,6 @@
       return out;
     },
   };
-
-  BASE.metrics.splice(BASE.metrics.length - 1, 0, { key: 'falseConfirms', label: 'False confirms', digits: 0, better: 'lower' });
-  BASE.metrics.splice(BASE.metrics.length - 1, 0, ...IST.Juice.METRICS);
-  RACE.metrics.splice(RACE.metrics.length, 0, ...IST.Juice.METRICS);
 
   IST.registerDrill(BASE);
   IST.registerDrill(Object.assign({}, BASE, RACE));

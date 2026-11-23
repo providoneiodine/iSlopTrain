@@ -10,7 +10,7 @@
  */
 (function () {
   'use strict';
-  const U = IST.util, Sym = IST.Symbols, CS = IST.CleanSlate;
+  const U = IST.util, Sym = IST.Symbols, CS = IST.CleanSlate, TH = IST.Theme;
   const { BEAT, HW, PERFECT, COL } = CS;
   const { TIERS, tierOf, hex } = IST.Juice;
 
@@ -99,7 +99,7 @@
           continue;
         }
         if (j === r.tgt) {
-          const c = missed ? '#ff453a' : r.orange ? COL.orange : COL.blue;
+          const c = missed ? TH.miss : r.orange ? COL.orange : COL.blue;
           if (glow) {
             g.shadowColor = c;
             g.shadowBlur = 14;
@@ -164,7 +164,7 @@
       const alpha = R.chain ? (pp < 1 ? 0.55 + 0.35 * (1 - pp) : 0.55) : 0.25;
       let col = T.c, gx = 0;
       if (glitch) {
-        col = '#ff453a';
+        col = TH.miss;
         gx = (Math.random() - 0.5) * 16;
       }
       g.save();
@@ -188,14 +188,14 @@
       if (next) Sym.text(g, String(next.at), hx + bw / 2 + 8, by + 6, { size: 11, weight: 520, color: '#6c7484', shadow: false });
       const bp = (R.now - R.breakT) / 650;
       if (bp < 1 && R.brokenChain >= 5) {
-        Sym.text(g, String(R.brokenChain), hx, hy + bp * base * 0.9, { align: 'center', baseline: 'middle', size: base * (1 - bp * 0.3), weight: 900, color: '#ff453a', alpha: 1 - bp, shadow: false });
+        Sym.text(g, String(R.brokenChain), hx, hy + bp * base * 0.9, { align: 'center', baseline: 'middle', size: base * (1 - bp * 0.3), weight: 900, color: TH.miss, alpha: 1 - bp, shadow: false });
       }
     }
 
     function drawHud(g, W, H) {
       Sym.text(g, Math.round(R.score).toLocaleString(), W - 18, 34, { align: 'right', size: 22, weight: 820, color: R.score < 0 ? '#ff6b5e' : '#eef0f4' });
       Sym.text(g, 'Best chain ' + Math.max(allTimeBest, R.bestChain), W - 18, 54, { align: 'right', size: 13, weight: 520, color: '#8a93a6' });
-      Sym.text(g, U.fmtTime(Math.max(0, S.duration - R.now / 1000)), 18, 34, { size: 20, weight: 720, alpha: 0.8 });
+      Sym.hud(g, U.fmtTime(S.duration - R.now / 1000), 18);
       Sym.text(g, 'Burst ' + bLevel + ' · Distraction ' + dLevel + (S.resetCue ? ' · Reset: Space' : ''), 18, H - 16, { size: 12, weight: 520, alpha: 0.45 });
       Sym.text(g, 'Esc', W - 18, H - 16, { size: 12, align: 'right', alpha: 0.45 });
     }

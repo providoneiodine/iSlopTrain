@@ -13,8 +13,8 @@ A guide for whoever maintains this next. It covers how the pieces fit together; 
 
 | Layer | Files | Owns |
 |---|---|---|
-| core | `js/core/` | namespace + registry (`ist.js`), helpers (`util.js`), persistence (`storage.js`), adaptive staircase, input → abstract actions, the drill runner (canvas, loop, pause), Stats analysis |
-| render | `js/render/` | arrows/text/HUD primitives (`symbols.js`), procedural circuits + pseudo-3D renderer (`track.js`), vector cockpit (`cockpit.js`), shared in-car view settings (`view.js`) |
+| core | `js/core/` | namespace + registry (`ist.js`), helpers (`util.js`), persistence (`storage.js`), adaptive staircase, input → abstract actions, the drill runner (canvas, loop, pause), Stats analysis and the history helpers drills share (`analysis.js`) |
+| render | `js/render/` | arrows/text/HUD primitives (`symbols.js`), the palette and page-style canvas widgets (`canvas-ui.js`), procedural circuits + pseudo-3D renderer (`track.js`), vector cockpit (`cockpit.js`), shared in-car view settings (`view.js`) |
 | components | `js/components/` | models and layers shared by several drills (below) |
 | drills | `js/drills/` | one file per small drill, one folder per large one |
 | sessions | `js/sessions.js` | guided playlists: drill + setting overrides per step |
@@ -29,7 +29,8 @@ A guide for whoever maintains this next. It covers how the pieces fit together; 
 | `IST.Track` / `IST.TrackRenderer` | generated circuits and the in-car renderer | Apex Snap family, Two-Point Focus, the replays, View screen |
 | `IST.RaceLayer` | traffic, relative box, dash, radio/spotter, audio | Apex Snap: Race Mode; `drawCar` is reused by the replays |
 | `IST.HazardLayer` | threats on the outside of corners (walls, wrecks, yellows, spins), and the live-hazard call windows | Eyes Off the Wall, Call the Hazard |
-| `IST.Juice` | chain, multiplier tiers, score, grades, tones, callouts | every drill |
+| `IST.Theme` / `IST.CanvasUI` | the one palette (slate and pastels as in `css/style.css`, plus the hit / miss / gold signals), and canvas widgets in the page's style: backdrop, box, pane, caps label, key cap, button, wrapped text, hit-testing | Draw the Line and Class Traffic screens; signal colours in every drill |
+| `IST.Juice` | chain, multiplier tiers, score, grades, tones, callouts | every drill (Clean Slate draws its own chain from Juice's tiers and sounds) |
 | `IST.View` / `IST.Cockpit` | FOV, horizon, seat position, cockpit drawing; the one rule for whether a trackside board can take a flash (`IST.View.board`) | every drill with `usesView: true`; flash validity in the Apex Snap family, hazard probes, Two-Point and the View screen |
 
 ## A session, end to end
@@ -58,7 +59,7 @@ Draw the Line, Class Traffic and Clean Slate are each split across a folder unde
 | File | Role | State |
 |---|---|---|
 | `content.js` | palette, timings, labels, text and grading. Plain data and pure functions | none |
-| `ui.js` | canvas widgets (boxes, buttons, wrapped text) | none; `button()` records its hit box in the array it's given |
+| `ui.js` (Class Traffic) | the widgets only that drill uses (verdict glyphs, livery chip), added to the shared `IST.CanvasUI` set | none |
 | `replay.js` | the replay timeline: which moments to pause on, and stepping through them | works on the replay object it's given |
 | `scene.js` | the top-down map and the in-car view | none; `createScene(env)` binds view settings, and the question and replay come in as arguments |
 | `screens.js` | each screen of the drill (picker, quiz/drawing, result, replay) | reads the drill state, calls back through `act`, and writes only hit boxes and the drawing area for input |
@@ -79,6 +80,16 @@ Smaller drills stay as single files. When one grows past a few hundred lines wit
 
 Solving a racing line takes seconds, so it's written as a generator that `yield`s every so often (`LineLab.solveGen`, `TrafficLab.complexGen` / `questionGen`, each drill's `questionGen`). The drill's `pump()` runs it for a fixed budget of milliseconds per frame (`BUDGET`), so the next question builds while you answer the current one. For synchronous use, as in the tests, `LineLab.run(gen)` drives a generator to completion.
 
+### Helpers every drill shares
+
+Reach for these before writing a loop over `ctx.history` or a new counter:
+
+- `IST.Analysis.latest(history, ...keys)`: where a level or threshold carries over from (the newest session that has one). `IST.Analysis.best(history, key, better)`: the record to beat.
+- `IST.Analysis.tally(rows, keyFn, hitFn)` and `count(tally, key, hit)`: the `{ bucket: [n, hits] }` shape that `sumTallies` and `items` read back on the Stats page.
+- `IST.Analysis.lastN(results)`: the "Last N sessions" subtitle.
+- `Sym.hud(g, text, x, align)`: the session readout in a top corner (time left, trial count, speed).
+- `IST.Theme.hit` / `.miss` / `.gold`: right, wrong, and records or selection. Don't type the hex.
+
 ## Conventions
 
 - **File header comments** say what the file models, its public surface, its limits, and the research it rests on. Keep them current when behaviour changes.
@@ -96,6 +107,8 @@ See [tests/README.md](../tests/README.md) for what belongs there. In short, test
 
 ## Known rough edges
 
-- **Canvas widgets and palettes are per drill.** `multiclass/ui.js` and `racing-line/ui.js` overlap (buttons, wrapped text), and the drills use three different colour sets, with many colours hard-coded in `cockpit.js` and the renderers. A shared `ui-canvas.js` and a single palette would stop them drifting further.
+- **World and car colours are still literals.** Screens and feedback use `IST.Theme`, but the track themes, `cockpit.js`, `race-layer.js` and `hazard-layer.js` paint the scenery, liveries and dash with their own hex values. They're pictures of things rather than UI, so they were left alone.
+- **Clean Slate keeps its own chain and score.** It uses Juice's tiers and sounds but counts the chain itself, because it runs on the drill clock (so a pause can't break timing) and charges a rising penalty for errors in a row. If another drill needs either, move them into `IST.Juice` rather than copying.
+- **The in-session level ladder is written twice.** Draw the Line and Class Traffic each step their level 2-down / 1-up in a few lines of `drill.js`.
 - **No schema version on saved data** (see above).
 - **Analysis thresholds** (minimum counts, "weak spot" margins) live inline in `analysis.js` and each drill's `analyze`, with their reasoning in comments.

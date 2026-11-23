@@ -171,7 +171,7 @@
     const withCurve = results.filter((r) => r.summary && r.summary.curve);
     if (!withCurve.length) return out;
     const recent = results.slice(-10);
-    const sub = 'Last ' + recent.length + ' session' + (recent.length === 1 ? '' : 's');
+    const sub = A.lastN(recent);
     const pc = (x) => Math.round(x * 100) + '%';
 
     // recovery curve: recent 5 sessions vs the 10 before them

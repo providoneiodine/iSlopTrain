@@ -187,6 +187,11 @@
     g.globalAlpha = 1;
   };
 
+  /** The session readout in a top corner (time left, trial count, speed): the same type in every drill. */
+  S.hud = function (g, str, x, align) {
+    S.text(g, str, x, 32, { size: 18, weight: 820, align: align || 'left', alpha: 0.85 });
+  };
+
   S.ring = function (g, cx, cy, r, color, width) {
     g.beginPath();
     g.arc(cx, cy, r, 0, Math.PI * 2);

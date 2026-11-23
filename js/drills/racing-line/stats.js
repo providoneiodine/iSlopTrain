@@ -30,7 +30,7 @@
     const recent = results.slice(-10);
     const out = { breakdowns: [], notes: [], insim: [] };
     if (!recent.length) return out;
-    const sub = 'Last ' + recent.length + ' session' + (recent.length === 1 ? '' : 's');
+    const sub = A.lastN(recent);
     const byScen = A.sumTallies(recent, 'byScen');
     if (Object.keys(byScen).length) {
       out.breakdowns.push({ title: 'Lines passed, by complex', subtitle: sub, pct: true, minN: 3, nLabel: 'lines', items: A.items(byScen, SCENARIOS.map((s) => s.id), SCEN_LABELS) });

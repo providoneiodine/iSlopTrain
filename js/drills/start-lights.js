@@ -4,7 +4,7 @@
  */
 (function () {
   'use strict';
-  const U = IST.util, Sym = IST.Symbols;
+  const U = IST.util, Sym = IST.Symbols, TH = IST.Theme;
   const RESPOND = ['confirm', 'up', 'down', 'left', 'right'];
 
   IST.registerDrill({
@@ -82,14 +82,14 @@
       let tr = null;
       // game feel: chain of clean starts, graded by reaction time
       const J = new IST.Juice({ history: ctx.history });
-      const bestEver = ctx.history.reduce((b, r) => (r.summary && r.summary.best > 0 ? Math.min(b, r.summary.best) : b), Infinity);
-      let bestNow = bestEver;
-      const GRADES = [[180, 'LIGHTNING', 20, '#f6d98f'], [215, 'SHARP', 12, '#9fcbef'], [260, 'GOOD', 5, null]];
+      const bestEver = IST.Analysis.best(ctx.history, 'best', 'lower');
+      let bestNow = bestEver == null ? Infinity : bestEver;
+      const GRADES = [[180, 'LIGHTNING', 20, TH.gold], [215, 'SHARP', 12, '#9fcbef'], [260, 'GOOD', 5, null]];
       function scoreStart(rt) {
         const gr = GRADES.find((x) => rt < x[0]);
         J.hit({ bonus: gr ? gr[2] : 0, label: gr ? gr[1] : null, color: gr ? gr[3] : null });
         if (rt < bestNow) {
-          if (isFinite(bestNow)) J.callout('NEW BEST START', '#f6d98f', Math.round(rt) + ' ms');
+          if (isFinite(bestNow)) J.callout('NEW BEST START', TH.gold, Math.round(rt) + ' ms');
           bestNow = rt;
         }
       }
@@ -203,12 +203,12 @@
           if (!tr || tr.phase === 'ready') {
             Sym.text(g, 'React when the lights go out', W / 2, ty, { align: 'center', size: Math.max(18, W * 0.018), weight: 340, color: '#cfd5df' });
           } else if (tr.phase === 'result') {
-            if (tr.msg) Sym.text(g, tr.msg, W / 2, ty, { align: 'center', size: Math.max(36, W * 0.04), weight: 900, color: '#ff453a' });
+            if (tr.msg) Sym.text(g, tr.msg, W / 2, ty, { align: 'center', size: Math.max(36, W * 0.04), weight: 900, color: TH.miss });
             else Sym.text(g, Math.round(tr.rt) + ' ms', W / 2, ty, { align: 'center', size: Math.max(48, W * 0.06), weight: 900, color: '#ffffff' });
             if (v.length)
               Sym.text(g, 'Best ' + Math.round(Math.min.apply(null, v)) + ' ms   ·   Median ' + Math.round(U.median(v)) + ' ms', W / 2, ty + Math.max(36, W * 0.03), { align: 'center', size: 16, weight: 420, color: '#8a93a6' });
           }
-          Sym.text(g, 'Start ' + Math.min(S.trials, trials.length + (tr && tr.phase !== 'result' ? 1 : 0)) + ' / ' + S.trials, 18, 30, { size: 16, alpha: 0.7 });
+          Sym.hud(g, 'Start ' + Math.min(S.trials, trials.length + (tr && tr.phase !== 'result' ? 1 : 0)) + ' / ' + S.trials, 18);
           Sym.text(g, 'Esc', W - 18, 30, { size: 13, align: 'right', alpha: 0.45 });
           J.render(g, W, H, { x: W / 2, y: H * 0.74, size: U.clamp(H * 0.06, 34, 54), side: 1, callY: Math.max(36, H * 0.07) });
         },
