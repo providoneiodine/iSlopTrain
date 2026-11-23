@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>iSlopTrain Vision</title>
+  <link rel="preload" href="fonts/allo/AlloVariable.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="screen-menu" class="screen page">
+    <header class="top">
+      <div class="brand"><span class="logo">◢</span> iSlopTrain <span class="sub" id="brand-sub">Vision Trainer</span></div>
+      <nav>
+        <button class="btn" id="btn-stats">Stats</button>
+        <button class="btn ghost" id="btn-fullscreen" title="Toggle fullscreen (F)">Fullscreen</button>
+        <button class="btn ghost" id="btn-method">Method</button>
+        <button class="btn ghost" id="btn-controls">Controls</button>
+        <button class="btn ghost" id="btn-data">Data</button>
+      </nav>
+    </header>
+
+    <div class="tabs" role="tablist" aria-label="Trainer">
+      <button class="tab" role="tab" id="tab-vision" data-tab="vision" aria-controls="panel-vision">Vision</button>
+      <button class="tab" role="tab" id="tab-mind" data-tab="mind" aria-controls="panel-mind">Mind</button>
+      <button class="tab" role="tab" id="tab-reflex" data-tab="reflex" aria-controls="panel-reflex">Reflex</button>
+    </div>
+
+    <main class="menu-main tab-panel" id="panel-vision" role="tabpanel" aria-labelledby="tab-vision">
+      <section class="menu-section" aria-labelledby="h-sessions">
+        <h2 class="section-title" id="h-sessions">Sessions</h2>
+        <div id="session-list" class="cards"></div>
+      </section>
+
+      <section class="menu-section" aria-labelledby="h-drills">
+        <h2 class="section-title" id="h-drills">Drills</h2>
+        <div class="cards drill-list" data-tab="vision"></div>
+      </section>
+    </main>
+
+    <main class="menu-main tab-panel hidden" id="panel-mind" role="tabpanel" aria-labelledby="tab-mind">
+      <section class="menu-section" aria-labelledby="h-mind-drills">
+        <h2 class="section-title" id="h-mind-drills">Drills</h2>
+        <div class="cards drill-list" data-tab="mind">
+          <article class="card card-empty">
+            <div class="card-head"><span class="tag">Coming soon</span><h3>Mind drills</h3></div>
+            <p class="tagline">Arousal control, imagery and focus warm-ups for before you get in the car.</p>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <main class="menu-main tab-panel hidden" id="panel-reflex" role="tabpanel" aria-labelledby="tab-reflex">
+      <section class="menu-section" aria-labelledby="h-reflex-drills">
+        <h2 class="section-title" id="h-reflex-drills">Drills</h2>
+        <div class="cards drill-list" data-tab="reflex"></div>
+      </section>
+    </main>
+
+    <footer class="foot">v<span id="ver"></span></footer>
+  </div>
+
+  <div id="screen-drill" class="screen hidden">
+    <canvas id="stage"></canvas>
+    <div id="pause-overlay" class="overlay hidden">
+      <div class="panel">
+        <h2>Paused</h2>
+        <button class="btn primary" data-act="resume">Resume (Space)</button>
+        <button class="btn" data-act="finish">Finish &amp; save</button>
+        <button class="btn" data-act="fullscreen">Fullscreen (F)</button>
+        <button class="btn ghost" data-act="quit">Quit</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="screen-results" class="screen page hidden"></div>
+
+  <div id="screen-stats" class="screen page page-wide hidden"></div>
+
+  <div id="modal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-panel">
+      <button class="close" aria-label="Close">×</button>
+      <div class="modal-body"></div>
+    </div>
+  </div>
+
+  <!-- core -->
+  <script src="js/core/ist.js"></script>
+  <script src="js/core/util.js"></script>
+  <script src="js/core/storage.js"></script>
+  <script src="js/core/staircase.js"></script>
+  <script src="js/core/input.js"></script>
+  <script src="js/core/runner.js"></script>
+  <script src="js/core/analysis.js"></script>
+  <!-- rendering -->
+  <script src="js/render/symbols.js"></script>
+  <script src="js/render/track.js"></script>
+  <!-- reusable drill components -->
+  <script src="js/components/race-layer.js"></script>
+  <!-- drills (menu order = load order) -->
+  <script src="js/drills/start-lights.js"></script>
+  <script src="js/drills/two-point.js"></script>
+  <script src="js/drills/apex-snap.js"></script>
+  <script src="js/sessions.js"></script>
+  <!-- shell -->
+  <script src="js/app.js"></script>
+  <script src="js/ui/charts.js"></script>
+  <script src="js/ui/stats.js"></script>
+</body>
+</html>

@@ -1,0 +1,27 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.swp
+
+# Claude Code local config (launch.json, settings, worktrees)
+.claude/
+
+# exported training data / scratch
+isloptrain-*.json
+*.log
+
+# temp workspaces
+tmp/
+temp/
+scratch/
+*.tmp
+*.bak
+
+# tooling caches
+node_modules/
+__pycache__/
+*.pyc
+.env
