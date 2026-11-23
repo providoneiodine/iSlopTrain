@@ -58,6 +58,18 @@
       V.body = v;
       commit();
     });
+    // arrow colour, with a board showing it as it will flash
+    const arrow = select(Object.keys(Sym.ARROW_COLORS).map((k) => [k, k[0].toUpperCase() + k.slice(1)]), V.arrow, (v) => {
+      V.arrow = v;
+      commit();
+    });
+    const sample = h('canvas', { width: 88, height: 88, style: 'width:44px;height:44px', 'aria-hidden': 'true' });
+    const drawSample = () => {
+      const sg = sample.getContext('2d');
+      sg.setTransform(2, 0, 0, 2, 0, 0);
+      sg.clearRect(0, 0, 44, 44);
+      Sym.board(sg, 22, 22, 38, 'up', IST.TrackRenderer.THEMES[pv.theme]);
+    };
     // the red line shows while the horizon slider is held and briefly after
     const hzIn = C.horizon.input;
     const hzShow = () => (pv.hzUntil = performance.now() + HZ_SHOW_MS);
@@ -77,6 +89,7 @@
       pv.theme = v;
       scene.R = new IST.TrackRenderer(scene.track, { theme: v });
       cockpit = null;
+      drawSample();
     });
     const maskEl = h('input', { type: 'checkbox' });
     maskEl.addEventListener('change', () => (pv.mask = maskEl.checked));
@@ -97,6 +110,8 @@
       C.cockpit.input.checked = V.cockpit;
       C.wheel.input.checked = V.wheel;
       body.value = V.body;
+      arrow.value = V.arrow;
+      drawSample();
       [C.wheel.row, body.parentNode].forEach((el) => el && el.classList.toggle('dim', !V.cockpit));
     }
 
@@ -124,6 +139,8 @@
           C.fov.row, C.horizon.row,
           h('h3', null, 'Seat'),
           C.seatY.row, C.seatZ.row,
+          h('h3', null, 'Boards'),
+          h('label', { class: 'view-field' }, h('span', { class: 'field-l' }, 'Arrow colour'), sample, arrow, h('span', { class: 'hint' }, 'The arrow a board flashes, on black.')),
           h('p', { class: 'hint' }, 'Used by every in-car view: Apex Snap, Race Mode, Eyes Off the Wall, Two-Point and the Pick the Line and Class Traffic replays (each of the last three also has its own Cockpit toggle). Cockpit parts can hide an apex board, so flashes only start where the board is in clear view. Drill HUDs draw over the cockpit.')))
     );
     sync();

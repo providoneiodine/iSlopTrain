@@ -37,6 +37,10 @@
     BAND: 0.1,
     EDGE: 0.02, // the whole board at least this share of the width inside the sides
     HUD_TOP: 0.08, // top share of the height kept for the HUD: board tops stay below it
+    // A board must have been readable without a break for this long (ms) before it may
+    // flash: eyes can't already be on a board that has only just come out from behind
+    // the A-pillar or over a crest, so a flash there tests nothing.
+    LEAD_MS: 400,
   };
 
   /**
@@ -72,16 +76,24 @@
     return Math.max(minPx != null ? minPx : BOARD.MIN_PX, BOARD.M * pr.s);
   }
 
-  const DEFAULTS = { cockpit: true, fov: 54, horizon: 37, seatY: 0, seatZ: 0, wheel: true, body: 'pearl' };
+  // arrow: colour of a revealed board arrow (IST.Symbols.ARROW_COLORS)
+  const DEFAULTS = { cockpit: true, fov: 54, horizon: 37, seatY: 0, seatZ: 0, wheel: true, body: 'pearl', arrow: 'purple' };
   const LIMITS = { fov: [36, 100], horizon: [20, 80], seatY: [-12, 12], seatZ: [-15, 15] };
 
   function clean(v) {
     const out = Object.assign({}, DEFAULTS, v || {});
     for (const k in LIMITS) out[k] = U.isNum(+out[k]) ? U.clamp(+out[k], LIMITS[k][0], LIMITS[k][1]) : DEFAULTS[k];
     if (!IST.Cockpit.BODY[out.body]) out.body = DEFAULTS.body;
+    if (!IST.Symbols.ARROW_COLORS[out.arrow]) out.arrow = DEFAULTS.arrow;
     out.cockpit = !!out.cockpit;
     out.wheel = !!out.wheel;
     return out;
+  }
+  /** Reading the view also puts its arrow colour in force: every board drill reads it as it starts. */
+  function current() {
+    const v = clean(IST.Storage.getPref('view', null));
+    IST.Symbols.REVEAL.fg = IST.Symbols.ARROW_COLORS[v.arrow];
+    return v;
   }
 
   IST.View = {
@@ -91,7 +103,7 @@
       const b = board(R, pos, x, o);
       return b.why ? null : b;
     },
-    get: () => clean(IST.Storage.getPref('view', null)),
+    get: current,
     set: (v) => IST.Storage.setPref('view', clean(v)),
     reset: () => IST.Storage.setPref('view', Object.assign({}, DEFAULTS)),
     /** Horizontal FOV (deg) for a W x H view. */

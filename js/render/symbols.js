@@ -104,7 +104,7 @@
   S.trackBoard = function (g, pr, cx, cy, half, seed, fn) {
     const fade = S.boardFade(pr.dz);
     if (fade <= 0) return false;
-    const alpha = (1 - (pr.fog || 0) * 0.55) * fade;
+    const alpha = fade; // boards don't fog out with distance: a far one is small, it shouldn't be faint too
     const t = Math.min(1, Math.max(0, (BREAK_AT - fade) / BREAK_AT));
     const k = t * t * (3 - 2 * t);
     if (k <= 0) {
@@ -134,18 +134,28 @@
     return true;
   };
 
+  /*
+   * A revealed arrow is drawn for reading: a bright colour on pure black, and larger
+   * than the mask's arrows, so it fills the board. Same for apex and hazard boards.
+   * The colour is the player's choice on the View screen (IST.View sets REVEAL.fg);
+   * every option is at least 7:1 against the black board.
+   */
+  S.ARROW_COLORS = { purple: '#cc88ff', white: '#ffffff', yellow: '#ffe600', green: '#5cff8a', cyan: '#5ce1ff', orange: '#ff9d2e' };
+  S.REVEAL = { bg: '#000000', fg: S.ARROW_COLORS.purple, grow: 1.16 };
+  S.isDir = (content) => ROT[content] !== undefined;
+
   /** Square target board. content: 'mask' | 'blank' | 'up' | 'down' | 'left' | 'right' */
   S.board = function (g, cx, cy, size, content, th) {
-    const half = size / 2;
+    const half = size / 2, dir = S.isDir(content);
     S.roundRect(g, cx - half, cy - half, size, size, size * 0.14);
-    g.fillStyle = th.boardBg;
+    g.fillStyle = dir ? S.REVEAL.bg : th.boardBg;
     g.fill();
     g.lineWidth = Math.max(1.5, size * 0.07);
     g.strokeStyle = th.boardBorder;
     g.stroke();
     const inner = size * 0.74;
     if (content === 'mask') S.mask(g, cx, cy, inner, th.boardFg);
-    else if (ROT[content] !== undefined) S.arrow(g, cx, cy, inner, content, th.boardFg);
+    else if (dir) S.arrow(g, cx, cy, inner * S.REVEAL.grow, content, S.REVEAL.fg);
   };
 
   /** Marshal-style flag; (cx, cy) is the centre of the cloth. */

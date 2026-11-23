@@ -26,7 +26,7 @@
  *     boardThrough(pos, x, exposure) -> screen board {x, y, size} if it stays readable
  *     for the whole flash (IST.View.board), else null
  *   .plan(plan, ci, pos)       attach the corner's hazard + decoy arrow to a trial plan
- *   .arm(plan, W, apex)        at flash onset (apex: the apex board on screen): decide whether this is a probe trial
+ *   .arm(plan, W, apex, steady) at flash onset (apex: the apex board on screen): decide whether this is a probe trial
  *   .update(dt, clock, ts, pos)
  *   .sprites(pos, far, ts, plan, fb, boardSize, th) -> sprite[]
  *   .renderHUD(g, W, H, ts, clock)
@@ -141,11 +141,12 @@
   /**
    * At flash onset: a probe needs the hazard board readable by the same rule as the apex
    * board, for the whole flash, and well apart from the apex board (a: its screen board).
+   * steady: false when the hazard board has only just come into view (IST.View.BOARD.LEAD_MS).
    */
-  HazardLayer.prototype.arm = function (p, W, a) {
+  HazardLayer.prototype.arm = function (p, W, a, steady) {
     p.probe = false;
     const hz = p.hazard;
-    if (!hz || !a) return;
+    if (!hz || !a || steady === false) return;
     const b = this.o.boardThrough(hz.anchor, this.boardX(hz), p.exposure);
     if (b && Math.abs(a.x - b.x) >= Math.max(W * 0.07, 3 * a.size)) p.probe = true;
   };
@@ -433,9 +434,9 @@
 
   /** Yellow/black bordered hazard board: same mask as the apex board, different frame. */
   function hazardBoard(g, x, cy, size, content, th) {
-    const half = size / 2;
+    const half = size / 2, dir = Sym.isDir(content);
     Sym.roundRect(g, x - half, cy - half, size, size, size * 0.14);
-    g.fillStyle = th.boardBg;
+    g.fillStyle = dir ? Sym.REVEAL.bg : th.boardBg;
     g.fill();
     g.lineWidth = Math.max(2, size * 0.1);
     g.strokeStyle = '#ffcc00';
@@ -446,7 +447,7 @@
     g.setLineDash([]);
     const inner = size * 0.7;
     if (content === 'mask') Sym.mask(g, x, cy, inner, th.boardFg);
-    else Sym.arrow(g, x, cy, inner, content, th.boardFg);
+    else if (dir) Sym.arrow(g, x, cy, inner * Sym.REVEAL.grow, content, Sym.REVEAL.fg);
   }
 
   HazardLayer.prototype.sprites = function (pos, far, ts, plan, fb, boardSize, th) {

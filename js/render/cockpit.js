@@ -16,7 +16,7 @@
  *   C.frameFor(R, seat);          // after Renderer.prepare (seat: eye offset, m)
  *   C.draw(g, wheelDeg, info);    // info: { gear, kmh, rpm (0..1), delta? }
  *   C.coverage(x0, y0, x1, y1)    // 0..1 share of that screen rect hidden (after draw)
- *   C.hidden(rect, wheelDeg)      // same, for a predicted wheel angle (rebuilds the mask)
+ *   C.hidden(rect, wheelDeg)      // same, for a predicted wheel angle (cheap away from the wheel)
  *   Cockpit.steerAt(track, pos)   // wheel angle (deg) on the racing line
  *   Cockpit.dash(v)               // { gear, kmh, rpm } for a speed in m/s
  */
@@ -698,23 +698,34 @@
     this.m = false;
     this.drawStatic(g);
     if (this.wheel !== false) this.drawWheel(g, deg, info);
-    this.updateMask(deg);
+    this.deg = deg; // the mask for this frame is built when something asks (coverage, drawMask)
+    this.cells = null;
   };
 
-  /** Low-res occlusion mask: the static parts once per layout, the wheel every frame. */
-  Cockpit.prototype.updateMask = function (deg) {
+  /** Static part of the occlusion mask (everything but the wheel): drawn and read back once per layout. */
+  Cockpit.prototype.layout = function () {
     const mw = Math.ceil(this.W / MS), mh = Math.ceil(this.H / MS);
     const key = [this.W, this.H, this.f, this.cy, this.seat.x, this.seat.y, this.seat.z].join();
-    if (key !== this.key) {
-      this.key = key;
-      this.static.width = this.mask.width = mw;
-      this.static.height = this.mask.height = mh;
-      const sg = this.static.getContext('2d');
-      sg.setTransform(1 / MS, 0, 0, 1 / MS, 0, 0);
-      this.m = true;
-      this.drawStatic(sg);
-      this.m = false;
-    }
+    if (key === this.key) return;
+    this.key = key;
+    this.static.width = this.mask.width = mw;
+    this.static.height = this.mask.height = mh;
+    const sg = this.static.getContext('2d');
+    sg.setTransform(1 / MS, 0, 0, 1 / MS, 0, 0);
+    this.m = true;
+    this.drawStatic(sg);
+    this.m = false;
+    sg.setTransform(1, 0, 0, 1, 0, 0);
+    this.sCells = sg.getImageData(0, 0, mw, mh).data;
+    this.mw = mw;
+    this.mh = mh;
+    this.cells = null;
+  };
+
+  /** Low-res occlusion mask with the wheel at deg: the static parts once per layout, plus the wheel. */
+  Cockpit.prototype.updateMask = function (deg) {
+    this.layout();
+    const mw = this.mw, mh = this.mh;
     const mg = this.mg;
     mg.setTransform(1, 0, 0, 1, 0, 0);
     mg.clearRect(0, 0, mw, mh);
@@ -724,28 +735,61 @@
     if (this.wheel !== false) this.drawWheel(mg, deg);
     this.m = false;
     this.cells = mg.getImageData(0, 0, mw, mh).data;
-    this.mw = mw;
-    this.mh = mh;
   };
 
-  Cockpit.prototype.coverage = function (x0, y0, x1, y1) {
-    if (!this.cells) return 0;
+  /** Share of a screen rect's mask cells that are hidden in cells. */
+  Cockpit.prototype.share = function (cells, x0, y0, x1, y1) {
+    if (!cells) return 0;
     const a = Math.max(0, Math.floor(x0 / MS)), b = Math.min(this.mw - 1, Math.floor(x1 / MS));
     const c = Math.max(0, Math.floor(y0 / MS)), d = Math.min(this.mh - 1, Math.floor(y1 / MS));
     let n = 0, hid = 0;
     for (let y = c; y <= d; y++) {
       for (let x = a; x <= b; x++) {
         n++;
-        if (this.cells[(y * this.mw + x) * 4 + 3] > 127) hid++;
+        if (cells[(y * this.mw + x) * 4 + 3] > 127) hid++;
       }
     }
     return n ? hid / n : 0;
   };
 
-  /** Share of rect [x0, y0, x1, y1] hidden with the wheel at deg (rebuilds the mask). */
+  Cockpit.prototype.coverage = function (x0, y0, x1, y1) {
+    if (!this.cells && this.deg != null) this.updateMask(this.deg);
+    return this.share(this.cells, x0, y0, x1, y1);
+  };
+
+  /**
+   * Share of rect [x0, y0, x1, y1] hidden with the wheel at deg. Flash drills ask this
+   * for dozens of predicted frames at once, so it must be cheap: a rect clear of the
+   * wheel at that angle is read from the static mask, with no drawing or read-back.
+   */
   Cockpit.prototype.hidden = function (rect, deg) {
-    this.updateMask(deg);
-    return this.coverage(rect[0], rect[1], rect[2], rect[3]);
+    this.layout();
+    if (this.wheel !== false && this.nearWheel(rect, deg)) {
+      this.updateMask(deg);
+      const out = this.share(this.cells, rect[0], rect[1], rect[2], rect[3]);
+      this.cells = null; // predicted angle, not the drawn one
+      return out;
+    }
+    return this.share(this.sCells, rect[0], rect[1], rect[2], rect[3]);
+  };
+
+  // everything drawWheel draws, in its local units (1 = wheel half-width), with a margin
+  const WHEEL_BOX = [-1.12, -0.76, 1.12, 0.72];
+  /** Could the wheel at deg touch this screen rect? Errs towards yes (the rect's bounds in the wheel's own frame). */
+  Cockpit.prototype.nearWheel = function (rect, deg) {
+    const w = G.wheel, c = this.P(w.u, w.v, w.d), R = w.r * this.S(w.d);
+    const a = (-deg * Math.PI) / 180, cs = Math.cos(a), sn = Math.sin(a);
+    const pad = MS; // mask cells straddle the rect's edges
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const [px, py] of [[rect[0] - pad, rect[1] - pad], [rect[2] + pad, rect[1] - pad], [rect[2] + pad, rect[3] + pad], [rect[0] - pad, rect[3] + pad]]) {
+      const dx = (px - c[0]) / R, dy = (py - c[1]) / (R * w.sy);
+      const lx = dx * cs - dy * sn, ly = dx * sn + dy * cs;
+      x0 = Math.min(x0, lx);
+      x1 = Math.max(x1, lx);
+      y0 = Math.min(y0, ly);
+      y1 = Math.max(y1, ly);
+    }
+    return x1 > WHEEL_BOX[0] && x0 < WHEEL_BOX[2] && y1 > WHEEL_BOX[1] && y0 < WHEEL_BOX[3];
   };
 
   /** Steering wheel angle (deg, + = clockwise) for the racing line at pos: wheelbase 2.5 m, ratio 13:1. */
@@ -777,6 +821,7 @@
 
   /** Debug: tint the hidden cells. */
   Cockpit.prototype.drawMask = function (g, color) {
+    if (!this.cells && this.deg != null) this.updateMask(this.deg);
     if (!this.cells) return;
     g.fillStyle = color || 'rgba(196,180,239,.45)';
     for (let y = 0; y < this.mh; y++) {

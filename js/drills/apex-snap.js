@@ -208,7 +208,8 @@
        * prepared frame, with the wheel turned as it is at that spot. A flash must stay
        * readable for its whole exposure, so a crest, the A-pillar or the board fading as
        * you reach it can't swallow it mid-flash: later frames are checked by projecting
-       * from where the car will be.
+       * from where the car will be. It must also have been readable for BOARD.LEAD_MS
+       * before the flash (watchBoards).
        */
       function boardAt(pos, x, band) {
         if (!R.ready) return null;
@@ -235,6 +236,17 @@
       function boardThrough(pos, x, exposure) {
         const now = boardAt(pos, x, ARM_BAND);
         return now && holdsFor(exposure, () => !!boardAt(pos, x, ARM_BAND)) ? now : null;
+      }
+      // ms each upcoming board (by corner) has been readable without a break: a flash
+      // waits for BOARD.LEAD_MS of it, so it never lands on a board that only just appeared
+      const seenApex = [], seenHz = [];
+      function watchBoards(dt) {
+        const first = track.nextCornerIndex(st.pos);
+        for (let i = first; i >= 0 && i < Math.min(track.corners.length, first + 2); i++) {
+          const c = track.corners[i], H = hz && hz.byCorner[i];
+          seenApex[i] = boardAt(c.apexPos, boardX(c), ARM_BAND) ? (seenApex[i] || 0) + dt : 0;
+          if (H) seenHz[i] = boardAt(H.anchor, hz.boardX(H), ARM_BAND) ? (seenHz[i] || 0) + dt : 0;
+        }
       }
       const hz = hazardMode
         ? new IST.HazardLayer({
@@ -350,8 +362,7 @@
         const content = p && p.corner === i && p.state === 'shown' ? p.dir : 'mask';
         const fade = Sym.boardFade(pr.dz);
         if (fade <= 0) return;
-        const a = (1 - pr.fog * 0.55) * fade;
-        g.globalAlpha = a * 0.35 * Math.min(1, fade / 0.75); // shadow goes as the board breaks
+        g.globalAlpha = fade * 0.35 * Math.min(1, fade / 0.75); // shadow goes as the board breaks
         g.fillStyle = '#000';
         g.beginPath();
         g.ellipse(pr.x, pr.y, size * 0.6, Math.max(1, size * 0.07), 0, 0, Math.PI * 2);
@@ -427,19 +438,20 @@
             }
           }
 
+          watchBoards(dt);
           const p = st.plan;
           if (p) {
             if (p.state === 'planned' && st.pos >= p.onsetPos) {
               if (st.pos > p.latest) p.state = 'cancelled';
               else {
                 const c = track.corners[p.corner];
-                const apex = boardThrough(c.apexPos, boardX(c), stair.value);
+                const apex = seenApex[p.corner] >= BOARD.LEAD_MS && boardThrough(c.apexPos, boardX(c), stair.value);
                 if (apex) {
                   p.state = 'armed';
                   p.exposure = stair.value;
                   p.posAtOnset = st.pos;
                   if (hz) {
-                    hz.arm(p, R.W, apex);
+                    hz.arm(p, R.W, apex, seenHz[p.corner] >= BOARD.LEAD_MS);
                     p.framing = hz.framingAt(clock);
                   }
                 }
@@ -500,6 +512,7 @@
         onPause() {
           const p = st.plan;
           if (p && p.state !== 'done') p.state = 'cancelled';
+          seenApex.length = seenHz.length = 0; // after a pause the boards have to be found again
           if (st.flag && !st.flag.done) st.flag = null;
           if (race) race.pause();
           if (hz) hz.pause();
