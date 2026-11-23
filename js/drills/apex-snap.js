@@ -156,6 +156,8 @@
     create(ctx) {
       const S = ctx.settings;
       const raceMode = !!this.raceMode; // set on the Race Mode variant below
+      const def = this;
+      const hazardMode = !!this.hazardMode; // set on Eyes Off the Wall (drills/eyes-off-wall.js)
       const seed = S.seed > 0 ? Math.floor(S.seed) : U.randomSeed();
       const G = GRIP[S.grip] || GRIP.gt;
       const vmax = S.speed / 3.6;
@@ -171,8 +173,9 @@
         }
         return null;
       };
-      // baseline from the standard drill, used for the "load cost" metric in Race Mode
-      const baseline = raceMode ? lastThreshold(IST.Storage.getResults('apex-snap')) : null;
+      // baseline from the standard drill: the "load cost" metric in Race Mode, and the
+      // starting flash for a first run of a variant
+      const baseline = raceMode || hazardMode ? lastThreshold(IST.Storage.getResults('apex-snap')) : null;
       let start = S.startExposure;
       if (S.carryOver) {
         const t = lastThreshold(ctx.history) || baseline;
@@ -191,10 +194,25 @@
         pos: 0, heading: 0, lat: track.lateralAt(0), v: 0,
         planCorner: -1, plan: null, trials: [], fa: 0, fb: null, faUntil: 0,
         flag: null, nextFlagAt: 6000 + rnd() * 4000, flagRTs: [], flagMiss: 0, flagFA: 0,
+        hzTrials: [], hfb: null, // hazard mode: per-trial hazard info (parallel to trials), capture feedback
       };
 
       const boardX = (c) => c.dir * HW * BOARD_KERB;
       const boardSize = (pr) => Math.max(S.minTargetPx, BOARD_M * pr.s);
+      /** Screen position + size of a board standing at (pos, x), or null if off screen / behind a crest. */
+      function boardOnScreen(pos, x) {
+        const pr = R.project(pos, x, 0);
+        if (!pr || pr.x < R.W * 0.04 || pr.x > R.W * 0.96) return null;
+        const size = boardSize(pr), cy = pr.y - size / 2;
+        if (cy < 0 || cy + size * 0.3 >= pr.clip) return null;
+        return { x: pr.x, y: cy, size };
+      }
+      const hz = hazardMode
+        ? new IST.HazardLayer({
+            track, rnd: U.rng(U.randomSeed()), level: this.levelFor(S, ctx.history),
+            audio: S.audio, framing: S.framing, boardOnScreen,
+          })
+        : null;
 
       /** Blind apex: terrain blocks the line of sight to the board from 150 m out (crest). */
       function isBlind(c) {
@@ -213,17 +231,25 @@
       }
       function boardVisible(ci) {
         const c = track.corners[ci];
-        const pr = R.project(c.apexPos, boardX(c), 0);
-        if (!pr || pr.x < R.W * 0.04 || pr.x > R.W * 0.96) return false;
-        const size = boardSize(pr), cy = pr.y - size / 2;
-        if (cy < 0) return false;
-        return cy + size * 0.3 < pr.clip; // not hidden behind a crest
+        return !!boardOnScreen(c.apexPos, boardX(c));
       }
 
-      function resolve(p, correct, rt, timeout) {
+      /** outcome: 'apex' (hit) | 'hazard' (read the hazard board) | 'other' (wrong arrow) | 'none' (no answer) */
+      function resolve(p, correct, rt, timeout, outcome) {
         p.state = 'done';
         const c = track.corners[p.corner];
         const f = U.clamp((p.posAtOnset - p.wStart) / Math.max(1, p.wEnd - p.wStart), 0, 1);
+        if (hz) {
+          const H = p.hazard;
+          st.hzTrials.push({
+            hz: H ? H.type : null, probe: !!p.probe, pop: !!(H && H.pop), framing: p.framing,
+            outcome: outcome || (timeout ? 'none' : correct ? 'apex' : 'other'),
+          });
+          if (outcome === 'hazard') {
+            hz.captured();
+            if (S.feedback === 'every') st.hfb = { hazard: H, captured: true, until: performance.now() + 450 };
+          }
+        }
         st.trials.push({
           exposure: p.exposure, correct, rt, timeout, f,
           previewDist: c.apexPos - p.posAtOnset,
@@ -302,7 +328,7 @@
       }
 
       return {
-        debug: () => ({ st, stair, track, race }), // for dev tools / automated checks
+        debug: () => ({ st, stair, track, race, hz }), // for dev tools / automated checks
 
         update(dt, clock, ts) {
           const v = track.speedAt(st.pos);
@@ -333,6 +359,7 @@
                   dir: DIRS[(rnd() * 4) | 0],
                   state: 'planned',
                 };
+                if (hz) hz.plan(st.plan, ci, st.pos);
               }
             }
           }
@@ -345,6 +372,11 @@
                 p.state = 'armed';
                 p.exposure = stair.value;
                 p.posAtOnset = st.pos;
+                if (hz) {
+                  const c = track.corners[p.corner];
+                  hz.arm(p, R.W, c.apexPos, boardX(c));
+                  p.framing = hz.framingAt(clock);
+                }
               }
             } else if ((p.state === 'shown' || p.state === 'masked') && ts - p.onsetTs > p.exposure + RESP_MS) {
               resolve(p, false, null, true);
@@ -353,13 +385,17 @@
 
           if (S.flags) updateFlags(clock, ts);
           if (race) race.update(dt, clock, ts, st.pos, v);
+          if (hz) hz.update(dt, clock, ts, st.pos);
           if (clock >= S.duration * 1000 || st.pos > track.lastCornerEnd + 50) ctx.finish();
         },
 
         onAction(a, t) {
           if (DIRS.indexOf(a) >= 0) {
             const p = st.plan;
-            if (p && (p.state === 'shown' || p.state === 'masked')) resolve(p, a === p.dir, t - p.onsetTs, false);
+            if (p && (p.state === 'shown' || p.state === 'masked')) {
+              const outcome = a === p.dir ? 'apex' : p.probe && a === p.decoy ? 'hazard' : 'other';
+              resolve(p, a === p.dir, t - p.onsetTs, false, outcome);
+            }
             else {
               st.fa++;
               st.faUntil = performance.now() + 600;
@@ -383,12 +419,15 @@
           if (p && p.state !== 'done') p.state = 'cancelled';
           if (st.flag && !st.flag.done) st.flag = null;
           if (race) race.pause();
+          if (hz) hz.pause();
         },
         onResume() {
           if (race) race.resume();
+          if (hz) hz.resume();
         },
         destroy() {
           if (race) race.destroy();
+          if (hz) hz.destroy();
         },
 
         render(g, W, H, ts, paused) {
@@ -419,8 +458,10 @@
             }
           }
           if (race) sprites.push.apply(sprites, race.sprites(st.pos, far, HW));
+          if (hz) sprites.push.apply(sprites, hz.sprites(st.pos, far, ts, st.plan, st.hfb, boardSize, th));
           R.render(g, W, H, { pos: st.pos, x: st.lat * HW, heading: st.heading }, sprites);
           if (race) race.renderHUD(g, W, H, ts);
+          if (hz) hz.renderHUD(g, W, H, ts, ctx.clock(), S.feedback === 'every');
 
           // HUD
           const n = st.trials.length, hits = st.trials.filter((x) => x.correct).length;
@@ -434,7 +475,8 @@
             const extra = race
               ? '  ·  Confirm: car alongside' + (S.flags ? ' / marshal light' : '')
               : S.flags ? '  ·  Confirm: marshal light' : '';
-            Sym.text(g, 'Arrow keys' + extra, W / 2, iy + 32, { align: 'center', size: 15, weight: 350, alpha: a * 0.9 });
+            const sub = hz ? 'Walls and wrecks will pull at your eyes  ·  press the arrow you saw' : 'Arrow keys' + extra;
+            Sym.text(g, sub, W / 2, iy + 32, { align: 'center', size: 15, weight: 350, alpha: a * 0.9 });
           }
           if (performance.now() < st.faUntil && S.feedback === 'every') Sym.text(g, 'no target', W / 2, H * 0.08, { align: 'center', size: 14, color: '#ff453a' });
         },
@@ -456,7 +498,7 @@
             }
             return o;
           };
-          return {
+          const out = {
             seed,
             detail: {
               // compact per-target rows: [exposure ms, correct, window %, look-ahead cs, dir, blind, rt ms, km/h, category]
@@ -481,9 +523,13 @@
               flagRT: S.flags && st.flagRTs.length ? U.median(st.flagRTs) : null,
               falseConfirms: S.flags && !race ? st.flagFA : null,
               ...(race ? race.summary() : {}),
+              ...(hz ? def.hazardSummary(T, st.hzTrials, hz.level) : {}),
               loadCost: race && baseline && T.length >= 4 ? stair.threshold() - baseline : null,
             },
           };
+          // per-target hazard rows: [hazard type or '', probe, outcome a/h/o/n, sudden, framing a/v]
+          if (hz) out.detail.hazards = st.hzTrials.map((x) => [x.hz || '', x.probe ? 1 : 0, x.outcome[0], x.pop ? 1 : 0, x.framing === 'avoid' ? 'v' : 'a']);
+          return out;
         },
       };
     },
@@ -556,4 +602,5 @@
 
   IST.registerDrill(BASE);
   IST.registerDrill(Object.assign({}, BASE, RACE));
+  IST.ApexSnap = { BASE }; // shared engine for variants in other tabs (e.g. Eyes Off the Wall)
 })();

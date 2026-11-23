@@ -125,6 +125,7 @@
     const avg = IST.Analysis.rolling(spec.values, spec.avgWindow || 5);
     const pad = { l: 46, r: spec.compact ? 12 : 70, t: 18, b: 24 };
     let lo = Math.min.apply(null, pts.map((p) => p.v)), hi = Math.max.apply(null, pts.map((p) => p.v));
+    const dataLo = lo, dataHi = hi;
     if (lo === hi) {
       lo -= Math.abs(lo) * 0.1 || 1;
       hi += Math.abs(hi) * 0.1 || 1;
@@ -133,8 +134,9 @@
     lo -= span * 0.12;
     hi += span * 0.12;
     if (spec.pct) {
-      lo = Math.max(0, lo);
-      hi = Math.min(1, hi);
+      // keep percentages inside 0-100% unless the data itself leaves it (e.g. a negative cost)
+      lo = Math.max(Math.min(0, dataLo), lo);
+      hi = Math.min(Math.max(1, dataHi), hi);
     }
     const ticks = niceTicks(lo, hi, spec.compact ? 2 : 4);
     lo = Math.min(lo, ticks[0]);

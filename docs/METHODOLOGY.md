@@ -56,6 +56,28 @@ A habit trained in a clean environment can break when the race gets busy. **Apex
 - **Brief, well-timed HUD glances:** long glances away from the road ahead sharply raise crash risk (Klauer et al., 2006, NHTSA 100-Car Study). Coaching pushes "one quick relative check on straights".
 - **Load cost** = Race Mode flash threshold − latest standard Apex Snap threshold. It measures how much the clutter disrupts the habit. A shrinking load cost is the sign that the habit is becoming automatic, because automatic processes are resistant to concurrent load (Schneider & Shiffrin, 1977).
 
+## 3c. Holding the apex under threat (Eyes Off the Wall, Mind tab)
+Drivers and riders call it target fixation: you look at the wall, the gravel or the stricken car and drive towards it. Motorcycle coaching treats it as a "survival reaction" to be trained out (Code, 1993, *A Twist of the Wrist II*). The research explains why it happens and why it gets worse under pressure:
+
+| Finding | Source | Used in |
+|---|---|---|
+| Sudden new objects capture the eyes even when they are irrelevant, often without awareness. | Theeuwes, Kramer, Hahn & Irwin (1998), *Psychological Science* 9(5) | Sudden hazards timed just before the flash |
+| Anxiety shifts attention from goal-directed to stimulus-driven control, towards threats. | Eysenck, Derakshan, Santos & Calvo (2007), *Emotion* 7(2) | Threat on the outside, goal on the inside |
+| Anxious performers shorten their final fixation on the target. | Wilson, Vine & Wood (2009), *JSEP* 31(2) | Masked flash rewards a held fixation |
+| "Don't overshoot" under load produced overshooting. | Wegner, Ansfield & Pilloff (1998), *Psychological Science* 9(3) | Self-talk compare mode |
+| Told to avoid the keeper, penalty takers' ironic errors (shots near the keeper) came with shorter final fixations on the open goal. | Binsch, Oudejans, Bakker & Savelsbergh (2010), *Human Movement Science* 29(2) | Self-talk compare mode |
+| Naming the thing to avoid drives the effect, not only the word "don't", and gaze mediates it. | Binsch, Oudejans, Bakker & Savelsbergh (2010), *Int. J. Sport Psychol.* | IRONIC tip ("say what to do") |
+| Training under pressure improves performance under pressure (meta-analysis, g = 0.67). | Low, Sandercock, Freeman, Winter, Butt & Maynard (2021), *Sport, Exercise, and Performance Psychology* | Adaptive threat level |
+
+**How the drill measures where your eyes were.** On hazard corners a barrier stands on the outside between turn-in and the apex. It carries a yellow-bordered board with the same pattern mask as the apex board. On probe trials both boards flash a *different* arrow for the same brief, masked exposure. Because the flash is shorter than an eye movement, you can only read the board you were already looking at, so the arrow you report shows where your eyes were. Probes count only when the two boards are well apart on screen (at least 7 % of the width and 3 board widths).
+
+- **Eyes captured** (primary) = hazard-arrow answers on probes, corrected for guessing. A guess is as likely to land on the hazard arrow as on each of the two other wrong arrows, so half of the wrong-arrow answers are subtracted. The raw rate is stored as `captureRaw`.
+- **Threat cost** = apex accuracy on clean corners minus apex accuracy on hazard corners. Clean and hazard corners are interleaved on the same staircase, so they are compared at the same flash durations.
+- **Threat level** (1-6) sets the share of corners with hazards (35-80 % nominal, a bit less after skipping chicanes where the next apex board would sit beside the barrier), which hazard types appear, how often they appear suddenly, how early before the flash (1.2 s down to 0.1 s), how close the barrier is to the edge (5 m down to ~1 m), and impact sound at 5+. With **Auto**, the level goes up after a session with ≤12 % capture and ≤8 pts threat cost, and down after ≥30 % capture or ≥25 pts threat cost (at least 8 probes). This is graded exposure, as in stress inoculation, rather than a single high-stakes test.
+- **Self-talk compare** alternates "Eyes: apex" and "Don't look at the wall" every 40 s. The **"Don't look" effect** is capture under the avoidance cue minus capture under the approach cue: your own evidence for which cue to use in the car.
+
+**Limits.** Hazards in a pseudo-3D drill are not a real wall at 200 km/h, and the drill can't produce real fear. What it trains is the attentional habit (goal-directed gaze despite a salient, threat-coded distractor) and the choice of self-talk. Check transfer in the sim at walled corners.
+
 ## 4. Warm-up and readiness
 Reaction-light drills are a staple of driver warm-ups and fitness programmes and part of a pre-performance routine (Cotterill, 2010, *Int. Rev. Sport Exerc. Psychol.* 3(2)). **Start Lights** uses a random hold so you cannot time the start from rhythm (Niemi & Näätänen, 1981, *Psych. Bull.* 89(1)). Responses under 100 ms count as anticipations, the same limit used in athletics false-start rules (Pain & Hibbs, 2007, *J. Sports Sci.* 25(1)). It also provides a daily readiness baseline: a much slower median than usual is a sign of fatigue.
 
@@ -82,4 +104,4 @@ Reaction-light drills are a staple of driver warm-ups and fitness programmes and
 - **Head rotation:** Land & Tatler (2001) found head yaw leads into corners. A small local bridge from OpenTrack/SlimeVR (UDP → WebSocket) could train head lead as well.
 - **Real circuits:** import track centre-lines from sim telemetry / track maps so the habit is rehearsed on the circuit you race next.
 - **Imagery:** PETTLEP-structured lap visualisation (Holmes & Collins, 2001, *J. Appl. Sport Psychol.* 13(1)) with reference-point callouts.
-- **Pressure training:** add score stakes/time pressure to rehearse wide attention under arousal.
+- **Pressure training:** threat-under-load is covered by Eyes Off the Wall (section 3c). Still open: score stakes/time pressure (one-shot qualifying attempts), and a peripheral "call the hazard" response so hazards are acknowledged without being fixated.

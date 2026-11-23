@@ -41,6 +41,7 @@ then go to http://localhost:8765. Run fullscreen on the monitor you race on and 
 | **Two-Point Focus** | Far fixation + peripheral near-field awareness (UFOV-style) | Exposure threshold (ms) |
 | **Apex Snap** (core) | "Clip the apex → eyes to the next apex" reflex at speed, optional peripheral dual task | Flash threshold (ms), Snap score |
 | **Apex Snap: Race Mode** (under load) | The same reflex with traffic (brake lights, car alongside), a relative timing box, dash (shift lights, delta, warnings), engineer radio, spotter calls, optional engine/speech audio. Confirm only for threats (go/no-go) | Load cost (ms), threats caught |
+| **Eyes Off the Wall** (Mind tab) | Holding the apex while a threat on the outside competes for your eyes: walls, wrecks, waved yellows, spinning cars. Threat level adapts between sessions. Optional self-talk comparison | Eyes captured (%), threat cost |
 
 Circuits are generated fresh each run from a corner vocabulary: kinks, sweepers, tight corners, hairpins, decreasing- and increasing-radius corners, chicanes, esses and double apexes. Each driving drill also has **Track** (Mixed / Technical / Fast) and **Elevation** (Flat / Rolling / Hilly, with blind crests and compressions) settings. The corner types, mixes and elevation profiles are defined in `track.js` (`CORNER_TYPES`, `MIXES`, `ELEVATION`).
 
@@ -58,7 +59,7 @@ Controls: arrows / WASD to answer, Space / Enter to confirm, Esc to pause, **F**
 - **Work on in-sim:** prioritised advice for real driving, generated from your weakest areas, with the evidence behind each item and a button to keep training it. Examples: early-flash misses, weak corner types (hairpins, chicanes, decreasing radius…), left/right asymmetry, high-speed corners, blind crests, tunnel vision, HUD load cost, missed spotter threats, jump starts.
 - **Per-drill deep dive:** primary metric (sessions plus 5-session average, PB marked), small multiples for every other metric, weak-spot breakdowns, and a full session table.
 
-Apex Snap breakdowns: accuracy by flash timing, corner type, left/right, approach speed and blind crest. Two-Point Focus: far vs peripheral, and flag side. Start Lights: reaction-time distribution.
+Apex Snap breakdowns: accuracy by flash timing, corner type, left/right, approach speed and blind crest. Eyes Off the Wall: where your eyes were on hazard probes, clean vs hazard corners, accuracy and capture by hazard type, sudden vs already-there hazards, and capture by self-talk cue. Two-Point Focus: far vs peripheral, and flag side. Start Lights: reaction-time distribution.
 
 Per-trial detail is stored for the latest 50 sessions of each drill, and summaries for the latest 300. Drills plug into the stats page through an optional `analyze(results, A)` on their definition (see `js/core/analysis.js`).
 
@@ -80,6 +81,7 @@ js/ui/stats.js        Stats page
 js/render/symbols.js  arrows, pattern masks, boards, flags, HUD text
 js/render/track.js    procedural circuit + speed profile + racing line + pseudo-3D renderer (themes)
 js/components/race-layer.js  reusable race clutter: traffic, relative box, dash, radio/spotter, audio
+js/components/hazard-layer.js  outside-of-corner threats with a decoy board (walls, wrecks, yellows, spins), threat levels
 js/drills/*.js        one file per drill
 js/sessions.js        guided session playlists
 js/app.js             menu, settings, controls, data, results (all generated from definitions)
@@ -110,7 +112,7 @@ IST.registerDrill({
 
 The menu card, settings form, "why it works" panel, results table, deltas vs last session, trend line and coaching all come from the definition. To try a different look for an existing drill, either add a theme to `THEMES` in `track.js` (exposed via the `style` setting) or copy the drill file under a new `id` and change its rendering.
 
-Variants can share one `create()`: `apex-snap.js` registers a base definition and a Race Mode copy (`Object.assign({}, BASE, RACE)`) that sets `raceMode: true` and adds settings/metrics. `IST.RaceLayer` can be bolted onto any driving drill the same way.
+Variants can share one `create()`: `apex-snap.js` registers a base definition and a Race Mode copy (`Object.assign({}, BASE, RACE)`) that sets `raceMode: true` and adds settings/metrics. `IST.RaceLayer` can be bolted onto any driving drill the same way. `eyes-off-wall.js` does the same from another tab: it copies `IST.ApexSnap.BASE`, sets `hazardMode: true` and `tab: 'mind'`, and supplies `levelFor()` and `hazardSummary()` for `IST.HazardLayer`.
 
 Each drill instance exposes `debug()` for dev-tools inspection and automated checks.
 
