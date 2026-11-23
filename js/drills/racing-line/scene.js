@@ -5,7 +5,7 @@
  * marker posts at each phase, and the speed trace.
  *
  * createScene(env) binds the run's view settings: env = { S (drill
- * settings), VIEW, SEAT, CP (cockpit or null) }. Everything else comes in
+ * settings), VIEW, SEAT, cockpit (IST.Cockpit or null) }. Everything else comes in
  * as arguments: q (the question) and rp (the replay state).
  */
 (function () {
@@ -16,7 +16,7 @@
   const { panel, outline } = RL.ui;
 
   RL.createScene = function (env) {
-    const { S, VIEW, SEAT, CP } = env;
+    const { S, VIEW, SEAT, cockpit } = env;
 
     /** The drawing view turns the complex to run up the screen; later views keep that orientation. */
     function view(q, key, w, h, pad) {
@@ -179,9 +179,9 @@
         sp.draw(g, pr, R);
       });
       const v = LL.sampleAt(L.sim.v, L.sim, s);
-      if (CP) {
-        CP.frameFor(R, SEAT);
-        CP.draw(g, IST.Cockpit.steerFrom((p) => LL.sampleAt(L.n, L.sim, p) * HW, IST.Cockpit.segCurv(geo), s), IST.Cockpit.dash(v));
+      if (cockpit) {
+        cockpit.frameFor(R, SEAT);
+        cockpit.draw(g, IST.Cockpit.steerFrom((p) => LL.sampleAt(L.n, L.sim, p) * HW, IST.Cockpit.segCurv(geo), s), IST.Cockpit.dash(v));
       }
       // HUD (over the cockpit)
       Sym.text(g, kmh(v) + '', w / 2, h - 34, { align: 'center', size: Math.max(28, Math.min(44, h * 0.08)), weight: 900 });

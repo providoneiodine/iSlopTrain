@@ -7,7 +7,7 @@
  * straightened out, with every car on it and where the prototype reaches the GT.
  *
  * createScene(env) binds the run's view settings: env = { S (drill
- * settings), VIEW, SEAT, CP (cockpit or null) }.
+ * settings), VIEW, SEAT, cockpit (IST.Cockpit or null) }.
  *
  * Positions come in as P = { sF, lF, vF, sS, lS, vS, fp, sp, xs: [{ s, l, v, color, name, num }] }.
  */
@@ -19,7 +19,7 @@
   const { box, caps } = MC.ui;
 
   MC.createScene = function (env) {
-    const { S, VIEW, SEAT, CP } = env;
+    const { S, VIEW, SEAT, cockpit } = env;
 
     /** Screen position + heading of a car at track position s and lateral lat (m) in top-down view V. */
     function carAt(geo, V, s, lat) {
@@ -315,9 +315,9 @@
         const braking = c.id === 'F' || c.id === 'S' ? (P.braking != null ? P.braking : plan && TL.vAt(plan, c.s + 6) < c.v - 0.4) : plan && TL.vAt(plan, c.s + 6) < c.v - 0.4;
         IST.RaceLayer.drawCar(g, pr, { color: c.color }, braking);
       });
-      if (CP) {
-        CP.frameFor(R, SEAT);
-        CP.draw(g, IST.Cockpit.steerFrom(lat, IST.Cockpit.segCurv(geo), mine.s), IST.Cockpit.dash(mine.v));
+      if (cockpit) {
+        cockpit.frameFor(R, SEAT);
+        cockpit.draw(g, IST.Cockpit.steerFrom(lat, IST.Cockpit.segCurv(geo), mine.s), IST.Cockpit.dash(mine.v));
       }
       // alongside: the other car's nose / tail in your periphery (over the cockpit, like the HUD)
       const side = others.filter((c) => Math.abs(c.s - mine.s) < CARLEN + 1.5).sort((a, b) => Math.abs(a.s - mine.s) - Math.abs(b.s - mine.s))[0];

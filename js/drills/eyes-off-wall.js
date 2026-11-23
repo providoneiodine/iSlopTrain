@@ -25,6 +25,8 @@
   const MIN_PROBES = 8;
   const LEVEL_UP = { capture: 0.12, cost: 0.08 };
   const LEVEL_DOWN = { capture: 0.3, cost: 0.25 };
+  // Call the Hazard: live hazards called to level up / below which the level eases; walls called at most
+  const CALL_MIN = 6, CALL_UP = 0.8, CALL_DOWN = 0.6, CALL_FA = 0.2;
 
   // corrected capture: wrong-arrow answers are guesses; a guess hits the hazard arrow
   // as often as each of the other two non-apex arrows, so subtract half of them
@@ -84,16 +86,21 @@
     /** Threat level for a new run: fixed by setting, or the last run's recommendation. */
     levelFor(S, history) {
       if (S.threat && S.threat !== 'auto') return U.clamp(Number(S.threat) || 1, 1, HL.MAX_LEVEL);
-      for (let i = history.length - 1; i >= 0; i--) {
-        const s = history[i].summary;
-        if (s && U.isNum(s.nextLevel)) return s.nextLevel;
-        if (s && U.isNum(s.level)) return s.level;
-      }
-      return 1;
+      const last = (hist) => {
+        for (let i = hist.length - 1; i >= 0; i--) {
+          const s = hist[i].summary;
+          if (s && U.isNum(s.nextLevel)) return s.nextLevel;
+          if (s && U.isNum(s.level)) return s.level;
+        }
+        return null;
+      };
+      // a first Call the Hazard run starts at the standard drill's level
+      const lv = last(history) || (this.callMode ? last(IST.Storage.getResults('eyes-off-wall')) : null);
+      return lv || 1;
     },
 
-    /** Hazard metrics from the per-target rows (T from Apex Snap, H parallel hazard info). */
-    hazardSummary(T, H, level) {
+    /** Hazard metrics from the per-target rows (T from Apex Snap, H parallel hazard info; calls in call mode). */
+    hazardSummary(T, H, level, calls) {
       const idx = T.map((_, i) => i);
       const hzI = idx.filter((i) => H[i].hz), clean = idx.filter((i) => !H[i].hz);
       const probes = idx.filter((i) => H[i].probe);
@@ -119,13 +126,38 @@
       const pa = probes.filter((i) => H[i].framing === 'approach'), pv = probes.filter((i) => H[i].framing === 'avoid');
       const ironic = pa.length >= 4 && pv.length >= 4 ? capOf(pv) - capOf(pa) : null;
 
+      // call mode: live-hazard probes split by called x where the eyes were
+      let call = {};
+      if (calls) {
+        const lp = probes.filter((i) => H[i].live);
+        const grid = { seen: 0, looked: 0, missed: 0, missedCap: 0 };
+        for (const i of lp) {
+          const cap = H[i].outcome === 'hazard';
+          grid[H[i].called ? (cap ? 'looked' : 'seen') : cap ? 'missedCap' : 'missed']++;
+        }
+        call = {
+          seenRate: lp.length ? grid.seen / lp.length : null,
+          callGrid: grid,
+          callHit: calls.live ? calls.called / calls.live : null,
+          wallCallRate: calls.walls ? calls.wallCalls / calls.walls : null,
+          falseCalls: calls.wallCalls + calls.noneCalls,
+          callRT: calls.callRT,
+          liveHazards: calls.live,
+          callByHz: calls.callByHz,
+        };
+      }
+      // calls have to hold up too: no levelling up by ignoring the hazards, or by calling everything
+      const callsOk = !calls || calls.live < CALL_MIN || (call.callHit >= CALL_UP && (call.wallCallRate == null || call.wallCallRate <= CALL_FA));
+      const callsBad = calls && calls.live >= CALL_MIN && call.callHit < CALL_DOWN;
+
       let nextLevel = level;
       if (nP >= MIN_PROBES && captureRate != null) {
-        if (captureRate <= LEVEL_UP.capture && (hazardCost == null || hazardCost <= LEVEL_UP.cost)) nextLevel = Math.min(HL.MAX_LEVEL, level + 1);
-        else if (captureRate >= LEVEL_DOWN.capture || (hazardCost != null && hazardCost >= LEVEL_DOWN.cost)) nextLevel = Math.max(1, level - 1);
+        if (callsOk && captureRate <= LEVEL_UP.capture && (hazardCost == null || hazardCost <= LEVEL_UP.cost)) nextLevel = Math.min(HL.MAX_LEVEL, level + 1);
+        else if (callsBad || captureRate >= LEVEL_DOWN.capture || (hazardCost != null && hazardCost >= LEVEL_DOWN.cost)) nextLevel = Math.max(1, level - 1);
       }
 
       return {
+        ...call,
         level, nextLevel,
         probes: nP,
         captureRate,
@@ -240,4 +272,90 @@
   });
 
   IST.registerDrill(DEF);
+
+  // ------------------------------------------------------- Call the Hazard
+  /*
+   * Same drill, plus a go/no-go call: press Confirm for live hazards (wreck,
+   * waved yellow, spinning car) and not for walls, sparks or not. Live hazards
+   * stand out by colour, flashing lights and motion, so they can be noticed in
+   * the periphery. The probe flash checks the call was made that way: a call
+   * counts as "seen" only when the eyes were not on the hazard board.
+   * Separate history, so the standard drill's capture rate stays comparable.
+   */
+  const CALL = {
+    id: 'eyes-off-wall-call',
+    name: 'Eyes Off the Wall: Call the Hazard',
+    category: 'Pressure · Call',
+    callMode: true,
+    tagline: 'See the hazard without looking at it.',
+    description:
+      'Eyes Off the Wall with a call: press Confirm for a wreck, a waved yellow or a spinning car, never for a wall. ' +
+      'Make the call out of the corner of your eye. The flash shows whether you looked to make it.',
+    research: DEF.research.concat([
+      { point: 'Experienced drivers pick up more in the periphery while looking ahead.', source: 'Crundall, Underwood & Chapman (1999), Perception 28(9).' },
+      { point: 'Unexpected objects in plain view are often missed when attention is on a task.', source: 'Simons & Chabris (1999), Perception 28(9).' },
+      { point: 'Respond to some signals, ignore others: hits and false alarms measure detection apart from bias.', source: 'Green & Swets (1966), Signal Detection Theory and Psychophysics.' },
+    ]),
+    settings: settings.map((f) => (f.key === 'duration' ? Object.assign({}, f, { default: 240 }) : f)),
+    metrics: [
+      { key: 'seenRate', label: 'Seen, not stared', pct: true, digits: 0, better: 'higher', primary: true, hint: 'Live-hazard probes you called without reading the hazard board.' },
+      { key: 'callHit', label: 'Hazards called', pct: true, digits: 0, better: 'higher', hint: 'Wrecks, yellows and spins called before you passed them.' },
+      { key: 'falseCalls', label: 'False calls', digits: 0, better: 'lower', hint: 'Calls on walls or with no hazard ahead.' },
+      { key: 'wallCallRate', label: 'Walls called', pct: true, digits: 0, better: 'lower' },
+      { key: 'callRT', label: 'Call time, sudden', unit: 'ms', digits: 0, better: 'lower', hint: 'From a sudden hazard appearing to your call.' },
+    ].concat(DEF.metrics.map((m) => (m.primary ? Object.assign({}, m, { primary: false }) : m))),
+
+    coach(s, result) {
+      const tips = [];
+      const pc = (x) => Math.round(x * 100);
+      const g = s.callGrid;
+      if (U.isNum(s.callHit) && s.liveHazards >= CALL_MIN) {
+        if (s.callHit < 0.7) tips.push('Called ' + pc(s.callHit) + '% of live hazards. They\'re in plain view: let the colour and motion register, then call.');
+        else if (s.callHit >= 0.9 && U.isNum(s.captureRate) && s.captureRate <= 0.12) tips.push('Called nearly everything with your eyes on the apex. That\'s the skill.');
+      }
+      const nLive = g ? g.seen + g.looked + g.missed + g.missedCap : 0;
+      if (g && nLive >= 4 && g.looked / nLive >= 0.2) tips.push('On ' + pc(g.looked / nLive) + '% of live-hazard probes you looked to make the call. Trust the first read from the corner of your eye.');
+      if (U.isNum(s.wallCallRate) && s.wallCallRate > CALL_FA) tips.push('Called ' + pc(s.wallCallRate) + '% of walls. A wall is just a wall, sparks or not: no call.');
+      if (s.falseCalls >= 4) tips.push(s.falseCalls + ' false calls. Call only what you saw.');
+      return tips.concat(DEF.coach.call(this, s, result));
+    },
+
+    analyze(results, A) {
+      const out = DEF.analyze.call(this, results, A);
+      const recent = results.slice(-10);
+      const sub = 'Last ' + recent.length + ' session' + (recent.length === 1 ? '' : 's');
+      const pc = (x) => Math.round(x * 100) + '%';
+      const gr = { seen: 0, looked: 0, missed: 0, missedCap: 0 };
+      for (const r of recent) {
+        const g = r.summary && r.summary.callGrid;
+        if (g) for (const k in gr) gr[k] += g[k] || 0;
+      }
+      const n = gr.seen + gr.looked + gr.missed + gr.missedCap;
+      if (n) {
+        out.breakdowns.unshift({
+          title: 'Live hazards on probes', subtitle: sub, pct: true,
+          items: [
+            { label: 'Called, eyes on apex', value: gr.seen / n, n },
+            { label: 'Called by looking', value: gr.looked / n, n },
+            { label: 'Not called, eyes on apex', value: gr.missed / n, n },
+            { label: 'Not called, eyes on hazard', value: gr.missedCap / n, n },
+          ],
+        });
+      }
+      const byHz = A.sumTallies(recent, 'callByHz');
+      const items = A.items(byHz, ['wreck', 'yellow', 'spin', 'wall'], { wreck: 'Wreck', yellow: 'Yellow flag', spin: 'Spinning car', wall: 'Wall (should be 0)' }).map((i) => Object.assign(i, { tag: undefined }));
+      if (items.length) out.breakdowns.splice(n ? 1 : 0, 0, { title: 'Called', subtitle: sub, pct: true, items });
+
+      const hit = A.mean(A.values(results, 'callHit').slice(-5));
+      if (hit != null && hit < 0.75) {
+        out.notes.push({ tone: 'bad', text: this.name + ': called ' + pc(hit) + ' of live hazards.' });
+        out.insim.push({ id: 'HAZ_MISS', score: 0.35 + (0.75 - hit), evidence: 'Live hazards called ' + pc(hit) });
+      } else if (hit != null && hit >= 0.9) out.notes.push({ tone: 'good', text: this.name + ': called ' + pc(hit) + ' of live hazards.' });
+      if (n >= A.MIN_N && gr.looked / n >= 0.15) {
+        out.insim.push({ id: 'HAZ_LOOK', score: 0.3 + gr.looked / n, evidence: 'Looked to call on ' + pc(gr.looked / n) + ' of live-hazard probes' });
+      }
+      return out;
+    },
+  };
+  IST.registerDrill(Object.assign({}, DEF, CALL));
 })();

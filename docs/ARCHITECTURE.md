@@ -28,9 +28,9 @@ A guide for whoever maintains this next. It covers how the pieces fit together; 
 | `IST.TrafficLab` | a prototype and a GT (plus an optional third car) on one complex, calibrated to IMSA/WEC class gaps, car following, contact/squeeze/cut-off detection, question generation | Class Traffic |
 | `IST.Track` / `IST.TrackRenderer` | generated circuits and the in-car renderer | Apex Snap family, Two-Point Focus, the replays, View screen |
 | `IST.RaceLayer` | traffic, relative box, dash, radio/spotter, audio | Apex Snap: Race Mode; `drawCar` is reused by the replays |
-| `IST.HazardLayer` | threats on the outside of corners (walls, wrecks, yellows, spins) | Eyes Off the Wall |
+| `IST.HazardLayer` | threats on the outside of corners (walls, wrecks, yellows, spins), and the live-hazard call windows | Eyes Off the Wall, Call the Hazard |
 | `IST.Juice` | chain, multiplier tiers, score, grades, tones, callouts | every drill |
-| `IST.View` / `IST.Cockpit` | FOV, horizon, seat position, cockpit drawing | every drill with `usesView: true` |
+| `IST.View` / `IST.Cockpit` | FOV, horizon, seat position, cockpit drawing; the one rule for whether a trackside board can take a flash (`IST.View.board`) | every drill with `usesView: true`; flash validity in the Apex Snap family, hazard probes, Two-Point and the View screen |
 
 ## A session, end to end
 

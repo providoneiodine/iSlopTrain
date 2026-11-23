@@ -22,14 +22,24 @@
  * whether there is impact sound.
  *
  * Interface used by the drill:
- *   new IST.HazardLayer({track, rnd, level, audio, framing, boardOnScreen})
+ *   new IST.HazardLayer({track, rnd, level, audio, framing, boardThrough})
+ *     boardThrough(pos, x, exposure) -> screen board {x, y, size} if it stays readable
+ *     for the whole flash (IST.View.board), else null
  *   .plan(plan, ci, pos)       attach the corner's hazard + decoy arrow to a trial plan
- *   .arm(plan, W)              at flash onset: decide whether this is a probe trial
+ *   .arm(plan, W, apex)        at flash onset (apex: the apex board on screen): decide whether this is a probe trial
  *   .update(dt, clock, ts, pos)
  *   .sprites(pos, far, ts, plan, fb, boardSize, th) -> sprite[]
  *   .renderHUD(g, W, H, ts, clock)
  *   .framingAt(clock) -> 'approach' | 'avoid'
+ *   .call(ts) -> {kind:'live'|'wall'|'none', hz, rt}    (call mode)
+ *   .callSummary()                                      (call mode)
  *   .pause() .resume() .destroy()
+ *
+ * Call mode (o.call): live hazards (wreck, yellow, spin: something on or by the
+ * track that changes what you'd do) must be called with Confirm; walls must
+ * not, even when they spark. A hazard's call window opens once it has
+ * appeared and is within CALL_AHEAD s, and closes as the car passes it. An
+ * uncalled live hazard is reported through o.onMissed(hz) when it closes.
  */
 (function () {
   'use strict';
@@ -47,10 +57,12 @@
   const MAX_LEVEL = LEVELS.length - 1;
   const TYPE_LABELS = { wall: 'Wall', wreck: 'Wreck', yellow: 'Yellow flag', spin: 'Spinning car' };
   const CAR_COLORS = ['#d7263d', '#1b998b', '#f46036', '#2e86ab', '#e8e8e8', '#8e44ad', '#f1c40f', '#3d5a80'];
-  const BOARD_FADE = [12, 4];
   const FRAME_BLOCK_MS = 40000;
   const CUES = { approach: 'Eyes: apex', avoid: "Don't look at the wall" };
   const SPIN_MS = 1400;
+  const CALL_AHEAD = 3.5; // s: a hazard's call window opens this far ahead (once it has appeared)
+  const CALL_PAST = 5; // m past the anchor: window closes (you're alongside it)
+  const isLive = (type) => type !== 'wall';
 
   function HazardLayer(o) {
     this.o = o;
@@ -87,16 +99,21 @@
         appearTs: -Infinity,
         color: CAR_COLORS[(rnd() * CAR_COLORS.length) | 0],
         phase: rnd() * 1000,
+        live: isLive(type),
+        win: 0, // call window: 0 not yet open, 1 open, 2 closed
+        openTs: null, calledTs: null, probeOutcome: null,
       };
       if (hz.pop) hz.appearPos = Math.max(0, c.startPos - 120); // overwritten when the trial is planned
       this.byCorner[i] = hz;
       this.list.push(hz);
     });
+    this.falseNone = 0; // calls with no hazard in a call window
     if (o.audio && L.sound) this.initAudio();
   }
   HazardLayer.LEVELS = LEVELS;
   HazardLayer.MAX_LEVEL = MAX_LEVEL;
   HazardLayer.TYPE_LABELS = TYPE_LABELS;
+  HazardLayer.isLive = isLive;
   HazardLayer.CUES = CUES;
 
   HazardLayer.prototype.framingAt = function (clock) {
@@ -121,14 +138,16 @@
     }
   };
 
-  /** At flash onset: a probe needs the hazard board on screen and well apart from the apex board. */
-  HazardLayer.prototype.arm = function (p, W, apexPos, apexX) {
+  /**
+   * At flash onset: a probe needs the hazard board readable by the same rule as the apex
+   * board, for the whole flash, and well apart from the apex board (a: its screen board).
+   */
+  HazardLayer.prototype.arm = function (p, W, a) {
     p.probe = false;
     const hz = p.hazard;
-    if (!hz) return;
-    const a = this.o.boardOnScreen(apexPos, apexX);
-    const b = this.o.boardOnScreen(hz.anchor, this.boardX(hz));
-    if (a && b && Math.abs(a.x - b.x) >= Math.max(W * 0.07, 3 * a.size)) p.probe = true;
+    if (!hz || !a) return;
+    const b = this.o.boardThrough(hz.anchor, this.boardX(hz), p.exposure);
+    if (b && Math.abs(a.x - b.x) >= Math.max(W * 0.07, 3 * a.size)) p.probe = true;
   };
 
   HazardLayer.prototype.boardX = function (hz) {
@@ -143,11 +162,68 @@
       }
     }
     this.lastPos = pos;
+    if (this.o.call) this.updateCalls(ts, pos);
     const f = this.framingAt(clock);
     if (this.o.framing === 'compare' && f !== this.lastFraming) {
       this.banner = { text: CUES[f], until: performance.now() + 2600 };
     }
     this.lastFraming = f;
+  };
+
+  HazardLayer.prototype.updateCalls = function (ts, pos) {
+    const t = this.t, tNow = t.timeAt(pos);
+    for (const hz of this.list) {
+      if (hz.win === 2) continue;
+      if (pos > hz.anchor + CALL_PAST) {
+        const wasOpen = hz.win === 1;
+        hz.win = 2;
+        if (wasOpen && hz.live && hz.calledTs == null && this.o.onMissed) this.o.onMissed(hz);
+        continue;
+      }
+      const appeared = !hz.pop || hz.appearTs !== -Infinity;
+      if (hz.win === 0 && appeared && t.timeAt(hz.anchor) - tNow <= CALL_AHEAD) {
+        hz.win = 1;
+        hz.openTs = ts;
+      }
+    }
+  };
+
+  /** Confirm pressed in call mode: credit the nearest hazard in its call window. */
+  HazardLayer.prototype.call = function (ts) {
+    let best = null;
+    for (const hz of this.list) {
+      if (hz.win === 1 && hz.calledTs == null && (!best || hz.anchor < best.anchor)) best = hz;
+    }
+    if (!best) {
+      this.falseNone++;
+      return { kind: 'none' };
+    }
+    best.calledTs = ts;
+    return { kind: best.live ? 'live' : 'wall', hz: best, rt: ts - best.openTs };
+  };
+
+  /** Call-mode tallies over hazards whose call window has opened. */
+  HazardLayer.prototype.callSummary = function () {
+    const seen = this.list.filter((hz) => hz.win > 0);
+    const live = seen.filter((hz) => hz.live && (hz.win === 2 || hz.calledTs != null));
+    const walls = seen.filter((hz) => !hz.live && hz.win === 2);
+    const called = live.filter((hz) => hz.calledTs != null);
+    const wallCalls = seen.filter((hz) => !hz.live && hz.calledTs != null).length;
+    const tally = (arr, hit) => {
+      const o = {};
+      for (const hz of arr) {
+        const e = (o[hz.type] = o[hz.type] || [0, 0]);
+        e[0]++;
+        if (hit(hz)) e[1]++;
+      }
+      return o;
+    };
+    const suddenRTs = called.filter((hz) => hz.pop).map((hz) => hz.calledTs - hz.openTs);
+    return {
+      live: live.length, called: called.length, walls: walls.length, wallCalls, noneCalls: this.falseNone,
+      callRT: suddenRTs.length ? U.median(suddenRTs) : null,
+      callByHz: tally(live.concat(walls), (hz) => hz.calledTs != null),
+    };
   };
 
   HazardLayer.prototype.captured = function () {
@@ -425,11 +501,9 @@
       out.push({
         pos: hz.anchor - 0.05, x: this.boardX(hz),
         draw: (g, pr) => {
-          const fade = U.clamp((pr.dz - BOARD_FADE[1]) / (BOARD_FADE[0] - BOARD_FADE[1]), 0, 1);
-          if (fade <= 0) return;
           const size = boardSize(pr), cy = pr.y - size / 2;
           const content = plan && plan.hazard === hz && plan.probe && plan.state === 'shown' ? plan.decoy : 'mask';
-          Sym.layer(g, (1 - pr.fog * 0.55) * fade, pr.x, cy, size * 0.62, (L) => hazardBoard(L, pr.x, cy, size, content, th));
+          if (!Sym.trackBoard(g, pr, pr.x, cy, size * 0.62, hz.ci + 0.5, (L) => hazardBoard(L, pr.x, cy, size, content, th))) return;
           if (fb && fb.hazard === hz && fb.captured && performance.now() < fb.until) Sym.ring(g, pr.x, cy, size * 0.85, '#ffb000', Math.max(2, size * 0.1));
         },
       });

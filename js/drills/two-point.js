@@ -10,8 +10,9 @@
 (function () {
   'use strict';
   const U = IST.util, Sym = IST.Symbols;
-  const BOARD_M = 2.4; // board edge, metres
-  const BOARD_KERB = 1.07; // board stands on the inside kerb at the apex (half-widths), so fixating it = fixating the apex
+  const BOARD = IST.View.BOARD; // board size, kerb position and visibility rule shared with Apex Snap
+  const BAND = 0.15; // the board stays a little more central than in Apex Snap, leaving room for flags on both sides
+  const SCENES_PER_FRAME = 6; // scene picks tried per frame before trying again next frame
   const MASK_MS = 260;
   const FLAG_M = 1.1; // flag cloth width, metres
   const NEAR_MAX = 60; // flags stand at most this far ahead (m): the near road, not the next straight
@@ -94,7 +95,7 @@
       const rnd = U.rng(U.randomSeed());
       const track = IST.Track.generate({ rng: U.rng(U.randomSeed()), vmax: 60, minLength: 40000, minStraight: 30, elevation: S.elevation });
       const R = new IST.TrackRenderer(track, { theme: S.style, decor: false });
-      const V = IST.View.get(), SEAT = IST.View.seat(V), CP = S.cockpit !== false ? IST.View.cockpit(V, S.style) : null;
+      const V = IST.View.get(), SEAT = IST.View.seat(V), cockpit = S.cockpit !== false ? IST.View.cockpit(V, S.style) : null;
       const th = R.theme, HW = track.HALF_W;
       let start = S.startExposure;
       if (S.carryOver) {
@@ -109,7 +110,7 @@
       const stair = new IST.Staircase({ start, min: 17, max: 1000, factor: 1.3, nDown: 2 });
       const NDIST = { none: 0, low: 3, high: 6 }[S.distractors] || 0;
       const trials = [];
-      let tr = null, early = 0, lastTs = performance.now();
+      let tr = null, early = 0, lastTs = performance.now(), noScene = 0;
       // game feel: chain on "both right"; silent under "summary only" feedback
       const J = new IST.Juice({ history: ctx.history, live: S.feedback === 'every' });
       const bestThr = ctx.history.reduce((b, r) => (r.summary && r.summary.threshold > 0 ? Math.min(b, r.summary.threshold) : b), Infinity);
@@ -125,21 +126,11 @@
           const cam = { pos, x: track.lateralAt(pos) * HW, heading: rnd() * 6.28 };
           IST.View.apply(R, W, H, V);
           R.prepare(W, H, cam);
-          const pr = R.project(c.apexPos, c.dir * HW * BOARD_KERB, 0);
-          const boardY = pr ? pr.y - Math.max(S.minTargetPx, BOARD_M * pr.s) / 2 : 0;
-          if (!(pr && pr.x > W * 0.15 && pr.x < W * 0.85 && pr.y <= pr.clip + 0.5 && boardY > H * 0.08)) continue;
-          if (CP) {
-            // the board must be in clear view of the cockpit (pillar, roof, wheel)
-            const size = Math.max(S.minTargetPx, BOARD_M * pr.s);
-            CP.frameFor(R, SEAT);
-            if (CP.hidden([pr.x - size / 2, pr.y - size, pr.x + size / 2, pr.y], IST.Cockpit.steerAt(track, pos)) > 0.1) continue;
-          }
-          return { c, cam, pr };
+          // the board must be readable by the shared rule: on screen, clear of crests, HUD and cockpit
+          const b = IST.View.boardVisible(R, c.apexPos, c.dir * HW * BOARD.KERB, { minPx: S.minTargetPx, band: BAND, cockpit, seat: SEAT, steer: IST.Cockpit.steerAt(track, pos) });
+          if (b) return { c, cam, pr: b.pr };
         }
-        const c = track.corners[1];
-        const cam = { pos: c.apexPos - 150, x: 0, heading: 0 };
-        R.prepare(W, H, cam);
-        return { c, cam, pr: R.project(c.apexPos, c.dir * HW * BOARD_KERB, 0) };
+        return null; // no readable scene: never run a trial on a board you can't see
       }
 
       // flag geometry at a trackside spot: ground point, cloth centre and size (px); null if off screen
@@ -152,15 +143,15 @@
         return { pos, x, gx: pr.x, gy: pr.y, cx: pr.x + size * 0.5, cy, size };
       }
       function clearOf(f, steer) {
-        if (!CP) return true;
-        return CP.hidden([f.gx - 2, f.cy - f.size * 0.35, f.gx + f.size, f.gy], steer) <= 0.1;
+        if (!cockpit) return true;
+        return cockpit.hidden([f.gx - 2, f.cy - f.size * 0.35, f.gx + f.size, f.gy], steer) <= BOARD.HIDE_AT;
       }
 
       // yellow target + mirror (mask only) on opposite verges at the same distance, white distractors
       function placeFlags(sc, W, H, side) {
         IST.View.apply(R, W, H, V);
         R.prepare(W, H, sc.cam);
-        if (CP) CP.frameFor(R, SEAT);
+        if (cockpit) cockpit.frameFor(R, SEAT);
         const steer = IST.Cockpit.steerAt(track, sc.cam.pos);
         const bx = sc.pr.x, by = sc.pr.y;
         const ecc = ECC[S.ecc] || ECC.near;
@@ -195,15 +186,17 @@
         const W = ctx.W, H = ctx.H;
         const side = rnd() < 0.5 ? -1 : 1;
         let sc = null, fl = null;
-        for (let k = 0; k < 25 && !fl; k++) {
+        for (let k = 0; k < SCENES_PER_FRAME && !fl; k++) {
           sc = pickScene(W, H);
-          if (sc.pr) fl = placeFlags(sc, W, H, side);
+          if (sc) fl = placeFlags(sc, W, H, side);
         }
         if (!fl) {
-          // fallback: verge flags 20 m ahead whatever the view
-          const mk = (sd) => ({ pos: sc.cam.pos + 20, x: sd * (HW + VERGE) });
-          fl = { target: mk(side), mirror: mk(-side), dist: [] };
+          // no scene with the board and both flags in view: try again next frame, never
+          // show a trial whose board or flag can't be seen
+          noScene++;
+          return;
         }
+        noScene = 0;
         const { target, mirror, dist } = fl;
         tr = {
           phase: 'fixate', t0: clock,
@@ -236,7 +229,7 @@
       }
 
       function drawBoard(g, pr) {
-        const size = Math.max(S.minTargetPx, BOARD_M * pr.s);
+        const size = IST.View.boardSize(pr, S.minTargetPx);
         const cy = pr.y - size / 2; // bottom edge rests on the kerb
         g.globalAlpha = 0.35;
         g.fillStyle = '#000';
@@ -263,7 +256,7 @@
       }
 
       return {
-        debug: () => ({ tr, trials, stair }), // for dev tools / automated checks
+        debug: () => ({ tr, trials, stair, R, board: () => IST.View.board(R, tr.c.apexPos, tr.c.dir * HW * BOARD.KERB, { minPx: S.minTargetPx, band: BAND }) }), // for dev tools / automated checks
 
         update(dt, clock, ts) {
           lastTs = ts;
@@ -318,6 +311,11 @@
           if (!tr) {
             g.fillStyle = '#000';
             g.fillRect(0, 0, W, H);
+            // ~1 s without a scene where the board and flags are both in clear view
+            if (noScene > 60) {
+              Sym.text(g, 'No clear view of an apex board with these View settings', W / 2, H / 2 - 12, { align: 'center', size: 18, weight: 720 });
+              Sym.text(g, 'Try a different FOV, horizon or seat on the View screen, or turn the cockpit off.', W / 2, H / 2 + 16, { align: 'center', size: 14, alpha: 0.75 });
+            }
             return;
           }
           if (!paused) {
@@ -331,7 +329,7 @@
             }
           }
           IST.View.apply(R, W, H, V);
-          const sprites = [{ pos: tr.c.apexPos, x: tr.c.dir * HW * BOARD_KERB, draw: drawBoard }];
+          const sprites = [{ pos: tr.c.apexPos, x: tr.c.dir * HW * BOARD.KERB, draw: drawBoard }];
           if (tr.phase === 'stim') {
             for (const d of tr.dist) sprites.push({ pos: d.pos, x: d.x, draw: (g2, pr) => drawFlag(g2, pr, '#eef0f4') });
             sprites.push({ pos: tr.target.pos, x: tr.target.x, draw: (g2, pr) => drawFlag(g2, pr, '#f5c400') });
@@ -339,9 +337,9 @@
             for (const f of [tr.target, tr.mirror].concat(tr.dist)) sprites.push({ pos: f.pos, x: f.x, draw: drawNoise });
           }
           R.render(g, W, H, tr.cam, sprites);
-          if (CP) {
-            CP.frameFor(R, SEAT);
-            CP.draw(g, IST.Cockpit.steerAt(track, tr.cam.pos), IST.Cockpit.dash(track.speedAt(tr.cam.pos)));
+          if (cockpit) {
+            cockpit.frameFor(R, SEAT);
+            cockpit.draw(g, IST.Cockpit.steerAt(track, tr.cam.pos), IST.Cockpit.dash(track.speedAt(tr.cam.pos)));
           }
 
           // response prompt / feedback

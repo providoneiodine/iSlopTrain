@@ -6,7 +6,9 @@
 (function () {
   'use strict';
   const U = IST.util, h = U.h, Sym = IST.Symbols;
-  const BOARD_M = 2.4, BOARD_KERB = 1.07, HIDE_AT = 0.1;
+  const BOARD = IST.View.BOARD; // the drills' board size and visibility rule
+  // why a board can't take a flash (IST.View.board)
+  const WHY_TEXT = { off: 'out of view', fade: 'too close', side: 'too near the edge', hud: 'under the HUD', below: 'off screen', crest: 'behind a crest', cockpit: 'blocked' };
   const HZ_SHOW_MS = 1400; // red horizon line after the slider is let go
 
   let raf = 0;
@@ -168,16 +170,13 @@
       const boards = [], sprites = [];
       const first = scene.track.nextCornerIndex(pos);
       for (let i = first; i >= 0 && i < Math.min(scene.track.corners.length, first + 2); i++) {
-        const c = scene.track.corners[i], b = { c };
+        const c = scene.track.corners[i], b = { c, pos: c.apexPos, x: c.dir * HW * BOARD.KERB };
         boards.push(b);
         sprites.push({
-          pos: c.apexPos, x: c.dir * HW * BOARD_KERB,
+          pos: b.pos, x: b.x,
           draw: (g2, pr) => {
-            const size = Math.max(14, BOARD_M * pr.s), cy = pr.y - size / 2;
-            const fade = U.clamp((pr.dz - 4) / 8, 0, 1);
-            if (fade <= 0) return;
-            b.rect = [pr.x - size / 2, cy - size / 2, pr.x + size / 2, cy + size / 2];
-            Sym.layer(g2, (1 - pr.fog * 0.55) * fade, pr.x, cy, size * 0.6, (L) => Sym.board(L, pr.x, cy, size, 'mask', R.theme));
+            const size = IST.View.boardSize(pr), cy = pr.y - size / 2;
+            Sym.trackBoard(g2, pr, pr.x, cy, size * 0.6, i, (L) => Sym.board(L, pr.x, cy, size, 'mask', R.theme));
           },
         });
       }
@@ -207,17 +206,18 @@
         g.globalAlpha = 1;
       }
 
-      const b = boards[0];
+      // next apex board, judged by the same rule the drills use to allow a flash
+      const nb = boards[0];
       let txt = 'Field of view here: ' + Math.round(IST.View.fovFor(V, W, H)) + '° horizontal';
-      if (b && b.rect && V.cockpit) {
-        const cov = cockpit.coverage(b.rect[0], b.rect[1], b.rect[2], b.rect[3]);
-        const hid = cov > HIDE_AT;
-        if (pv.mask) {
-          g.strokeStyle = hid ? '#f09ca6' : '#a6e3c4';
+      if (nb) {
+        const vis = IST.View.board(R, nb.pos, nb.x, { cockpit: V.cockpit ? cockpit : null, seat: IST.View.seat(V), steer: scene.steer });
+        if (pv.mask && vis.rect) {
+          const r = vis.rect;
+          g.strokeStyle = vis.why ? '#f09ca6' : '#a6e3c4';
           g.lineWidth = 2;
-          g.strokeRect(b.rect[0] - 3, b.rect[1] - 3, b.rect[2] - b.rect[0] + 6, b.rect[3] - b.rect[1] + 6);
+          g.strokeRect(r[0] - 3, r[1] - 3, r[2] - r[0] + 6, r[3] - r[1] + 6);
         }
-        txt += '  ·  next apex board ' + (hid ? 'blocked ' + Math.round(cov * 100) + '%' : 'in view');
+        txt += '  ·  next apex board ' + (WHY_TEXT[vis.why] || 'in view') + (vis.why === 'cockpit' ? ' ' + Math.round(vis.cover * 100) + '%' : '');
       }
       status.textContent = txt;
       raf = requestAnimationFrame(frame);

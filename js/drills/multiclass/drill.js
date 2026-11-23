@@ -109,7 +109,7 @@
 
     create(ctx) {
       const S = ctx.settings, def = this;
-      const VIEW = IST.View.get(), SEAT = IST.View.seat(VIEW), CP = S.cockpit !== false ? IST.View.cockpit(VIEW, S.style) : null;
+      const VIEW = IST.View.get(), SEAT = IST.View.seat(VIEW), cockpit = S.cockpit !== false ? IST.View.cockpit(VIEW, S.style) : null;
       const rnd = U.rng(U.randomSeed());
       const auto = !S.level || S.level === 'auto';
       const startLevel = def.levelFor(S, ctx.history);
@@ -276,7 +276,7 @@
         if (MC.replay.step(st.rp, dt) && J.audio) J.audio.tick();
       }
 
-      const scene = MC.createScene({ S, VIEW, SEAT, CP });
+      const scene = MC.createScene({ S, VIEW, SEAT, cockpit });
       const screens = MC.createScreens({ st, rows, S, ctx, limit: () => limitFor(st.q), scene, act: { startReplay, skipPhase, advance, wantsReplay } });
 
       // ------------------------------------------------------------- input

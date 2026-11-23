@@ -22,11 +22,8 @@
     gt: { aLat: 15, aBrake: 13, aAccel: 6, aero: 0.35 },
     proto: { aLat: 24, aBrake: 22, aAccel: 9, aero: 0.6 },
   };
-  const BOARD_M = 2.4; // board edge, metres
   // The board stands directly on the inside kerb at the apex (no post, no offset),
-  // so the point you fixate to read it IS the apex, not a sign beside it.
-  const BOARD_KERB = 1.07; // lateral position in half-widths: centre of the inside kerb
-  const BOARD_FADE = [12, 4]; // metres before the apex: fade out so it never fills the view
+  // so the point you fixate to read it IS the apex, not a sign beside it (IST.View.BOARD).
   const INTRO_MS = 3500;
   const RESP_MS = 1600; // response window after the flash ends
   const FLAG_ON_MS = 650;
@@ -160,19 +157,14 @@
       const raceMode = !!this.raceMode; // set on the Race Mode variant below
       const def = this;
       const hazardMode = !!this.hazardMode; // set on Eyes Off the Wall (drills/eyes-off-wall.js)
+      const callMode = hazardMode && !!this.callMode; // Call the Hazard: Confirm on live hazards
       const seed = S.seed > 0 ? Math.floor(S.seed) : U.randomSeed();
       const G = GRIP[S.grip] || GRIP.gt;
       const vmax = S.speed / 3.6;
       const track = IST.Track.generate(Object.assign({ rng: U.rng(seed), vmax, minLength: vmax * S.duration * 0.9 + 2500, leadIn: 60, minStraight: 14, maxStraight: 55, elevation: S.elevation, mix: S.layout, familiar: S.familiar || 'rare' }, G));
       const R = new IST.TrackRenderer(track, { theme: S.style });
-      const V = IST.View.get(), SEAT = IST.View.seat(V), CP = IST.View.cockpit(V, S.style);
-      const HIDE_AT = 0.1; // share of a board the cockpit may cover and still count as in view
-      /** Does the cockpit hide this screen rect in the prepared frame (with the wheel turned as it will be there)? */
-      function cockpitHides(rect) {
-        if (!CP || !R.ready) return false;
-        CP.frameFor(R, SEAT);
-        return CP.hidden(rect, IST.Cockpit.steerAt(track, R.cam.pos)) > HIDE_AT;
-      }
+      const V = IST.View.get(), SEAT = IST.View.seat(V), cockpit = IST.View.cockpit(V, S.style);
+      const BOARD = IST.View.BOARD;
       const th = R.theme, HW = track.HALF_W, SEG = track.SEG;
       const rnd = U.rng(U.randomSeed());
 
@@ -211,24 +203,44 @@
         hzTrials: [], hfb: null, // hazard mode: per-trial hazard info (parallel to trials), capture feedback
       };
 
-      const boardX = (c) => c.dir * HW * BOARD_KERB;
+      const boardX = (c) => c.dir * HW * BOARD.KERB;
       // camera on the racing line, turned partly along it (yaw vs the track from the
       // line's drift); 60 % because a driver's head counter-rotates toward the apex
       const camAt = (pos) => ({ pos, x: track.lateralAt(pos) * HW, heading: st.heading, yaw: 0.6 * track.lineYawAt(pos) });
-      const boardSize = (pr) => Math.max(S.minTargetPx, BOARD_M * pr.s);
-      /** Screen position + size of a board standing at (pos, x), or null if off screen / behind a crest. */
-      function boardOnScreen(pos, x) {
-        const pr = R.project(pos, x, 0);
-        if (!pr || pr.x < R.W * 0.04 || pr.x > R.W * 0.96) return null;
-        const size = boardSize(pr), cy = pr.y - size / 2;
-        if (cy < 0 || cy + size * 0.3 >= pr.clip) return null;
-        if (cockpitHides([pr.x - size / 2, cy - size / 2, pr.x + size / 2, cy + size / 2])) return null;
-        return { x: pr.x, y: cy, size };
+      const boardSize = (pr) => IST.View.boardSize(pr, S.minTargetPx);
+      /*
+       * Boards (apex and hazard) are readable by the shared rule (IST.View.board) in the
+       * prepared frame, with the wheel turned as it is at that spot. A flash must stay
+       * readable for its whole exposure, so a crest, the A-pillar or the board fading as
+       * you reach it can't swallow it mid-flash: later frames are checked by projecting
+       * from where the car will be.
+       */
+      function boardAt(pos, x) {
+        if (!R.ready) return null;
+        return IST.View.boardVisible(R, pos, x, { minPx: S.minTargetPx, cockpit, seat: SEAT, steer: IST.Cockpit.steerAt(track, R.cam.pos) });
+      }
+      /** Does test() hold in every frame over the next exposure (+120 ms)? Restores this frame after. */
+      function holdsFor(exposure, test) {
+        const t0 = track.timeAt(st.pos), span = exposure + 120;
+        let ok = true;
+        for (let t = 40; ok && t <= span; t += 40) {
+          R.prepare(R.W, R.H, camAt(track.posAtTime(t0 + t / 1000)));
+          ok = test();
+        }
+        R.prepare(R.W, R.H, camAt(st.pos));
+        return ok;
+      }
+      /** Screen board at (pos, x) now, if it stays readable for the whole exposure; else null. */
+      function boardThrough(pos, x, exposure) {
+        const now = boardAt(pos, x);
+        return now && holdsFor(exposure, () => !!boardAt(pos, x)) ? now : null;
       }
       const hz = hazardMode
         ? new IST.HazardLayer({
             track, rnd: U.rng(U.randomSeed()), level: this.levelFor(S, ctx.history),
-            audio: S.audio, framing: S.framing, boardOnScreen,
+            audio: S.audio, framing: S.framing, boardThrough,
+            call: callMode,
+            onMissed: () => J.miss({ label: 'MISSED HAZARD' }),
           })
         : null;
 
@@ -236,7 +248,7 @@
       function isBlind(c) {
         if (c._blind !== undefined) return c._blind;
         const from = Math.max(0, c.apexPos - 150);
-        const eye = track.heightAt(from) + 1.15, tgt = track.heightAt(c.apexPos) + BOARD_M / 2;
+        const eye = track.heightAt(from) + R.camH, tgt = track.heightAt(c.apexPos) + BOARD.M / 2;
         let blind = false;
         for (let p = from + 10; p < c.apexPos - 5; p += 5) {
           const lineH = eye + ((tgt - eye) * (p - from)) / (c.apexPos - from);
@@ -247,29 +259,9 @@
         }
         return (c._blind = blind);
       }
-      /*
-       * Can the flash be shown on corner ci now? The whole board (bottom edge included)
-       * must be clear of nearer terrain, not only now but for the whole exposure, so a
-       * crest or compression can't swallow it mid-flash. Future frames are checked by
-       * projecting from where the car will be.
-       */
-      /*
-       * Is corner ci's board readable in the currently prepared frame? Clear of terrain,
-       * wholly on screen, and inside the central READ_X band: on a single monitor a
-       * hairpin's apex sits at the very edge of the view (or past it) until late, and a
-       * flash out there is a coin toss rather than a test of where your eyes were.
-       */
-      const READ_X = 0.1;
-      function readable(ci) {
-        const c = track.corners[ci];
-        const pr = R.project(c.apexPos, boardX(c), 0);
-        if (!pr) return false;
-        const size = boardSize(pr), W = R.W;
-        if (pr.x < W * READ_X || pr.x > W * (1 - READ_X) || pr.x - size / 2 < W * 0.02 || pr.x + size / 2 > W * 0.98) return false;
-        if (pr.y - size < 0 || pr.y > pr.clip + 0.5) return false;
-        return !cockpitHides([pr.x - size / 2, pr.y - size, pr.x + size / 2, pr.y]); // A-pillar, roof, wheel
-      }
-      /** Positions in [from, to] (5 m steps) where the board is readable. */
+      /** Is corner ci's apex board readable in the prepared frame? */
+      const readable = (ci) => !!boardAt(track.corners[ci].apexPos, boardX(track.corners[ci]));
+      /** Positions in [from, to] (5 m steps) where the apex board is readable. */
       function readableSpan(ci, from, to) {
         const out = [];
         if (!R.ready) return out;
@@ -280,19 +272,6 @@
         R.prepare(R.W, R.H, camAt(st.pos)); // restore this frame
         return out;
       }
-      /** Readable now AND for the whole exposure (checked from where the car will be). */
-      function flashVisible(ci, exposure) {
-        if (!R.ready || !readable(ci)) return false;
-        const t0 = track.timeAt(st.pos), span = exposure + 120;
-        let ok = true;
-        for (let t = 40; ok && t <= span; t += 40) {
-          const fp = track.posAtTime(t0 + Math.min(t, span) / 1000);
-          R.prepare(R.W, R.H, camAt(fp));
-          ok = readable(ci);
-        }
-        R.prepare(R.W, R.H, camAt(st.pos)); // restore this frame
-        return ok;
-      }
 
       /** outcome: 'apex' (hit) | 'hazard' (read the hazard board) | 'other' (wrong arrow) | 'none' (no answer) */
       function resolve(p, correct, rt, timeout, outcome) {
@@ -302,9 +281,10 @@
         if (hz) {
           const H = p.hazard;
           st.hzTrials.push({
-            hz: H ? H.type : null, probe: !!p.probe, pop: !!(H && H.pop), framing: p.framing,
+            hz: H ? H.type : null, probe: !!p.probe, pop: !!(H && H.pop), framing: p.framing, ref: H || null,
             outcome: outcome || (timeout ? 'none' : correct ? 'apex' : 'other'),
           });
+          if (H && p.probe) H.probeOutcome = st.hzTrials[st.hzTrials.length - 1].outcome;
           if (outcome === 'hazard') {
             hz.captured();
             if (S.feedback === 'every') st.hfb = { hazard: H, captured: true, until: performance.now() + 450 };
@@ -326,8 +306,13 @@
           // early flash = eyes moved straight after the apex; shorter flashes pay more
           const snap = f < 1 / 3;
           const bonus = (snap ? 8 : 0) + U.clamp(Math.round((300 - p.exposure) / 25), 0, 10);
-          J.hit({ bonus, label: snap ? 'SNAP!' : p.exposure < 100 ? 'ELITE FLASH' : null, color: snap ? '#f6d98f' : null });
-        } else J.miss({ label: timeout ? 'MISSED' : outcome === 'hazard' ? 'EYES ON THE WALL' : 'WRONG' });
+          // call mode: a live hazard already called while the eyes held the apex
+          const seen = callMode && p.probe && p.hazard && p.hazard.live && p.hazard.calledTs != null;
+          J.hit({ bonus, label: seen ? 'SEEN' : snap ? 'SNAP!' : p.exposure < 100 ? 'ELITE FLASH' : null, color: seen || snap ? '#f6d98f' : null });
+        } else {
+          const looked = callMode && outcome === 'hazard' && p.hazard.live && p.hazard.calledTs != null;
+          J.miss({ label: timeout ? 'MISSED' : looked ? 'CALLED BY LOOKING' : outcome === 'hazard' ? 'EYES ON THE WALL' : 'WRONG' });
+        }
         if (!pbPace && isFinite(bestThr) && st.trials.length >= 6 && stair.value < bestThr) {
           pbPace = true;
           J.callout('PB PACE', '#f6d98f', 'flash ' + Math.round(stair.value) + ' ms, best was ' + Math.round(bestThr));
@@ -362,16 +347,16 @@
         const cy = pr.y - size / 2; // bottom edge rests on the kerb
         const p = st.plan;
         const content = p && p.corner === i && p.state === 'shown' ? p.dir : 'mask';
-        const fade = U.clamp((pr.dz - BOARD_FADE[1]) / (BOARD_FADE[0] - BOARD_FADE[1]), 0, 1);
+        const fade = Sym.boardFade(pr.dz);
         if (fade <= 0) return;
         const a = (1 - pr.fog * 0.55) * fade;
-        g.globalAlpha = a * 0.35;
+        g.globalAlpha = a * 0.35 * Math.min(1, fade / 0.75); // shadow goes as the board breaks
         g.fillStyle = '#000';
         g.beginPath();
         g.ellipse(pr.x, pr.y, size * 0.6, Math.max(1, size * 0.07), 0, 0, Math.PI * 2);
         g.fill();
         g.globalAlpha = 1;
-        Sym.layer(g, a, pr.x, cy, size * 0.6, (L) => Sym.board(L, pr.x, cy, size, content, th));
+        Sym.trackBoard(g, pr, pr.x, cy, size * 0.6, i, (L) => Sym.board(L, pr.x, cy, size, content, th));
         if (st.fb && st.fb.corner === i && ts < st.fb.until) Sym.ring(g, pr.x, cy, size * 0.85, st.fb.correct ? '#30d158' : '#ff453a', Math.max(2, size * 0.1));
       }
 
@@ -397,7 +382,7 @@
       }
 
       return {
-        debug: () => ({ st, stair, track, race, hz }), // for dev tools / automated checks
+        debug: () => ({ st, stair, track, race, hz, R, boardAt, boardX }), // for dev tools / automated checks
 
         update(dt, clock, ts) {
           const v = track.speedAt(st.pos);
@@ -406,7 +391,7 @@
           st.heading += track.curvatureAt(st.pos) * ds;
           st.pos += ds;
           st.lat = track.lateralAt(st.pos);
-          if (CP) st.steer += (IST.Cockpit.steerAt(track, st.pos) - st.steer) * (1 - Math.exp(-dt / 70));
+          if (cockpit) st.steer += (IST.Cockpit.steerAt(track, st.pos) - st.steer) * (1 - Math.exp(-dt / 70));
 
           // open a new target window whenever the next apex changes
           const ci = track.nextCornerIndex(st.pos);
@@ -445,14 +430,17 @@
           if (p) {
             if (p.state === 'planned' && st.pos >= p.onsetPos) {
               if (st.pos > p.latest) p.state = 'cancelled';
-              else if (flashVisible(p.corner, stair.value)) {
-                p.state = 'armed';
-                p.exposure = stair.value;
-                p.posAtOnset = st.pos;
-                if (hz) {
-                  const c = track.corners[p.corner];
-                  hz.arm(p, R.W, c.apexPos, boardX(c));
-                  p.framing = hz.framingAt(clock);
+              else {
+                const c = track.corners[p.corner];
+                const apex = boardThrough(c.apexPos, boardX(c), stair.value);
+                if (apex) {
+                  p.state = 'armed';
+                  p.exposure = stair.value;
+                  p.posAtOnset = st.pos;
+                  if (hz) {
+                    hz.arm(p, R.W, apex);
+                    p.framing = hz.framingAt(clock);
+                  }
                 }
               }
             } else if ((p.state === 'shown' || p.state === 'masked') && ts - p.onsetTs > p.exposure + RESP_MS) {
@@ -486,6 +474,13 @@
               st.faUntil = performance.now() + 600;
               J.miss({ label: 'GUESS' }); // pressing without a target breaks the chain
             }
+          } else if (a === 'confirm' && callMode) {
+            const c = hz.call(t);
+            if (c.kind === 'live') {
+              // called after the flash already showed the eyes on its board: no credit
+              if (c.hz.probeOutcome === 'hazard') J.callout('CALLED BY LOOKING', '#ffb000');
+              else J.bonus(10, 'CALLED');
+            } else J.miss({ label: c.kind === 'wall' ? 'JUST A WALL' : 'NOTHING THERE' });
           } else if (a === 'confirm' && (S.flags || race)) {
             const f = st.flag;
             if (f && f.onTs != null && !f.done) {
@@ -551,9 +546,9 @@
           if (hz) sprites.push.apply(sprites, hz.sprites(st.pos, far, ts, st.plan, st.hfb, boardSize, th));
           IST.View.apply(R, W, H, V);
           R.render(g, W, H, camAt(st.pos), sprites);
-          if (CP) {
-            CP.frameFor(R, SEAT);
-            CP.draw(g, st.steer, IST.Cockpit.dash(st.v));
+          if (cockpit) {
+            cockpit.frameFor(R, SEAT);
+            cockpit.draw(g, st.steer, IST.Cockpit.dash(st.v));
           }
           if (race) race.renderHUD(g, W, H, ts);
           if (hz) hz.renderHUD(g, W, H, ts, ctx.clock(), S.feedback === 'every');
@@ -570,7 +565,9 @@
             const extra = race
               ? '  ·  Confirm: car alongside' + (S.flags ? ' / marshal light' : '')
               : S.flags ? '  ·  Confirm: marshal light' : '';
-            const sub = hz ? 'Walls and wrecks will pull at your eyes  ·  press the arrow you saw' : 'Arrow keys' + extra;
+            const sub = callMode
+              ? 'Confirm: call wrecks, yellows, spins (not walls)  ·  eyes stay on the apex'
+              : hz ? 'Walls and wrecks will pull at your eyes  ·  press the arrow you saw' : 'Arrow keys' + extra;
             Sym.text(g, sub, W / 2, iy + 32, { align: 'center', size: 15, weight: 340, alpha: a * 0.9 });
           }
           if (performance.now() < st.faUntil && S.feedback === 'every') Sym.text(g, 'no target', W / 2, H * 0.08, { align: 'center', size: 14, color: '#ff453a' });
@@ -595,6 +592,11 @@
             }
             return o;
           };
+          // call mode: calls can come after the flash, so read them off the hazards now
+          for (const x of st.hzTrials) {
+            x.live = !!(x.ref && x.ref.live);
+            x.called = !!(x.ref && x.ref.calledTs != null);
+          }
           const out = {
             seed,
             detail: {
@@ -621,12 +623,12 @@
               falseConfirms: S.flags && !race ? st.flagFA : null,
               ...J.summary(),
               ...(race ? race.summary() : {}),
-              ...(hz ? def.hazardSummary(T, st.hzTrials, hz.level) : {}),
+              ...(hz ? def.hazardSummary(T, st.hzTrials, hz.level, callMode ? hz.callSummary() : null) : {}),
               loadCost: race && baseline && T.length >= 4 ? stair.threshold() - baseline : null,
             },
           };
-          // per-target hazard rows: [hazard type or '', probe, outcome a/h/o/n, sudden, framing a/v]
-          if (hz) out.detail.hazards = st.hzTrials.map((x) => [x.hz || '', x.probe ? 1 : 0, x.outcome[0], x.pop ? 1 : 0, x.framing === 'avoid' ? 'v' : 'a']);
+          // per-target hazard rows: [hazard type or '', probe, outcome a/h/o/n, sudden, framing a/v(, called)]
+          if (hz) out.detail.hazards = st.hzTrials.map((x) => [x.hz || '', x.probe ? 1 : 0, x.outcome[0], x.pop ? 1 : 0, x.framing === 'avoid' ? 'v' : 'a'].concat(callMode ? [x.called ? 1 : 0] : []));
           return out;
         },
       };

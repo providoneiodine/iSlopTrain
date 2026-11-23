@@ -59,13 +59,12 @@
    * so a multi-part sign (fill, border, symbol) fades as one flat image instead of
    * each part blending separately. (cx, cy, half) bounds the drawing.
    */
+  const LAYER_MAX = 2048; // px; a bigger sign is rendered at lower resolution, never cropped
   let layerCv = null;
-  S.layer = function (g, alpha, cx, cy, half, fn) {
-    if (alpha >= 0.999) return fn(g);
-    if (alpha <= 0.002) return;
+  function renderLayer(g, cx, cy, half, fn) {
     const m = g.getTransform ? g.getTransform() : { a: 1 };
-    const sc = Math.max(0.5, Math.hypot(m.a, m.b || 0));
-    const px = Math.min(2048, Math.ceil(2 * half * sc) + 4);
+    const sc = Math.min(Math.max(0.5, Math.hypot(m.a, m.b || 0)), (LAYER_MAX - 4) / Math.max(1, 2 * half));
+    const px = Math.ceil(2 * half * sc) + 4;
     if (!layerCv) layerCv = document.createElement('canvas');
     if (layerCv.width < px || layerCv.height < px) layerCv.width = layerCv.height = Math.max(px, layerCv.width);
     const L = layerCv.getContext('2d');
@@ -74,10 +73,65 @@
     L.globalAlpha = 1;
     L.setTransform(sc, 0, 0, sc, px / 2 - cx * sc, px / 2 - cy * sc);
     fn(L);
+    return { cv: layerCv, px, sc };
+  }
+  S.layer = function (g, alpha, cx, cy, half, fn) {
+    if (alpha >= 0.999) return fn(g);
+    if (alpha <= 0.002) return;
+    const { cv, px, sc } = renderLayer(g, cx, cy, half, fn);
     const prev = g.globalAlpha;
     g.globalAlpha = alpha;
-    g.drawImage(layerCv, 0, 0, px, px, cx - px / 2 / sc, cy - px / 2 / sc, px / sc, px / sc);
+    g.drawImage(cv, 0, 0, px, px, cx - px / 2 / sc, cy - px / 2 / sc, px / sc, px / sc);
     g.globalAlpha = prev;
+  };
+
+  /*
+   * Trackside boards (apex boards, hazard boards, the View preview) fade out over
+   * the last metres before you reach them and break apart as they go, so a board
+   * never fills the view and passing one feels the same in every drill.
+   *   S.BOARD_FADE      [start, gone] metres ahead
+   *   S.boardFade(dz)   1 (whole) .. 0 (gone)
+   *   S.trackBoard(g, pr, cx, cy, half, seed, fn)   draws fn() faded and broken; false if gone
+   */
+  S.BOARD_FADE = [12, 4];
+  const BREAK_AT = 0.75; // fade level where the board starts to break
+  const GRID = 3;
+  S.boardFade = (dz) => Math.min(1, Math.max(0, (dz - S.BOARD_FADE[1]) / (S.BOARD_FADE[0] - S.BOARD_FADE[1])));
+  const hash = (n) => {
+    const x = Math.sin(n * 127.1 + 311.7) * 43758.5453;
+    return x - Math.floor(x);
+  };
+  S.trackBoard = function (g, pr, cx, cy, half, seed, fn) {
+    const fade = S.boardFade(pr.dz);
+    if (fade <= 0) return false;
+    const alpha = (1 - (pr.fog || 0) * 0.55) * fade;
+    const t = Math.min(1, Math.max(0, (BREAK_AT - fade) / BREAK_AT));
+    const k = t * t * (3 - 2 * t);
+    if (k <= 0) {
+      S.layer(g, alpha, cx, cy, half, fn);
+      return true;
+    }
+    // break: the board splits into a GRID x GRID of pieces that drift apart, drop and turn
+    const { cv, px, sc } = renderLayer(g, cx, cy, half, fn);
+    const cell = px / GRID, w = cell / sc, gap = 1 - 0.08 * k;
+    const prev = g.globalAlpha;
+    g.globalAlpha = alpha;
+    for (let i = 0; i < GRID; i++) {
+      for (let j = 0; j < GRID; j++) {
+        const n = (seed || 0) * 13 + i * GRID + j;
+        const dx = i - (GRID - 1) / 2, dy = j - (GRID - 1) / 2;
+        const ox = k * half * (0.55 * dx + (hash(n) - 0.5) * 0.35);
+        const oy = k * half * (0.45 * dy + (hash(n + 0.5) - 0.5) * 0.3) + k * k * half * 0.5;
+        const rot = k * (hash(n + 0.25) - 0.5) * 0.9;
+        g.save();
+        g.translate(cx - px / 2 / sc + (i + 0.5) * w + ox, cy - px / 2 / sc + (j + 0.5) * w + oy);
+        g.rotate(rot);
+        g.drawImage(cv, i * cell, j * cell, cell, cell, (-w / 2) * gap, (-w / 2) * gap, w * gap, w * gap);
+        g.restore();
+      }
+    }
+    g.globalAlpha = prev;
+    return true;
   };
 
   /** Square target board. content: 'mask' | 'blank' | 'up' | 'down' | 'left' | 'right' */

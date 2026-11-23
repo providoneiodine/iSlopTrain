@@ -90,7 +90,7 @@
 
     create(ctx) {
       const S = ctx.settings, def = this;
-      const VIEW = IST.View.get(), SEAT = IST.View.seat(VIEW), CP = S.cockpit !== false ? IST.View.cockpit(VIEW, S.style) : null;
+      const VIEW = IST.View.get(), SEAT = IST.View.seat(VIEW), cockpit = S.cockpit !== false ? IST.View.cockpit(VIEW, S.style) : null;
       const rnd = U.rng(U.randomSeed());
       const auto = !S.level || S.level === 'auto';
       const startLevel = def.levelFor(S, ctx.history);
@@ -264,7 +264,7 @@
         st.rp = null;
       }
 
-      const scene = RL.createScene({ S, VIEW, SEAT, CP });
+      const scene = RL.createScene({ S, VIEW, SEAT, cockpit });
       const screens = RL.createScreens({ st, rows, S, scene, act: { undo, clearAll, submit, startReplay, cycle, skipPhase, advance, backToResult } });
 
       // ------------------------------------------------------------- input
