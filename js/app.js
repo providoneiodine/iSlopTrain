@@ -7,7 +7,7 @@
   'use strict';
   const U = IST.util, h = U.h;
   const $ = (s) => document.querySelector(s);
-  const SCREENS = ['screen-menu', 'screen-drill', 'screen-results', 'screen-stats'];
+  const SCREENS = ['screen-menu', 'screen-drill', 'screen-results', 'screen-stats', 'screen-view'];
 
   function show(id) {
     SCREENS.forEach((s) => document.getElementById(s).classList.toggle('hidden', s !== id));
@@ -333,6 +333,8 @@
   // --------------------------------------------------------------- run flow
   async function startDrill(def, overrides, session) {
     const settings = Object.assign(IST.Storage.getSettings(def), overrides || {});
+    // the in-car view the run used, saved with the result (cockpit occlusion changes what can be seen)
+    if (def.usesView) settings.view = IST.View.get();
     if (IST.Storage.getPref('fullscreen', false) && !document.fullscreenElement && document.documentElement.requestFullscreen) {
       try {
         await document.documentElement.requestFullscreen();
@@ -566,6 +568,7 @@
   $('#btn-method').addEventListener('click', openMethod);
   $('#btn-controls').addEventListener('click', openControls);
   $('#btn-data').addEventListener('click', openData);
+  $('#btn-view').addEventListener('click', () => IST.ViewSettings.open());
   $('#ver').textContent = IST.version;
   renderMenu();
   show('screen-menu');

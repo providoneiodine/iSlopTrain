@@ -36,6 +36,7 @@
     id: 'apex-snap',
     name: 'Apex Snap',
     category: 'Core',
+    usesView: true, // in-car view settings (IST.View): FOV, horizon, seat, cockpit
     tagline: 'Eyes to the next apex.',
     description: 'After each apex, the next apex board briefly flashes an arrow. Press the matching arrow. The flash shortens as you improve.',
     research: [
@@ -54,7 +55,6 @@
       { key: 'layout', label: 'Track', type: 'select', default: 'mixed', options: [['mixed', 'Mixed'], ['technical', 'Technical'], ['fast', 'Fast']] },
       { key: 'elevation', label: 'Elevation', type: 'select', default: 'rolling', options: [['flat', 'Flat'], ['rolling', 'Rolling'], ['hilly', 'Hilly']] },
       { key: 'familiar', label: 'Familiar corners', type: 'select', default: 'rare', options: [['off', 'Off'], ['rare', 'Rare'], ['often', 'Often'], ['silly', 'Silly']], hint: 'Rare nods to famous corner complexes.' },
-      { key: 'fov', label: 'FOV (horizontal)', type: 'number', unit: '°', default: 70, min: 30, max: 120, step: 1, hint: 'Match your sim.' },
       { key: 'style', label: 'Style', type: 'select', default: 'realistic', options: [['realistic', 'Realistic'], ['minimal', 'Minimal']] },
       { key: 'flags', label: 'Marshal lights', type: 'bool', default: false, hint: 'Confirm when one flashes.' },
       { key: 'feedback', label: 'Feedback', type: 'select', default: 'every', options: [['every', 'Every target'], ['none', 'Summary only']] },
@@ -164,7 +164,15 @@
       const G = GRIP[S.grip] || GRIP.gt;
       const vmax = S.speed / 3.6;
       const track = IST.Track.generate(Object.assign({ rng: U.rng(seed), vmax, minLength: vmax * S.duration * 0.9 + 2500, leadIn: 60, minStraight: 14, maxStraight: 55, elevation: S.elevation, mix: S.layout, familiar: S.familiar || 'rare' }, G));
-      const R = new IST.TrackRenderer(track, { theme: S.style, fov: S.fov });
+      const R = new IST.TrackRenderer(track, { theme: S.style });
+      const V = IST.View.get(), SEAT = IST.View.seat(V), CP = IST.View.cockpit(V, S.style);
+      const HIDE_AT = 0.1; // share of a board the cockpit may cover and still count as in view
+      /** Does the cockpit hide this screen rect in the prepared frame (with the wheel turned as it will be there)? */
+      function cockpitHides(rect) {
+        if (!CP || !R.ready) return false;
+        CP.frameFor(R, SEAT);
+        return CP.hidden(rect, IST.Cockpit.steerAt(track, R.cam.pos)) > HIDE_AT;
+      }
       const th = R.theme, HW = track.HALF_W, SEG = track.SEG;
       const rnd = U.rng(U.randomSeed());
 
@@ -197,7 +205,7 @@
       let pbPace = false;
 
       const st = {
-        pos: 0, heading: 0, lat: track.lateralAt(0), v: 0,
+        pos: 0, heading: 0, lat: track.lateralAt(0), v: 0, steer: 0,
         planCorner: -1, plan: null, trials: [], fa: 0, fb: null, faUntil: 0,
         flag: null, nextFlagAt: 6000 + rnd() * 4000, flagRTs: [], flagMiss: 0, flagFA: 0,
         hzTrials: [], hfb: null, // hazard mode: per-trial hazard info (parallel to trials), capture feedback
@@ -214,6 +222,7 @@
         if (!pr || pr.x < R.W * 0.04 || pr.x > R.W * 0.96) return null;
         const size = boardSize(pr), cy = pr.y - size / 2;
         if (cy < 0 || cy + size * 0.3 >= pr.clip) return null;
+        if (cockpitHides([pr.x - size / 2, cy - size / 2, pr.x + size / 2, cy + size / 2])) return null;
         return { x: pr.x, y: cy, size };
       }
       const hz = hazardMode
@@ -257,7 +266,8 @@
         if (!pr) return false;
         const size = boardSize(pr), W = R.W;
         if (pr.x < W * READ_X || pr.x > W * (1 - READ_X) || pr.x - size / 2 < W * 0.02 || pr.x + size / 2 > W * 0.98) return false;
-        return pr.y - size >= 0 && pr.y <= pr.clip + 0.5;
+        if (pr.y - size < 0 || pr.y > pr.clip + 0.5) return false;
+        return !cockpitHides([pr.x - size / 2, pr.y - size, pr.x + size / 2, pr.y]); // A-pillar, roof, wheel
       }
       /** Positions in [from, to] (5 m steps) where the board is readable. */
       function readableSpan(ci, from, to) {
@@ -396,6 +406,7 @@
           st.heading += track.curvatureAt(st.pos) * ds;
           st.pos += ds;
           st.lat = track.lateralAt(st.pos);
+          if (CP) st.steer += (IST.Cockpit.steerAt(track, st.pos) - st.steer) * (1 - Math.exp(-dt / 70));
 
           // open a new target window whenever the next apex changes
           const ci = track.nextCornerIndex(st.pos);
@@ -538,7 +549,12 @@
           }
           if (race) sprites.push.apply(sprites, race.sprites(st.pos, far, HW));
           if (hz) sprites.push.apply(sprites, hz.sprites(st.pos, far, ts, st.plan, st.hfb, boardSize, th));
+          IST.View.apply(R, W, H, V);
           R.render(g, W, H, camAt(st.pos), sprites);
+          if (CP) {
+            CP.frameFor(R, SEAT);
+            CP.draw(g, st.steer, IST.Cockpit.dash(st.v));
+          }
           if (race) race.renderHUD(g, W, H, ts);
           if (hz) hz.renderHUD(g, W, H, ts, ctx.clock(), S.feedback === 'every');
 

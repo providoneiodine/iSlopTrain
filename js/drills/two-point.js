@@ -17,6 +17,7 @@
     id: 'two-point',
     name: 'Two-Point Focus',
     category: 'Core',
+    usesView: true, // FOV, horizon and cockpit from IST.View; flags and HUD draw over the cockpit
     tagline: 'Eyes far, attention wide.',
     description: 'Keep your eyes on the ringed apex board. Report its symbol (↑/↓) and which side the yellow flag was on (←/→).',
     research: [
@@ -30,8 +31,8 @@
       { key: 'distractors', label: 'Distractors', type: 'select', default: 'low', options: [['none', 'None'], ['low', 'Low (3)'], ['high', 'High (6)']] },
       { key: 'ecc', label: 'Flag spread', type: 'select', default: 'near', options: [['near', 'Near'], ['wide', 'Wide']] },
       { key: 'elevation', label: 'Elevation', type: 'select', default: 'rolling', options: [['flat', 'Flat'], ['rolling', 'Rolling'], ['hilly', 'Hilly']] },
-      { key: 'fov', label: 'FOV (horizontal)', type: 'number', unit: '°', default: 70, min: 30, max: 120, step: 1 },
       { key: 'style', label: 'Style', type: 'select', default: 'realistic', options: [['realistic', 'Realistic'], ['minimal', 'Minimal']] },
+      { key: 'cockpit', label: 'Cockpit', type: 'bool', default: true, hint: 'Draw the cockpit over the road. Set it up on the View screen.' },
       { key: 'feedback', label: 'Feedback', type: 'select', default: 'every', options: [['every', 'Every trial'], ['none', 'Summary only']] },
       { key: 'carryOver', label: 'Continue from last level', type: 'bool', default: true },
       { key: 'startExposure', label: 'Start flash', type: 'number', unit: 'ms', default: 350, min: 30, max: 1000, step: 10 },
@@ -87,7 +88,8 @@
       const S = ctx.settings;
       const rnd = U.rng(U.randomSeed());
       const track = IST.Track.generate({ rng: U.rng(U.randomSeed()), vmax: 60, minLength: 40000, minStraight: 30, elevation: S.elevation });
-      const R = new IST.TrackRenderer(track, { theme: S.style, fov: S.fov, decor: false });
+      const R = new IST.TrackRenderer(track, { theme: S.style, decor: false });
+      const V = IST.View.get(), SEAT = IST.View.seat(V), CP = S.cockpit !== false ? IST.View.cockpit(V, S.style) : null;
       const th = R.theme, HW = track.HALF_W;
       let start = S.startExposure;
       if (S.carryOver) {
@@ -116,10 +118,18 @@
           if (hi <= lo) continue;
           const pos = lo + rnd() * (hi - lo);
           const cam = { pos, x: track.lateralAt(pos) * HW, heading: rnd() * 6.28 };
+          IST.View.apply(R, W, H, V);
           R.prepare(W, H, cam);
           const pr = R.project(c.apexPos, c.dir * HW * BOARD_KERB, 0);
           const boardY = pr ? pr.y - Math.max(S.minTargetPx, BOARD_M * pr.s) / 2 : 0;
-          if (pr && pr.x > W * 0.15 && pr.x < W * 0.85 && pr.y <= pr.clip + 0.5 && boardY > H * 0.08) return { c, cam, pr };
+          if (!(pr && pr.x > W * 0.15 && pr.x < W * 0.85 && pr.y <= pr.clip + 0.5 && boardY > H * 0.08)) continue;
+          if (CP) {
+            // the board must be in clear view of the cockpit (pillar, roof, wheel)
+            const size = Math.max(S.minTargetPx, BOARD_M * pr.s);
+            CP.frameFor(R, SEAT);
+            if (CP.hidden([pr.x - size / 2, pr.y - size, pr.x + size / 2, pr.y], IST.Cockpit.steerAt(track, pos)) > 0.1) continue;
+          }
+          return { c, cam, pr };
         }
         const c = track.corners[1];
         const cam = { pos: c.apexPos - 150, x: 0, heading: 0 };
@@ -257,7 +267,12 @@
               tr.maskTs = ts;
             }
           }
+          IST.View.apply(R, W, H, V);
           R.render(g, W, H, tr.cam, [{ pos: tr.c.apexPos, x: tr.c.dir * HW * BOARD_KERB, draw: drawBoard }]);
+          if (CP) {
+            CP.frameFor(R, SEAT);
+            CP.draw(g, IST.Cockpit.steerAt(track, tr.cam.pos), IST.Cockpit.dash(track.speedAt(tr.cam.pos)));
+          }
 
           const size = Math.max(26, W * 0.032);
           const P = (p) => [p.fx * W, p.fy * H];

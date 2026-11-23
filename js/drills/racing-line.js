@@ -157,6 +157,7 @@
     tab: 'mind',
     pointer: true, // drawn with the mouse: never hide the cursor
     category: 'Racecraft',
+    usesView: true, // in-car pane: FOV, horizon and cockpit from IST.View
     tagline: 'Draw the fastest line through a corner complex.',
     description:
       'A corner complex from above: draw the line you would drive, from the approach to the straight. ' +
@@ -177,8 +178,8 @@
       { key: 'questions', label: 'Corners', type: 'number', default: 8, min: 3, max: 30, step: 1 },
       { key: 'level', label: 'Level', type: 'select', default: 'auto', options: [['auto', 'Auto (adapts)']].concat([1, 2, 3, 4, 5, 6].map((n) => [String(n), String(n) + ' (pass ≤ ' + PASS[n].toFixed(2) + ' s)'])), hint: 'Higher levels need a line closer to the ideal to pass.' },
       { key: 'tolerance', label: 'Drawing tolerance', type: 'select', default: '1', options: [['1.5', 'Loose (1.5 m)'], ['1', 'Normal (1 m)'], ['0.5', 'Strict (0.5 m)']], hint: 'How far from your drawing the line may move to find what you meant.' },
-      { key: 'fov', label: 'FOV (horizontal)', type: 'number', unit: '°', default: 70, min: 30, max: 120, step: 1, hint: 'In-car replay. Match your sim.' },
       { key: 'style', label: 'Replay style', type: 'select', default: 'realistic', options: [['realistic', 'Realistic'], ['minimal', 'Minimal']] },
+      { key: 'cockpit', label: 'Cockpit', type: 'bool', default: true, hint: 'Draw the cockpit over the in-car replay. Set it up on the View screen.' },
     ],
     metrics: [
       { key: 'level', label: 'Line level', digits: 1, better: 'higher', primary: true, hint: 'Average level over the second half of the session. Higher levels need a line closer to the ideal to pass.' },
@@ -257,6 +258,7 @@
 
     create(ctx) {
       const S = ctx.settings, def = this;
+      const VIEW = IST.View.get(), SEAT = IST.View.seat(VIEW), CP = S.cockpit !== false ? IST.View.cockpit(VIEW, S.style) : null;
       const rnd = U.rng(U.randomSeed());
       const auto = !S.level || S.level === 'auto';
       const startLevel = def.levelFor(S, ctx.history);
@@ -841,7 +843,7 @@
 
       function renderPOV(g, x, y, w, h, ts) {
         const q = st.q, rp = st.rp, L = rp.line, geo = q.geo;
-        if (!q.R) q.R = new IST.TrackRenderer(geo, { theme: S.style, fov: S.fov });
+        if (!q.R) q.R = new IST.TrackRenderer(geo, { theme: S.style });
         const R = q.R;
         const s = rp.s;
         const n = LL.sampleAt(L.n, L.sim, s);
@@ -866,6 +868,7 @@
         g.clip();
         g.translate(x, y);
         // road first, then the lines painted on it, then posts and the ghost car (far to near)
+        IST.View.apply(R, w, h, VIEW);
         R.prepare(w, h, cam);
         R.draw(g, []);
         drawRibbon(g, R, rp.ghost, s, lineColor(rp.ghost), 0.45, 0.22);
@@ -877,8 +880,12 @@
           pr.fog = fogAmt * Math.pow(U.clamp((pr.dz / maxDz - 0.22) / 0.78, 0, 1), 1.5);
           sp.draw(g, pr, R);
         });
-        // HUD
         const v = LL.sampleAt(L.sim.v, L.sim, s);
+        if (CP) {
+          CP.frameFor(R, SEAT);
+          CP.draw(g, IST.Cockpit.steerFrom((p) => LL.sampleAt(L.n, L.sim, p) * HW, IST.Cockpit.segCurv(geo), s), IST.Cockpit.dash(v));
+        }
+        // HUD (over the cockpit)
         Sym.text(g, kmh(v) + '', w / 2, h - 34, { align: 'center', size: Math.max(28, Math.min(44, h * 0.08)), weight: 900 });
         Sym.text(g, 'km/h', w / 2, h - 14, { align: 'center', size: 12, weight: 700, alpha: 0.75 });
         const dt = LL.timeAt(q.user.sim, s) - LL.timeAt(q.ideal.sim, s);

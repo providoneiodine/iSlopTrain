@@ -172,6 +172,7 @@
     name: 'Class Traffic',
     tab: 'mind',
     category: 'Racecraft',
+    usesView: true, // in-car pane: FOV, horizon and cockpit from IST.View
     tagline: 'Make the responsible call in multiclass traffic, from both sides of the speed gap.',
     description:
       'A prototype closing on a GT down a long straight into a corner. You\'re one of them: pick the pass, or how to be passed. ' +
@@ -206,8 +207,8 @@
       { key: 'level', label: 'Level', type: 'select', default: 'auto', options: [['auto', 'Auto (adapts)']].concat([1, 2, 3, 4, 5, 6].map((n) => [String(n), String(n)])), hint: 'Higher levels make the call closer.' },
       { key: 'replay', label: 'Replay analysis', type: 'select', default: 'always', options: [['always', 'After every answer'], ['wrong', 'Only when wrong'], ['off', 'Off']] },
       { key: 'timeLimit', label: 'Time limit', type: 'select', default: '0', options: [['0', 'None'], ['30', '30 s'], ['20', '20 s'], ['10', '10 s']] },
-      { key: 'fov', label: 'FOV (horizontal)', type: 'number', unit: '°', default: 70, min: 30, max: 120, step: 1, hint: 'In-car view. Match your sim.' },
       { key: 'style', label: 'In-car style', type: 'select', default: 'realistic', options: [['realistic', 'Realistic'], ['minimal', 'Minimal']] },
+      { key: 'cockpit', label: 'Cockpit', type: 'bool', default: true, hint: 'Draw the cockpit over the in-car view. Set it up on the View screen.' },
     ],
     metrics: [
       { key: 'level', label: 'Traffic level', digits: 1, better: 'higher', primary: true, hint: 'Average level over the second half of the session. Higher levels make the call closer.' },
@@ -291,6 +292,7 @@
 
     create(ctx) {
       const S = ctx.settings, def = this;
+      const VIEW = IST.View.get(), SEAT = IST.View.seat(VIEW), CP = S.cockpit !== false ? IST.View.cockpit(VIEW, S.style) : null;
       const rnd = U.rng(U.randomSeed());
       const auto = !S.level || S.level === 'auto';
       const startLevel = def.levelFor(S, ctx.history);
@@ -1038,7 +1040,7 @@
        */
       function renderPOV(g, x, y, w, h, ts, P) {
         const q = st.q, geo = q.geo;
-        if (!q.R) q.R = new IST.TrackRenderer(geo, { theme: S.style, fov: S.fov });
+        if (!q.R) q.R = new IST.TrackRenderer(geo, { theme: S.style });
         const R = q.R, me = q.me;
         const mine = me === 'F' ? { s: P.sF, l: P.lF, plan: P.fp, v: P.vF } : { s: P.sS, l: P.lS, plan: P.sp, v: P.vS };
         const oth = me === 'F' ? { s: P.sS, l: P.lS, v: P.vS, color: COL.slow, plan: P.sp } : { s: P.sF, l: P.lF, v: P.vF, color: COL.fast, plan: P.fp };
@@ -1051,6 +1053,7 @@
         g.rect(x + 1, y + 1, w - 2, h - 2);
         g.clip();
         g.translate(x, y);
+        IST.View.apply(R, w, h, VIEW);
         R.prepare(w, h, cam);
         R.draw(g, []);
         const dz = oth.s - mine.s;
@@ -1063,7 +1066,11 @@
             IST.RaceLayer.drawCar(g, pr, { color: oth.color }, braking);
           }
         }
-        // alongside: the other car's nose / tail in your periphery
+        if (CP) {
+          CP.frameFor(R, SEAT);
+          CP.draw(g, IST.Cockpit.steerFrom(lat, IST.Cockpit.segCurv(geo), mine.s), IST.Cockpit.dash(mine.v));
+        }
+        // alongside: the other car's nose / tail in your periphery (over the cockpit, like the HUD)
         if (Math.abs(dz) < CARLEN + 1.5) {
           const left = oth.l < mine.l, ov = U.clamp(1 - Math.abs(dz) / (CARLEN + 1.5), 0.15, 1);
           const ww = w * 0.13 * ov, y0 = h * 0.45, y1 = h * 0.72;

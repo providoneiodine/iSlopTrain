@@ -16,6 +16,7 @@
       <div class="brand"><span class="logo">◢</span> iSlopTrain <span class="sub" id="brand-sub">Vision Trainer</span></div>
       <nav>
         <button class="btn" id="btn-stats">Stats</button>
+        <button class="btn ghost" id="btn-view" title="Cockpit, FOV, horizon and seat">View</button>
         <button class="btn ghost" id="btn-fullscreen" title="Toggle fullscreen (F)">Fullscreen</button>
         <button class="btn ghost" id="btn-method">Method</button>
         <button class="btn ghost" id="btn-controls">Controls</button>
@@ -80,6 +81,8 @@
 
   <div id="screen-stats" class="screen page page-wide hidden"></div>
 
+  <div id="screen-view" class="screen page page-wide hidden"></div>
+
   <div id="modal" class="modal hidden" role="dialog" aria-modal="true">
     <div class="modal-panel">
       <button class="close" aria-label="Close">×</button>
@@ -98,6 +101,8 @@
   <!-- rendering -->
   <script src="js/render/symbols.js"></script>
   <script src="js/render/track.js"></script>
+  <script src="js/render/cockpit.js"></script>
+  <script src="js/render/view.js"></script>
   <!-- reusable drill components -->
   <script src="js/components/race-layer.js"></script>
   <script src="js/components/hazard-layer.js"></script>
@@ -117,5 +122,6 @@
   <script src="js/app.js"></script>
   <script src="js/ui/charts.js"></script>
   <script src="js/ui/stats.js"></script>
+  <script src="js/ui/view-settings.js"></script>
 </body>
 </html>

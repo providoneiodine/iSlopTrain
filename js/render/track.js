@@ -539,7 +539,9 @@
     this.yawShift = -this.proj * Math.tan(cam.yaw || 0);
     // camera follows the terrain and pitches with the local gradient (smoothed)
     const pitch = (t.heightAt(cam.pos + 10) - t.heightAt(Math.max(0, cam.pos - 5))) / 15;
-    this.horizonY = Math.round(U.clamp(H * this.horizonFrac + pitch * this.proj * 0.9, H * 0.18, H * 0.72));
+    // pitch may move the horizon 24 % up / 30 % down from its set place
+    const hf = this.horizonFrac;
+    this.horizonY = Math.round(U.clamp(H * hf + pitch * this.proj * 0.9, H * Math.max(0.04, hf - 0.24), H * Math.min(0.96, hf + 0.3)));
     this.camY = t.heightAt(cam.pos) + this.camH;
     const baseIdx = Math.floor(cam.pos / SEG);
     const frac = cam.pos / SEG - baseIdx;
