@@ -1,0 +1,101 @@
+# Architecture
+
+A guide for whoever maintains this next. It covers how the pieces fit together; each file's header comment covers what that file does, and [METHODOLOGY.md](METHODOLOGY.md) covers why the drills are built the way they are.
+
+## The shape of it
+
+- **No build, no dependencies.** Every file is a classic `<script>` loaded by `index.html`, so the app runs from `file://` or any static server. There are no ES modules and no bundler.
+- **One global, `window.IST`.** Each file is an IIFE (`(function () { 'use strict'; … })();`) that reads what it needs from `IST` and adds what it provides. For example, `track.js` sets `IST.Track` and `IST.TrackRenderer`, and `line-lab.js` sets `IST.LineLab`.
+- **Load order is the dependency graph.** A file may use, *at load time*, only what loaded before it in `index.html`. At run time (inside functions) anything is available. If you add a file, put its `<script>` after everything it reads at load time.
+- **Drills are plugins.** A drill calls `IST.registerDrill(def)`. The menu card, settings form, info panel, results table, deltas, trend line and Stats page are all generated from `def`. The app shell rarely needs to change when a drill is added.
+
+## Layers (in load order)
+
+| Layer | Files | Owns |
+|---|---|---|
+| core | `js/core/` | namespace + registry (`ist.js`), helpers (`util.js`), persistence (`storage.js`), adaptive staircase, input → abstract actions, the drill runner (canvas, loop, pause), Stats analysis |
+| render | `js/render/` | arrows/text/HUD primitives (`symbols.js`), procedural circuits + pseudo-3D renderer (`track.js`), vector cockpit (`cockpit.js`), shared in-car view settings (`view.js`) |
+| components | `js/components/` | models and layers shared by several drills (below) |
+| drills | `js/drills/` | one file per small drill, one folder per large one |
+| sessions | `js/sessions.js` | guided playlists: drill + setting overrides per step |
+| app / ui | `js/app.js`, `js/ui/` | menu, settings, controls, data, results; Stats page; charts; View screen |
+
+### Shared components
+
+| Component | What it is | Used by |
+|---|---|---|
+| `IST.LineLab` | corner complexes, a quasi-steady-state lap-time model, the minimum-time line solver, flawed lines, the corner-by-corner verdict, top-down drawing | Draw the Line, Class Traffic (through TrafficLab) |
+| `IST.TrafficLab` | two cars (prototype and GT) on one complex, car following, contact/squeeze/cut-off detection, question generation | Class Traffic |
+| `IST.Track` / `IST.TrackRenderer` | generated circuits and the in-car renderer | Apex Snap family, Two-Point Focus, the replays, View screen |
+| `IST.RaceLayer` | traffic, relative box, dash, radio/spotter, audio | Apex Snap: Race Mode; `drawCar` is reused by the replays |
+| `IST.HazardLayer` | threats on the outside of corners (walls, wrecks, yellows, spins) | Eyes Off the Wall |
+| `IST.Juice` | chain, multiplier tiers, score, grades, tones, callouts | every drill |
+| `IST.View` / `IST.Cockpit` | FOV, horizon, seat position, cockpit drawing | every drill with `usesView: true` |
+
+## A session, end to end
+
+1. **Start.** The menu calls `startDrill(def, overrides)` in `app.js`. Settings are the drill's defaults, overlaid by the saved settings, overlaid by a guided session's overrides.
+2. **Run.** `IST.Runner.run(def, settings)` owns the canvas and the `requestAnimationFrame` loop. It calls `def.create(ctx)` once, then each frame `update(dt, clock, ts)` (skipped while paused) and `render(g, W, H, ts, paused)`, and passes input to `onAction(action, t, src)`. `ctx` gives the drill its settings, `history` (its past results), `W`/`H`, `clock()` (unpaused ms), `frameInterval()` and `finish()`.
+3. **Finish.** The drill calls `ctx.finish()`, or the player picks Finish from the pause menu. The runner calls `result()`, stamps it with date, drill id, settings, duration and refresh rate, and resolves.
+4. **Save.** `IST.Storage.addResult` appends it to localStorage (`isloptrain.v1`). Only the latest 300 sessions per drill are kept, and only the latest 50 keep their per-trial `detail`.
+5. **Results screen.** Built from `def.metrics` and `result.summary`, with deltas against the previous session and tips from `def.coach(summary, result, history)`.
+6. **Stats page.** `IST.Analysis.drillReport(def, results)` does the generic work (trends, PBs, consistency) from `def.metrics`, then merges in `def.analyze(results, A)` for drill-specific breakdowns, notes and in-sim advice.
+
+### The drill definition
+
+Required: `id`, `name`, `create(ctx)`. Commonly also `tab` (`vision` | `mind` | `reflex`), `category`, `tagline`, `description`, `research`, `info`, `settings`, `metrics` (one marked `primary`), `levelFor`, `coach`, `analyze`, `pointer: true` (the drill is clicked or drawn in, so the cursor is never hidden), and `usesView: true` (it shows the in-car view). The README has a minimal example.
+
+The instance from `create(ctx)` implements `update`, `render`, `onAction` and `result`, plus optionally `onPause`, `onResume`, `destroy` and `debug()`. `debug()` exposes internal state for dev tools and the tests.
+
+### Saved data is long-lived
+
+`result.summary` is what Stats reads, possibly years later. **Renaming or repurposing a summary key silently breaks history**: old sessions show as missing, and trend lines restart. Add new keys instead, and handle old ones in `analyze` if needed. Draw the Line does this already: it filters out old multiple-choice sessions by `summary.mode`. There is no schema version or migration step yet.
+
+## Large drills are folders
+
+Draw the Line, Class Traffic and Clean Slate are each split across a folder under `js/drills/`. The files share a private namespace (`IST.RacingLine`, `IST.Multiclass`, `IST.CleanSlate`) and load in the order listed in that folder's `content.js`. They follow the same roles:
+
+| File | Role | State |
+|---|---|---|
+| `content.js` | palette, timings, labels, text and grading. Plain data and pure functions | none |
+| `ui.js` | canvas widgets (boxes, buttons, wrapped text) | none; `button()` records its hit box in the array it's given |
+| `replay.js` | the replay timeline: which moments to pause on, and stepping through them | works on the replay object it's given |
+| `scene.js` | the top-down map and the in-car view | none; `createScene(env)` binds view settings, and the question and replay come in as arguments |
+| `screens.js` | each screen of the drill (picker, quiz/drawing, result, replay) | reads the drill state, calls back through `act`, and writes only hit boxes and the drawing area for input |
+| `stats.js` | `coach` and `analyze`; for Clean Slate also the session summary | none |
+| `drill.js` | the definition, session state, flow, input and `result()` | owns it |
+| `sketch.js` (Draw the Line) | turning pointer strokes into a drawn line | works on the drill state |
+| `view.js` (Clean Slate) | all drawing | reads a live `run` object (getters over the engine's variables) |
+
+The rule of thumb: **`drill.js` owns the state and changes it; everything else is handed what it needs.** When something looks wrong on screen, start in `screens.js` or `scene.js`. When the flow or the scoring is wrong, start in `drill.js`. When the wording or a grade is wrong, start in `content.js`.
+
+Smaller drills stay as single files. When one grows past a few hundred lines with distinct parts, split it the same way.
+
+### Variants share a `create()`
+
+`apex-snap.js` registers a base definition and a Race Mode copy (`Object.assign({}, BASE, RACE)`) with `raceMode: true`. `eyes-off-wall.js` copies `IST.ApexSnap.BASE` with `hazardMode: true`. One engine serves three menu entries, so a change to Apex Snap's `create()` affects all three.
+
+## Background work
+
+Solving a racing line takes seconds, so it's written as a generator that `yield`s every so often (`LineLab.solveGen`, `TrafficLab.complexGen` / `questionGen`, each drill's `questionGen`). The drill's `pump()` runs it for a fixed budget of milliseconds per frame (`BUDGET`), so the next question builds while you answer the current one. For synchronous use, as in the tests, `LineLab.run(gen)` drives a generator to completion.
+
+## Conventions
+
+- **File header comments** say what the file models, its public surface, its limits, and the research it rests on. Keep them current when behaviour changes.
+- **Units:** metres, seconds and m/s inside the models; ms for timing; km/h only in display text. On a complex, `s` is metres along the centreline and `n` is lateral position (−1 left edge, +1 right edge; ×`HW` for metres).
+- **Seeded randomness:** use `U.rng(seed)` rather than `Math.random()` in anything a test or replay might want to reproduce.
+- **Settings types:** `number` (with `min`/`max`/`step`), `select` (with `options: [[value, label], …]`) and `bool`.
+
+## Tests
+
+```powershell
+node --test
+```
+
+See [tests/README.md](../tests/README.md) for what belongs there. In short, tests pin claims the app makes to the player: the staircase finds the threshold it reports, the ideal line really is fastest, Class Traffic's "responsible call" is safe and allowed, saved history is trimmed only as documented, and guided sessions name real drills and settings. `drills.test.js` plays every drill headless through a short session with scripted input, and is the safety net for refactoring. If you rename something a drill's render path uses, it fails there.
+
+## Known rough edges
+
+- **Canvas widgets and palettes are per drill.** `multiclass/ui.js` and `racing-line/ui.js` overlap (buttons, wrapped text), and the drills use three different colour sets, with many colours hard-coded in `cockpit.js` and the renderers. A shared `ui-canvas.js` and a single palette would stop them drifting further.
+- **No schema version on saved data** (see above).
+- **Analysis thresholds** (minimum counts, "weak spot" margins) live inline in `analysis.js` and each drill's `analyze`, with their reasoning in comments.

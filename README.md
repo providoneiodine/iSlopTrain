@@ -96,16 +96,24 @@ js/core/runner.js     canvas, loop, pause, drill lifecycle
 js/core/analysis.js   trends, PBs, weak spots, in-sim advice library (TIPS)
 js/ui/charts.js       dependency-free SVG charts (line, bars, histogram, calendar) with hover tooltips
 js/ui/stats.js        Stats page
+js/ui/view-settings.js  View screen (in-car view setup with live preview)
 js/render/symbols.js  arrows, pattern masks, boards, flags, HUD text
 js/render/track.js    procedural circuit + speed profile + racing line + pseudo-3D renderer (themes)
+js/render/cockpit.js  vector cockpit drawn over the in-car view
+js/render/view.js     shared in-car view settings (FOV, horizon, seat, cockpit)
 js/components/race-layer.js  reusable race clutter: traffic, relative box, dash, radio/spotter, audio
 js/components/hazard-layer.js  outside-of-corner threats with a decoy board (walls, wrecks, yellows, spins), threat levels
 js/components/juice.js  shared game feel: chain tiers, score, grades, tones, callouts
 js/components/line-lab.js  corner complexes, lap-time model, minimum-time line solver, flawed lines, top-down drawing
-js/drills/*.js        one file per drill
+js/components/traffic-lab.js  two-car model for Class Traffic: car following, contact / squeeze / cut-off detection, questions
+js/drills/*.js        one file per small drill
+js/drills/*/          one folder per large drill (content, ui, replay, scene, screens, stats, drill)
 js/sessions.js        guided session playlists
 js/app.js             menu, settings, controls, data, results (all generated from definitions)
+tests/                `node --test`: model checks + every drill played headless (see tests/README.md)
 ```
+
+How the pieces fit together, and where to look when something breaks: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Adding a drill (or an alternative interface)
 
@@ -135,6 +143,8 @@ The menu card, settings form, "why it works" panel, results table, deltas vs las
 Variants can share one `create()`: `apex-snap.js` registers a base definition and a Race Mode copy (`Object.assign({}, BASE, RACE)`) that sets `raceMode: true` and adds settings/metrics. `IST.RaceLayer` can be bolted onto any driving drill the same way. `eyes-off-wall.js` does the same from another tab: it copies `IST.ApexSnap.BASE`, sets `hazardMode: true` and `tab: 'mind'`, and supplies `levelFor()` and `hazardSummary()` for `IST.HazardLayer`.
 
 Each drill instance exposes `debug()` for dev-tools inspection and automated checks.
+
+A drill that grows large can be split into a folder: see "Large drills are folders" in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Run `node --test` after any change; `tests/drills.test.js` plays every registered drill automatically.
 
 ## Data
 
