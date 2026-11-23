@@ -230,14 +230,35 @@
         cy += bh + 10;
       }
       cy += 6;
+      // in the replay the caption and its controls sit under the answers
+      const footH = st.mode === 'replay' && st.rp ? 112 : 0;
       // answers: as tall as the panel allows, so the text can be read at a glance
       const n = q.opts.length, rows = Math.ceil(n / cols), gap = 10;
       const aw = (w - pad * 2 - gap * (cols - 1) - 4) / cols;
-      const ah = Math.min(118, (y + h - pad - 4 - cy - gap * (rows - 1)) / rows);
+      const ah = Math.min(118, (y + h - pad - 4 - footH - cy - gap * (rows - 1)) / rows);
       for (let i = 0; i < n; i++) {
         const c = i % cols, r = Math.floor(i / cols);
         drawAnswer(g, q, i, x + pad + c * (aw + gap), cy + r * (ah + gap), aw, ah);
       }
+      if (footH) renderReplayFooter(g, q, x + pad, y + h - pad - footH, w - pad * 2, footH);
+    }
+
+    /** Replay caption (the current event, or the answer's note) and the replay controls, under a rule. */
+    function renderReplayFooter(g, q, x, y, w, h) {
+      const rp = st.rp, o = rp.o, p = at(o.r.rec, rp.t);
+      const c = captionFor(q, o, rp.hold > 0 || rp.done ? rp.cur : null, p);
+      g.fillStyle = COL.line;
+      g.fillRect(x, y + 4, w, 1);
+      g.save();
+      g.beginPath();
+      g.rect(x, y + 6, w, h - 42);
+      g.clip();
+      Sym.text(g, c.title, x, y + 28, { size: 14, weight: 720, color: c.color, shadow: false });
+      wrapText(g, c.text, x, y + 47, w, 12.5, 15, COL.text2, 2);
+      g.restore();
+      const last = rows.length >= S.questions, by = y + h - 30;
+      const nw = button(g, x + w, by, last ? 'Finish' : 'Next question', advance, { primary: true, right: true });
+      button(g, x + w - nw - 8, by, rp.done ? 'Replay' : rp.hold > 0 ? 'Continue' : 'Next event', () => (rp.done ? startReplay(rp.oi) : skipPhase()), { right: true });
     }
 
     /** The last couple of seconds before the decision, looped with a hold on the decision frame. */
@@ -363,18 +384,13 @@
      * and the gap trace when there's room. The answer cards stay beside it.
      */
     function renderReplayScene(g, q, L, ts) {
-      const rp = st.rp, o = rp.o, R = o.r.rec, p = at(R, rp.t), gap = 10, capH = 64;
-      let pov = L.pov.slice(), map = L.map.slice(), cap, trace = null;
-      if (L.side) {
-        const room = map[3] - capH - gap;
-        const th = room - 64 - gap >= 150 ? 64 : 0;
-        cap = [map[0], map[1] + map[3] - capH, map[2], capH];
-        if (th) trace = [map[0], cap[1] - gap - th, map[2], th];
-        map[3] = room - (th ? th + gap : 0);
-      } else {
-        pov[3] -= capH + gap;
-        map[3] -= capH + gap;
-        cap = [pov[0], pov[1] + pov[3] + gap, map[0] + map[2] - pov[0], capH];
+      const rp = st.rp, o = rp.o, R = o.r.rec, p = at(R, rp.t), gap = 10;
+      const pov = L.pov, map = L.map.slice();
+      let trace = null;
+      // the gap trace under the map when there's room (the caption lives in the question panel)
+      if (L.side && map[3] - 64 - gap >= 150) {
+        trace = [map[0], map[1] + map[3] - 64, map[2], 64];
+        map[3] -= 64 + gap;
       }
       const best = q.best, mine = q.me === 'F' ? 'fp' : 'sp';
       const paths = [];
@@ -408,20 +424,6 @@
       // clicking the in-car view steps the replay too
       st.buttons.push({ x: pov[0], y: pov[1], w: pov[2], h: pov[3], act: () => (rp.done ? startReplay(rp.oi) : skipPhase()) });
       if (trace) renderTrace(g, trace[0], trace[1], trace[2], trace[3], o, rp.t);
-      // caption, with the replay controls on its right
-      const c = captionFor(q, o, rp.hold > 0 || rp.done ? rp.cur : null, p);
-      box(g, cap[0], cap[1], cap[2], cap[3], { accent: c.color, side: 5 });
-      const last = rows.length >= S.questions, by = cap[1] + (capH - 30) / 2;
-      const nw = button(g, cap[0] + cap[2] - 12, by, last ? 'Finish' : 'Next question', advance, { primary: true, right: true });
-      const sw = button(g, cap[0] + cap[2] - 12 - nw - 8, by, rp.done ? 'Replay' : rp.hold > 0 ? 'Continue' : 'Next event', () => (rp.done ? startReplay(rp.oi) : skipPhase()), { right: true });
-      const tw = cap[2] - 36 - nw - sw - 24;
-      g.save();
-      g.beginPath();
-      g.rect(cap[0], cap[1], tw + 20, capH);
-      g.clip();
-      Sym.text(g, c.title, cap[0] + 16, cap[1] + 21, { size: 14, weight: 720, color: c.color, shadow: false });
-      wrapText(g, c.text, cap[0] + 16, cap[1] + 39, tw, 12.5, 15, COL.text2, 2);
-      g.restore();
     }
 
     return { header, renderRules, renderQuiz, quizLayout };
