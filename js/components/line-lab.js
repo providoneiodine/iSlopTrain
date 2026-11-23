@@ -760,19 +760,30 @@
     return { sA: Math.max(0, C[0].startPos - 75), sB: Math.min(geo.sEnd, C[C.length - 1].endPos + 80) };
   }
 
-  /** Fit the complex (or window win = {sA, sB}) into a w x h box: best rotation (10° steps), approach kept pointing up-ish on ties, or rotation rot (rad) if given. */
-  function fitView(geo, w, h, pad, win, rot) {
+  /**
+   * Fit the complex (or window win = {sA, sB}) into a w x h box: best
+   * rotation (10° steps), approach kept pointing up-ish on ties.
+   * o.rot (rad) fixes the rotation (to match another view).
+   * o.upright = s: for drawing on. The track at s (the approach) runs
+   * straight up the screen, so every line is drawn bottom to top, the way
+   * the car is driving, instead of along a diagonal.
+   */
+  function fitView(geo, w, h, pad, win, o) {
     pad = pad == null ? 18 : pad;
     win = win || windowOf(geo);
-    const fixed = rot != null ? Math.round((rot * 180) / Math.PI) : null; // keep another view's orientation
+    o = o || {};
+    const rots = [];
     const i0 = Math.round(win.sA / DS), i1 = Math.round(win.sB / DS);
+    if (o.rot != null) rots.push(o.rot);
+    else if (o.upright != null) rots.push(-Math.PI / 2 - geo.th[Math.round(o.upright / DS)]); // heading a shows as a + r; up the screen is -π/2
+    else for (let deg = 0; deg < 360; deg += 10) rots.push((deg * Math.PI) / 180);
     const pts = [];
     for (let i = i0; i <= i1; i += 3) {
       for (const e of [-1.3, 1.3]) pts.push([geo.cx[i] + e * HW * geo.nx[i], geo.cy[i] + e * HW * geo.ny[i]]);
     }
     let best = null;
-    for (let deg = fixed != null ? fixed : 0; deg < (fixed != null ? fixed + 1 : 360); deg += 10) {
-      const r = fixed != null ? rot : (deg * Math.PI) / 180, c = Math.cos(r), s = Math.sin(r);
+    for (const r of rots) {
+      const c = Math.cos(r), s = Math.sin(r);
       let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
       for (const p of pts) {
         const X = p[0] * c - p[1] * s, Y = p[0] * s + p[1] * c;
@@ -784,8 +795,7 @@
       const scale = Math.min((w - 2 * pad) / (x1 - x0), (h - 2 * pad) / (y1 - y0));
       // approach heading after rotation: prefer travelling up the screen
       const ah = geo.th[i0] + r;
-      const up = Math.cos(ah + Math.PI / 2) * -1; // 1 when heading straight up
-      const score = scale * (1 + 0.06 * Math.max(0, -Math.sin(ah)) + 0.01 * up);
+      const score = scale * (1 + 0.06 * Math.max(0, -Math.sin(ah)) + 0.01 * -Math.cos(ah + Math.PI / 2));
       if (!best || score > best.score) best = { score, r, c, s, scale, x0, x1, y0, y1 };
     }
     const b = best;

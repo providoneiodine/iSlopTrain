@@ -589,10 +589,11 @@
       canvas.addEventListener('pointercancel', onUp);
 
       // ------------------------------------------------------------ drawing
-      /** Views after the drawing keep the orientation you drew in. */
+      /** The drawing view turns the complex to run up the screen; later views keep that orientation. */
       function view(q, key, w, h, pad) {
         const k = key + ':' + Math.round(w) + 'x' + Math.round(h);
-        return q.views[k] || (q.views[k] = LL.fitView(q.geo, w, h, pad, null, key !== 'draw' && q.rot != null ? q.rot : null));
+        const o = key === 'draw' ? { upright: q.sStart } : q.rot != null ? { rot: q.rot } : null;
+        return q.views[k] || (q.views[k] = LL.fitView(q.geo, w, h, pad, null, o));
       }
 
       /** Stroke a lateral profile n (NaN = gap); keep(i) picks samples. */
