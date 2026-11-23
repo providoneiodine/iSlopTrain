@@ -21,7 +21,7 @@
 
   A.CAT_LABELS = {
     kink: 'Kinks', sweeper: 'Sweepers', medium: 'Medium corners', tight: 'Tight corners', hairpin: 'Hairpins',
-    tightening: 'Decreasing radius', opening: 'Increasing radius', chicane: 'Chicanes', esses: 'Esses', double: 'Double apex',
+    tightening: 'Decreasing radius', opening: 'Increasing radius', chicane: 'Chicanes', esses: 'Esses', double: 'Double apex', familiar: 'Familiar corners',
   };
 
   // In-sim advice library. `train` = drill that trains it.

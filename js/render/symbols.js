@@ -27,9 +27,8 @@
     g.closePath();
   };
 
-  S.arrow = function (g, cx, cy, size, dir, color) {
+  function arrowPath(g, cx, cy, size, dir) {
     const a = ROT[dir] || 0, c = Math.cos(a), s = Math.sin(a);
-    g.beginPath();
     for (let i = 0; i < ARROW.length; i++) {
       const x = ARROW[i][0], y = ARROW[i][1];
       const px = cx + (x * c - y * s) * size;
@@ -38,12 +37,47 @@
       else g.moveTo(px, py);
     }
     g.closePath();
+  }
+
+  S.arrow = function (g, cx, cy, size, dir, color) {
+    g.beginPath();
+    arrowPath(g, cx, cy, size, dir);
     g.fillStyle = color;
     g.fill();
   };
 
+  // one path, one fill: overlapping arrows don't stack up when drawn translucent
   S.mask = function (g, cx, cy, size, color) {
-    for (const d of S.DIRS) S.arrow(g, cx, cy, size, d, color);
+    g.beginPath();
+    for (const d of S.DIRS) arrowPath(g, cx, cy, size, d);
+    g.fillStyle = color;
+    g.fill('nonzero');
+  };
+
+  /*
+   * Draw fn() at full opacity into an offscreen layer, then composite it at `alpha`,
+   * so a multi-part sign (fill, border, symbol) fades as one flat image instead of
+   * each part blending separately. (cx, cy, half) bounds the drawing.
+   */
+  let layerCv = null;
+  S.layer = function (g, alpha, cx, cy, half, fn) {
+    if (alpha >= 0.999) return fn(g);
+    if (alpha <= 0.002) return;
+    const m = g.getTransform ? g.getTransform() : { a: 1 };
+    const sc = Math.max(0.5, Math.hypot(m.a, m.b || 0));
+    const px = Math.min(2048, Math.ceil(2 * half * sc) + 4);
+    if (!layerCv) layerCv = document.createElement('canvas');
+    if (layerCv.width < px || layerCv.height < px) layerCv.width = layerCv.height = Math.max(px, layerCv.width);
+    const L = layerCv.getContext('2d');
+    L.setTransform(1, 0, 0, 1, 0, 0);
+    L.clearRect(0, 0, px, px);
+    L.globalAlpha = 1;
+    L.setTransform(sc, 0, 0, sc, px / 2 - cx * sc, px / 2 - cy * sc);
+    fn(L);
+    const prev = g.globalAlpha;
+    g.globalAlpha = alpha;
+    g.drawImage(layerCv, 0, 0, px, px, cx - px / 2 / sc, cy - px / 2 / sc, px / sc, px / sc);
+    g.globalAlpha = prev;
   };
 
   /** Square target board. content: 'mask' | 'blank' | 'up' | 'down' | 'left' | 'right' */

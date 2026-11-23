@@ -429,9 +429,7 @@
           if (fade <= 0) return;
           const size = boardSize(pr), cy = pr.y - size / 2;
           const content = plan && plan.hazard === hz && plan.probe && plan.state === 'shown' ? plan.decoy : 'mask';
-          g.globalAlpha = (1 - pr.fog * 0.55) * fade;
-          hazardBoard(g, pr.x, cy, size, content, th);
-          g.globalAlpha = 1;
+          Sym.layer(g, (1 - pr.fog * 0.55) * fade, pr.x, cy, size * 0.62, (L) => hazardBoard(L, pr.x, cy, size, content, th));
           if (fb && fb.hazard === hz && fb.captured && performance.now() < fb.until) Sym.ring(g, pr.x, cy, size * 0.85, '#ffb000', Math.max(2, size * 0.1));
         },
       });

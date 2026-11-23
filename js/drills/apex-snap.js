@@ -17,9 +17,10 @@
   const U = IST.util, Sym = IST.Symbols;
   const DIRS = Sym.DIRS;
   const GRIP = {
-    road: { aLat: 9, aBrake: 9, aAccel: 4 },
-    gt: { aLat: 15, aBrake: 13, aAccel: 6 },
-    proto: { aLat: 24, aBrake: 22, aAccel: 9 },
+    // aero: extra grip with speed (see Track.generate); GT3 ~ modest, prototype ~ lots
+    road: { aLat: 9, aBrake: 9, aAccel: 4, aero: 0 },
+    gt: { aLat: 15, aBrake: 13, aAccel: 6, aero: 0.35 },
+    proto: { aLat: 24, aBrake: 22, aAccel: 9, aero: 0.6 },
   };
   const BOARD_M = 2.4; // board edge, metres
   // The board stands directly on the inside kerb at the apex (no post, no offset),
@@ -52,6 +53,7 @@
       { key: 'grip', label: 'Car', type: 'select', default: 'gt', options: [['road', 'Road'], ['gt', 'GT'], ['proto', 'Prototype']] },
       { key: 'layout', label: 'Track', type: 'select', default: 'mixed', options: [['mixed', 'Mixed'], ['technical', 'Technical'], ['fast', 'Fast']] },
       { key: 'elevation', label: 'Elevation', type: 'select', default: 'rolling', options: [['flat', 'Flat'], ['rolling', 'Rolling'], ['hilly', 'Hilly']] },
+      { key: 'familiar', label: 'Familiar corners', type: 'select', default: 'rare', options: [['off', 'Off'], ['rare', 'Rare'], ['often', 'Often'], ['silly', 'Silly']], hint: 'Rare nods to famous corner complexes.' },
       { key: 'fov', label: 'FOV (horizontal)', type: 'number', unit: '°', default: 70, min: 30, max: 120, step: 1, hint: 'Match your sim.' },
       { key: 'style', label: 'Style', type: 'select', default: 'realistic', options: [['realistic', 'Realistic'], ['minimal', 'Minimal']] },
       { key: 'flags', label: 'Marshal lights', type: 'bool', default: false, hint: 'Confirm when one flashes.' },
@@ -161,7 +163,7 @@
       const seed = S.seed > 0 ? Math.floor(S.seed) : U.randomSeed();
       const G = GRIP[S.grip] || GRIP.gt;
       const vmax = S.speed / 3.6;
-      const track = IST.Track.generate(Object.assign({ rng: U.rng(seed), vmax, minLength: vmax * S.duration * 0.9 + 2500, leadIn: 60, minStraight: 14, maxStraight: 55, elevation: S.elevation, mix: S.layout }, G));
+      const track = IST.Track.generate(Object.assign({ rng: U.rng(seed), vmax, minLength: vmax * S.duration * 0.9 + 2500, leadIn: 60, minStraight: 14, maxStraight: 55, elevation: S.elevation, mix: S.layout, familiar: S.familiar || 'rare' }, G));
       const R = new IST.TrackRenderer(track, { theme: S.style, fov: S.fov });
       const th = R.theme, HW = track.HALF_W, SEG = track.SEG;
       const rnd = U.rng(U.randomSeed());
@@ -202,6 +204,9 @@
       };
 
       const boardX = (c) => c.dir * HW * BOARD_KERB;
+      // camera on the racing line, turned partly along it (yaw vs the track from the
+      // line's drift); 60 % because a driver's head counter-rotates toward the apex
+      const camAt = (pos) => ({ pos, x: track.lateralAt(pos) * HW, heading: st.heading, yaw: 0.6 * track.lineYawAt(pos) });
       const boardSize = (pr) => Math.max(S.minTargetPx, BOARD_M * pr.s);
       /** Screen position + size of a board standing at (pos, x), or null if off screen / behind a crest. */
       function boardOnScreen(pos, x) {
@@ -233,9 +238,50 @@
         }
         return (c._blind = blind);
       }
-      function boardVisible(ci) {
+      /*
+       * Can the flash be shown on corner ci now? The whole board (bottom edge included)
+       * must be clear of nearer terrain, not only now but for the whole exposure, so a
+       * crest or compression can't swallow it mid-flash. Future frames are checked by
+       * projecting from where the car will be.
+       */
+      /*
+       * Is corner ci's board readable in the currently prepared frame? Clear of terrain,
+       * wholly on screen, and inside the central READ_X band: on a single monitor a
+       * hairpin's apex sits at the very edge of the view (or past it) until late, and a
+       * flash out there is a coin toss rather than a test of where your eyes were.
+       */
+      const READ_X = 0.1;
+      function readable(ci) {
         const c = track.corners[ci];
-        return !!boardOnScreen(c.apexPos, boardX(c));
+        const pr = R.project(c.apexPos, boardX(c), 0);
+        if (!pr) return false;
+        const size = boardSize(pr), W = R.W;
+        if (pr.x < W * READ_X || pr.x > W * (1 - READ_X) || pr.x - size / 2 < W * 0.02 || pr.x + size / 2 > W * 0.98) return false;
+        return pr.y - size >= 0 && pr.y <= pr.clip + 0.5;
+      }
+      /** Positions in [from, to] (5 m steps) where the board is readable. */
+      function readableSpan(ci, from, to) {
+        const out = [];
+        if (!R.ready) return out;
+        for (let p = from; p <= to; p += 5) {
+          R.prepare(R.W, R.H, camAt(p));
+          if (readable(ci)) out.push(p);
+        }
+        R.prepare(R.W, R.H, camAt(st.pos)); // restore this frame
+        return out;
+      }
+      /** Readable now AND for the whole exposure (checked from where the car will be). */
+      function flashVisible(ci, exposure) {
+        if (!R.ready || !readable(ci)) return false;
+        const t0 = track.timeAt(st.pos), span = exposure + 120;
+        let ok = true;
+        for (let t = 40; ok && t <= span; t += 40) {
+          const fp = track.posAtTime(t0 + Math.min(t, span) / 1000);
+          R.prepare(R.W, R.H, camAt(fp));
+          ok = readable(ci);
+        }
+        R.prepare(R.W, R.H, camAt(st.pos)); // restore this frame
+        return ok;
       }
 
       /** outcome: 'apex' (hit) | 'hazard' (read the hazard board) | 'other' (wrong arrow) | 'none' (no answer) */
@@ -314,9 +360,8 @@
         g.beginPath();
         g.ellipse(pr.x, pr.y, size * 0.6, Math.max(1, size * 0.07), 0, 0, Math.PI * 2);
         g.fill();
-        g.globalAlpha = a;
-        Sym.board(g, pr.x, cy, size, content, th);
         g.globalAlpha = 1;
+        Sym.layer(g, a, pr.x, cy, size * 0.6, (L) => Sym.board(L, pr.x, cy, size, content, th));
         if (st.fb && st.fb.corner === i && ts < st.fb.until) Sym.ring(g, pr.x, cy, size * 0.85, st.fb.correct ? '#30d158' : '#ff453a', Math.max(2, size * 0.1));
       }
 
@@ -366,10 +411,17 @@
               // to run halfway to the apex so the "apex -> next apex" flick is still trained
               let wEnd = c.startPos;
               if (wEnd - wStart < 40) wEnd = Math.max(wEnd, (c.startPos + c.apexPos) / 2);
-              if (wEnd - wStart > 12) {
+              // onset only where the board is actually readable. Hairpins and tight
+              // corners often only swing into view after turn-in, so the window may run
+              // on past it, up to a point that still leaves time to react before the apex.
+              const latest = c.apexPos - Math.max(25, track.speedAt(c.apexPos) * 0.7);
+              const span = wEnd - wStart > 12 ? readableSpan(ci, wStart, Math.max(wEnd, latest)) : [];
+              const inWin = span.filter((q) => q <= wEnd);
+              const pool = inWin.length ? inWin : span;
+              if (pool.length) {
                 st.plan = {
-                  corner: ci, wStart, wEnd,
-                  onsetPos: wStart + rnd() * (wEnd - wStart),
+                  corner: ci, wStart, wEnd, latest: Math.max(wEnd, latest),
+                  onsetPos: Math.min(pool[(rnd() * pool.length) | 0] + rnd() * 5, Math.max(wEnd, latest)),
                   dir: DIRS[(rnd() * 4) | 0],
                   state: 'planned',
                 };
@@ -381,8 +433,8 @@
           const p = st.plan;
           if (p) {
             if (p.state === 'planned' && st.pos >= p.onsetPos) {
-              if (st.pos > p.wEnd + 25) p.state = 'cancelled';
-              else if (boardVisible(p.corner)) {
+              if (st.pos > p.latest) p.state = 'cancelled';
+              else if (flashVisible(p.corner, stair.value)) {
                 p.state = 'armed';
                 p.exposure = stair.value;
                 p.posAtOnset = st.pos;
@@ -394,6 +446,14 @@
               }
             } else if ((p.state === 'shown' || p.state === 'masked') && ts - p.onsetTs > p.exposure + RESP_MS) {
               resolve(p, false, null, true);
+            }
+          }
+
+          // familiar complex: no label, just a barely-audible ding as it starts
+          for (const ic of track.familiars) {
+            if (!ic.dinged && st.pos >= ic.startPos && st.pos < ic.endPos) {
+              ic.dinged = true;
+              J.ding();
             }
           }
 
@@ -478,7 +538,7 @@
           }
           if (race) sprites.push.apply(sprites, race.sprites(st.pos, far, HW));
           if (hz) sprites.push.apply(sprites, hz.sprites(st.pos, far, ts, st.plan, st.hfb, boardSize, th));
-          R.render(g, W, H, { pos: st.pos, x: st.lat * HW, heading: st.heading }, sprites);
+          R.render(g, W, H, camAt(st.pos), sprites);
           if (race) race.renderHUD(g, W, H, ts);
           if (hz) hz.renderHUD(g, W, H, ts, ctx.clock(), S.feedback === 'every');
 

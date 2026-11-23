@@ -119,7 +119,7 @@
           R.prepare(W, H, cam);
           const pr = R.project(c.apexPos, c.dir * HW * BOARD_KERB, 0);
           const boardY = pr ? pr.y - Math.max(S.minTargetPx, BOARD_M * pr.s) / 2 : 0;
-          if (pr && pr.x > W * 0.15 && pr.x < W * 0.85 && boardY + S.minTargetPx * 0.5 < pr.clip && boardY > H * 0.08) return { c, cam, pr };
+          if (pr && pr.x > W * 0.15 && pr.x < W * 0.85 && pr.y <= pr.clip + 0.5 && boardY > H * 0.08) return { c, cam, pr };
         }
         const c = track.corners[1];
         const cam = { pos: c.apexPos - 150, x: 0, heading: 0 };

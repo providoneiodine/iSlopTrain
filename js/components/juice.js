@@ -107,6 +107,9 @@
         best() {
           [0, 4, 7, 12].forEach((k, j) => tone(523 * Math.pow(2, k / 12), 0.18, 'sine', 0.2, j * 0.07));
         },
+        ding() {
+          tone(1760, 0.6, 'sine', 0.025); // barely-there nod
+        },
         coin() {
           tone(988, 0.07, 'square', 0.08);
           tone(1319, 0.16, 'square', 0.08, 0.06);
@@ -223,6 +226,11 @@
       if (!this.live) return;
       this.fx.push({ k: 'float', t0: performance.now(), dur: 900, text: '+' + pts, sub: label || null, color: color || '#f6d98f' });
       if (this.audio) this.audio.coin();
+    }
+
+    /** a quiet ding with no visuals (e.g. entering a familiar corner) */
+    ding() {
+      if (this.audio) this.audio.ding();
     }
 
     callout(text, color, sub) {
