@@ -356,19 +356,19 @@
             g.fillStyle = 'rgba(0,0,0,.55)';
             Sym.roundRect(g, W / 2 - fs * 11, by - fs * 1.6, fs * 22, fs * 2.4, 10);
             g.fill();
-            Sym.text(g, cTxt, W / 2 - fs * 0.8, by, { align: 'right', size: fs, weight: 700, color: cCol });
-            Sym.text(g, pTxt, W / 2 + fs * 0.8, by, { align: 'left', size: fs, weight: 700, color: pCol });
+            Sym.text(g, cTxt, W / 2 - fs * 0.8, by, { align: 'right', size: fs, weight: 720, color: cCol });
+            Sym.text(g, pTxt, W / 2 + fs * 0.8, by, { align: 'left', size: fs, weight: 720, color: pCol });
             if (fb && !(tr.okC && tr.okP)) {
               const truth = 'was ' + (tr.dir === 'up' ? '↑' : '↓') + ' and ' + (tr.side < 0 ? '←' : '→');
-              Sym.text(g, truth, W / 2, by - fs * 2.1, { align: 'center', size: fs * 0.8, weight: 400, color: '#c3c9d4' });
+              Sym.text(g, truth, W / 2, by - fs * 2.1, { align: 'center', size: fs * 0.8, weight: 420, color: '#c3c9d4' });
             }
           }
 
           Sym.text(g, 'Trial ' + Math.min(S.trials, trials.length + 1) + ' / ' + S.trials, 18, 30, { size: 16, alpha: 0.75 });
-          Sym.text(g, 'flash ' + Math.round(tr.exposure) + ' ms', W - 18, 30, { size: 14, weight: 400, align: 'right', alpha: 0.6 });
+          Sym.text(g, 'flash ' + Math.round(tr.exposure) + ' ms', W - 18, 30, { size: 14, weight: 420, align: 'right', alpha: 0.6 });
           if (trials.length === 0 && tr.phase === 'fixate') {
-            Sym.text(g, 'Eyes on the ringed board', W / 2, H * 0.16, { align: 'center', size: Math.max(22, W * 0.02), weight: 850 });
-            Sym.text(g, '↑/↓ symbol  ·  ←/→ flag side', W / 2, H * 0.16 + 32, { align: 'center', size: 15, weight: 350, alpha: 0.85 });
+            Sym.text(g, 'Eyes on the ringed board', W / 2, H * 0.16, { align: 'center', size: Math.max(22, W * 0.02), weight: 820 });
+            Sym.text(g, '↑/↓ symbol  ·  ←/→ flag side', W / 2, H * 0.16 + 32, { align: 'center', size: 15, weight: 340, alpha: 0.85 });
           }
           // chain block top-left under the trial counter: boards and flags stay right of 15% width and below
           // 8% height; callouts at the very top

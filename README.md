@@ -105,7 +105,7 @@ js/components/race-layer.js  reusable race clutter: traffic, relative box, dash,
 js/components/hazard-layer.js  outside-of-corner threats with a decoy board (walls, wrecks, yellows, spins), threat levels
 js/components/juice.js  shared game feel: chain tiers, score, grades, tones, callouts
 js/components/line-lab.js  corner complexes, lap-time model, minimum-time line solver, flawed lines, top-down drawing
-js/components/traffic-lab.js  two-car model for Class Traffic: car following, contact / squeeze / cut-off detection, questions
+js/components/traffic-lab.js  multiclass traffic model for Class Traffic (prototype, GT, optional third car): car following, contact / squeeze / cut-off detection, questions
 js/drills/*.js        one file per small drill
 js/drills/*/          one folder per large drill (content, ui, replay, scene, screens, stats, drill)
 js/sessions.js        guided session playlists

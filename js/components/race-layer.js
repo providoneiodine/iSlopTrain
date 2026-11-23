@@ -367,9 +367,9 @@
       g.fillStyle = this.delta < 0 ? '#2bd15a' : '#ff453a';
       if (this.delta < 0) g.fillRect(x0 + bw - dw, dy, dw * frac, 8);
       else g.fillRect(x0 + dw * (1 - frac), dy, dw * frac, 8);
-      Sym.text(g, (this.delta < 0 ? '−' : '+') + Math.abs(this.delta).toFixed(2), x0, dy + 26, { size: 14, weight: 700, shadow: false, color: this.delta < 0 ? '#2bd15a' : '#ff453a' });
+      Sym.text(g, (this.delta < 0 ? '−' : '+') + Math.abs(this.delta).toFixed(2), x0, dy + 26, { size: 14, weight: 720, shadow: false, color: this.delta < 0 ? '#2bd15a' : '#ff453a' });
       if (this.warn && Math.floor(ts / 250) % 2 === 0)
-        Sym.text(g, this.warn.text, x0 + bw, dy + 26, { size: 14, weight: 800, align: 'right', shadow: false, color: '#ffb000' });
+        Sym.text(g, this.warn.text, x0 + bw, dy + 26, { size: 14, weight: 820, align: 'right', shadow: false, color: '#ffb000' });
     }
 
     // relative box
@@ -383,7 +383,7 @@
       g.fillStyle = 'rgba(8,10,14,.78)';
       Sym.roundRect(g, bx - 6, by - 20, bw + 12, rows.length * rh + 26, 8);
       g.fill();
-      Sym.text(g, 'RELATIVE', bx, by - 6, { size: 10, weight: 800, color: '#8a93a6', shadow: false });
+      Sym.text(g, 'RELATIVE', bx, by - 6, { size: 10, weight: 820, color: '#8a93a6', shadow: false });
       const fs = rh * 0.6;
       rows.forEach((r, i) => {
         const y = by + i * rh;
@@ -398,14 +398,14 @@
         const pos = this.myPos + (i - meIdx);
         const col = r.me ? '#ffffff' : '#d5dae3';
         const ty = y + rh * 0.72;
-        Sym.text(g, 'P' + pos, bx, ty, { size: fs, weight: 700, color: col, shadow: false });
+        Sym.text(g, 'P' + pos, bx, ty, { size: fs, weight: 720, color: col, shadow: false });
         if (!r.me) {
           g.fillStyle = r.c.color;
           g.fillRect(bx + rh * 1.9, y + rh * 0.25, rh * 0.18, rh * 0.5);
         }
-        Sym.text(g, '#' + (r.me ? this.myNum : r.c.num), bx + rh * 2.3, ty, { size: fs, weight: 600, color: col, shadow: false });
+        Sym.text(g, '#' + (r.me ? this.myNum : r.c.num), bx + rh * 2.3, ty, { size: fs, weight: 620, color: col, shadow: false });
         Sym.text(g, r.me ? 'YOU' : r.c.name, bx + rh * 4.4, ty, { size: fs, weight: r.me ? 800 : 500, color: col, shadow: false });
-        if (!r.me) Sym.text(g, fmtGap(r.gap), bx + bw, ty, { size: fs, weight: 700, align: 'right', shadow: false, color: isThreat ? '#ffffff' : r.gap > 0 ? '#9fb3c8' : '#c8b49f' });
+        if (!r.me) Sym.text(g, fmtGap(r.gap), bx + bw, ty, { size: fs, weight: 720, align: 'right', shadow: false, color: isThreat ? '#ffffff' : r.gap > 0 ? '#9fb3c8' : '#c8b49f' });
       });
     }
 
@@ -414,12 +414,12 @@
       const spot = this.msg.kind === 'spotter';
       const fs = spot ? Math.max(18, W * 0.016) : Math.max(13, W * 0.011);
       const x = 16, y = 52;
-      g.font = (spot ? 800 : 450) + ' ' + fs + 'px ' + Sym.FONT;
+      g.font = (spot ? 820 : 420) + ' ' + fs + 'px ' + Sym.FONT;
       const tw = g.measureText(this.msg.text).width;
       g.fillStyle = spot ? 'rgba(160,20,15,.85)' : 'rgba(8,10,14,.75)';
       Sym.roundRect(g, x, y, tw + 24, fs + 30, 8);
       g.fill();
-      Sym.text(g, spot ? 'SPOTTER' : 'RADIO · ENGINEER', x + 12, y + 15, { size: 10, weight: 800, color: spot ? '#ffd0cc' : '#8a93a6', shadow: false });
+      Sym.text(g, spot ? 'SPOTTER' : 'RADIO · ENGINEER', x + 12, y + 15, { size: 10, weight: 820, color: spot ? '#ffd0cc' : '#8a93a6', shadow: false });
       Sym.text(g, this.msg.text, x + 12, y + 18 + fs, { size: fs, weight: spot ? 800 : 500, shadow: false });
     }
   };

@@ -560,18 +560,18 @@
 
           // HUD
           const n = st.trials.length, hits = st.trials.filter((x) => x.correct).length;
-          Sym.text(g, U.fmtTime(S.duration - ctx.clock() / 1000), 18, 32, { size: 20, weight: 800, alpha: 0.85 });
-          Sym.text(g, Math.round(st.v * 3.6) + ' km/h', W - 18, 32, { size: 20, weight: 800, align: 'right', alpha: 0.85 });
-          Sym.text(g, 'flash ' + Math.round(stair.value) + ' ms  ·  ' + hits + '/' + n, W - 18, 54, { size: 13, weight: 400, align: 'right', alpha: 0.6 });
+          Sym.text(g, U.fmtTime(S.duration - ctx.clock() / 1000), 18, 32, { size: 20, weight: 820, alpha: 0.85 });
+          Sym.text(g, Math.round(st.v * 3.6) + ' km/h', W - 18, 32, { size: 20, weight: 820, align: 'right', alpha: 0.85 });
+          Sym.text(g, 'flash ' + Math.round(stair.value) + ' ms  ·  ' + hits + '/' + n, W - 18, 54, { size: 13, weight: 420, align: 'right', alpha: 0.6 });
           if (ctx.clock() < INTRO_MS) {
             const a = U.clamp((INTRO_MS - ctx.clock()) / 600, 0, 1);
             const iy = H * 0.22;
-            Sym.text(g, 'Eyes on the next apex', W / 2, iy, { align: 'center', size: Math.max(24, W * 0.024), weight: 850, alpha: a });
+            Sym.text(g, 'Eyes on the next apex', W / 2, iy, { align: 'center', size: Math.max(24, W * 0.024), weight: 820, alpha: a });
             const extra = race
               ? '  ·  Confirm: car alongside' + (S.flags ? ' / marshal light' : '')
               : S.flags ? '  ·  Confirm: marshal light' : '';
             const sub = hz ? 'Walls and wrecks will pull at your eyes  ·  press the arrow you saw' : 'Arrow keys' + extra;
-            Sym.text(g, sub, W / 2, iy + 32, { align: 'center', size: 15, weight: 350, alpha: a * 0.9 });
+            Sym.text(g, sub, W / 2, iy + 32, { align: 'center', size: 15, weight: 340, alpha: a * 0.9 });
           }
           if (performance.now() < st.faUntil && S.feedback === 'every') Sym.text(g, 'no target', W / 2, H * 0.08, { align: 'center', size: 14, color: '#ff453a' });
           // chain block top-right, clear of the road, the radio box (top-left) and the dash (top-centre)

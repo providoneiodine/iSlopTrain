@@ -68,7 +68,7 @@
       g.stroke();
       g.restore();
       const ox = b[0] + (b[0] - a[0]) * 0.18, oy = b[1] + (b[1] - a[1]) * 0.18;
-      Sym.text(g, label, U.clamp(ox, 24, V.w - 24), U.clamp(oy, 10, V.h - 6), { align: 'center', baseline: 'middle', size: 11, weight: 700, color: COL.dim, shadow: false });
+      Sym.text(g, label, U.clamp(ox, 24, V.w - 24), U.clamp(oy, 10, V.h - 6), { align: 'center', baseline: 'middle', size: 11, weight: 720, color: COL.dim, shadow: false });
     }
 
     function phaseDots(g, q, V, L, o) {
@@ -185,7 +185,7 @@
       }
       // HUD (over the cockpit)
       Sym.text(g, kmh(v) + '', w / 2, h - 34, { align: 'center', size: Math.max(28, Math.min(44, h * 0.08)), weight: 900 });
-      Sym.text(g, 'km/h', w / 2, h - 14, { align: 'center', size: 12, weight: 700, alpha: 0.75 });
+      Sym.text(g, 'km/h', w / 2, h - 14, { align: 'center', size: 12, weight: 720, alpha: 0.75 });
       const dt = LL.timeAt(q.user.sim, s) - LL.timeAt(q.ideal.sim, s);
       Sym.text(g, 'you ' + sec(dt) + ' vs ideal', w - 14, 26, { align: 'right', size: 18, weight: 900, color: dt > 0.005 ? COL.bad : COL.ideal });
       Sym.text(g, L.name, 14, 26, { size: 16, weight: 900, color: lineColor(L) });

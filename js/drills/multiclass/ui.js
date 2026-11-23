@@ -9,18 +9,18 @@
   const Sym = IST.Symbols, MC = IST.Multiclass, COL = MC.COL;
 
   function wrapText(g, text, x, y, maxW, size, lh, color, maxLines, weight) {
-    g.font = (weight || 500) + ' ' + size + 'px ' + Sym.FONT;
+    g.font = (weight || 520) + ' ' + size + 'px ' + Sym.FONT;
     const words = (text || '').split(' ');
     let line = '', n = 0;
     for (let i = 0; i < words.length; i++) {
       const t = line ? line + ' ' + words[i] : words[i];
       if (g.measureText(t).width > maxW && line) {
-        Sym.text(g, line, x, y + n * lh, { size, weight: weight || 500, color, shadow: false });
+        Sym.text(g, line, x, y + n * lh, { size, weight: weight || 520, color, shadow: false });
         line = words[i];
         if (++n >= maxLines) return n;
       } else line = t;
     }
-    if (line) Sym.text(g, line, x, y + n * lh, { size, weight: weight || 500, color, shadow: false });
+    if (line) Sym.text(g, line, x, y + n * lh, { size, weight: weight || 520, color, shadow: false });
     return n + 1;
   }
 

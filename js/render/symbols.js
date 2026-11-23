@@ -120,7 +120,7 @@
 
   S.text = function (g, str, x, y, o) {
     o = o || {};
-    g.font = (o.weight || 600) + ' ' + (o.size || 16) + 'px ' + S.FONT;
+    g.font = (o.weight || 620) + ' ' + (o.size || 16) + 'px ' + S.FONT;
     g.textAlign = o.align || 'left';
     g.textBaseline = o.baseline || 'alphabetic';
     g.globalAlpha = o.alpha == null ? 1 : o.alpha;

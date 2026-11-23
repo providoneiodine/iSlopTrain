@@ -203,7 +203,7 @@
         g.moveTo(0, y);
         g.lineTo(W, y);
         g.stroke();
-        Sym.text(g, 'HORIZON ' + V.horizon + '%', W - 12, y - 8, { align: 'right', size: 12, weight: 800, color: '#ff453a' });
+        Sym.text(g, 'HORIZON ' + V.horizon + '%', W - 12, y - 8, { align: 'right', size: 12, weight: 820, color: '#ff453a' });
         g.globalAlpha = 1;
       }
 

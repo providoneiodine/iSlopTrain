@@ -1,8 +1,10 @@
 /*
  * Clean Slate: recovering from a run of errors.
  *
- * Core task, rhythm-game style: rows of arrows scroll down a lane to a hit
- * line on a steady beat. Each row shows grey pattern masks until it crosses
+ * Core task, rhythm-game style: rows of arrows scroll along a lane to a hit
+ * line on a steady beat. By default they rise to a hit line near the top of
+ * the screen, so your eyes stay up where they'd be in the car; a setting
+ * flips it to a falling lane, and another sets how long a row is in view. Each row shows grey pattern masks until it crosses
  * the reveal line, then turns into arrows: one is BLUE (press its
  * direction) or ORANGE (press the opposite way), the rest are flankers
  * that point the same way or not (Eriksen & Eriksen, 1974). Press as the
@@ -40,8 +42,8 @@
 (function () {
   'use strict';
   const U = IST.util, CS = IST.CleanSlate;
-  const { DIRS, OPP, PERP, APPROACH, BEAT, RUSH_BEAT, HW, PERFECT, GREAT, ORANGE_BASE, WARMUP, REC_WIN, CLEAN_RUN, SLOW_X, TARGET } = CS;
-  const { LEAD_MIN, LEAD_MAX, MAX_LEVEL, COL, BURST_LEVELS, DIST_LEVELS, DIST_DUR, WORDS, POP_COLORS, levelOpts } = CS;
+  const { DIRS, OPP, PERP, APPROACH, APPROACH_OPTS, BEAT, RUSH_BEAT, HW, PERFECT, GREAT, ORANGE_BASE, WARMUP, REC_WIN, CLEAN_RUN, SLOW_X, TARGET } = CS;
+  const { LEAD_MIN, MAX_LEVEL, COL, BURST_LEVELS, DIST_LEVELS, DIST_DUR, WORDS, POP_COLORS, levelOpts } = CS;
 
   // Chain tiers, sounds and colour helpers are shared with the other drills (components/juice.js).
   const TIERS = IST.Juice.TIERS, tierOf = IST.Juice.tierOf, makeAudio = IST.Juice.makeAudio;
@@ -53,7 +55,7 @@
     category: 'Recovery',
     tagline: 'Make a mistake, then make the next one count.',
     description:
-      'Rows of arrows scroll down to the hit line on a steady beat. When a row is revealed, find the BLUE arrow and press its direction as the row hits the line. ' +
+      'Rows of arrows scroll to the hit line on a steady beat. When a row is revealed, find the BLUE arrow and press its direction as the row hits the line. ' +
       'ORANGE arrow: press the opposite way. Ignore the grey arrows and anything else on screen. ' +
       'Build a chain: the multiplier climbs at 5, 10, 20, 35, 50, 75 and 100. ' +
       'Without warning you get a short run of rows you will mostly fail (late reveal, double tempo, clutter, mostly orange). ' +
@@ -74,6 +76,8 @@
       { key: 'duration', label: 'Duration', type: 'number', unit: 's', default: 180, min: 60, max: 900, step: 30 },
       { key: 'burst', label: 'Burst level', type: 'select', default: 'auto', options: levelOpts(false), hint: 'Longer bursts, more types, double hits from 4.' },
       { key: 'distract', label: 'Distraction level', type: 'select', default: 'auto', options: levelOpts(true), hint: 'Flashes, taunt words, decoy arrows, sounds, drifting rows, fake error buzzes, HUD glitches.' },
+      { key: 'approach', label: 'Approach speed', type: 'select', default: String(APPROACH), options: APPROACH_OPTS, hint: 'How long a row takes to travel the lane. The reveal line still adapts within it.' },
+      { key: 'hitTop', label: 'Hit line at the top', type: 'bool', default: true, hint: 'Rows rise to a hit line near the top of the screen, keeping your eyes up as in the car. Off: rows fall to the bottom.' },
       { key: 'sound', label: 'Sound', type: 'bool', default: true, hint: 'Chain tones, beat ticks, error buzz, sound distractions.' },
       { key: 'resetCue', label: 'Reset cue', type: 'bool', default: false, hint: 'Press Confirm (Space / A) the moment you let a bad run go. Compares recovery with and without it.' },
     ],
@@ -126,6 +130,8 @@
       const distTypes = DL.types.filter((t) => audio || (t !== 'chirp' && t !== 'fakebuzz'));
       const allTimeBest = hist.reduce((m, r) => Math.max(m, (r.summary && r.summary.bestChain) || 0), 0);
       const endMs = S.duration * 1000;
+      const APP = Number(S.approach) || APPROACH, LEAD_MAX = APP;
+      const hitTop = S.hitTop !== false;
 
       // reveal lead: start from last session's value, a little easier
       let lead = 800;
@@ -208,7 +214,7 @@
           v = rnd.range(0.1, 0.9);
           const inLane = Math.abs(u - 0.5) < 0.22;
           if (type === 'decoy' && inLane) continue; // decoys stay out of the lane
-          if (inLane && v > 0.62) continue; // never on top of the hit zone
+          if (inLane && (hitTop ? v < 0.38 : v > 0.62)) continue; // never on top of the hit zone
           break;
         }
         return {
@@ -248,7 +254,7 @@
         spawned++;
         return Object.assign({}, k, {
           i, n, tgt, dir, orange, ans, cong, fl, look, offs, noise, dist, jx, lead: ld,
-          arriveT, spawnT: arriveT - APPROACH, revealT: arriveT - ld, resolved: false, ticked: false,
+          arriveT, spawnT: arriveT - APP, revealT: arriveT - ld, resolved: false, ticked: false,
         });
       }
 
@@ -338,7 +344,7 @@
         get brokenN() { return brokenN; },
         get stray() { return stray; },
       };
-      const view = CS.createView(run, { S, bLevel, dLevel, allTimeBest });
+      const view = CS.createView(run, { S, bLevel, dLevel, allTimeBest, approach: APP, hitTop });
       const summarize = () => CS.summarize(run, { S, bLevel, dLevel });
 
       let lastLayout = view.layout(ctx.W || 1280, ctx.H || 720);

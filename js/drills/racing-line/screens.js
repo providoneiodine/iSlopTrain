@@ -25,10 +25,10 @@
     function header(g, W, title, sub, subColor) {
       const q = st.q;
       const shown = Math.min(S.questions, rows.length + (st.mode === 'draw' || st.mode === 'grading' ? 1 : 0));
-      Sym.text(g, 'Line ' + Math.max(1, shown) + ' / ' + S.questions, 18, 28, { size: 16, weight: 800, alpha: 0.85 });
+      Sym.text(g, 'Line ' + Math.max(1, shown) + ' / ' + S.questions, 18, 28, { size: 16, weight: 820, alpha: 0.85 });
       const lv = q && q.level ? q.level : st.level;
-      Sym.text(g, 'Level ' + lv + ' · pass ≤ ' + PASS[lv].toFixed(2) + ' s', 18, 48, { size: 13, weight: 600, color: COL.dim });
-      if (title) Sym.text(g, title, W / 2, 28, { align: 'center', size: Math.max(17, Math.min(24, W * 0.018)), weight: 850 });
+      Sym.text(g, 'Level ' + lv + ' · pass ≤ ' + PASS[lv].toFixed(2) + ' s', 18, 48, { size: 13, weight: 620, color: COL.dim });
+      if (title) Sym.text(g, title, W / 2, 28, { align: 'center', size: Math.max(17, Math.min(24, W * 0.018)), weight: 820 });
       if (sub) Sym.text(g, sub, W / 2, 50, { align: 'center', size: 13, weight: subColor ? 800 : 400, color: subColor || '#b9c1ce' });
     }
 
@@ -65,7 +65,7 @@
         g.fillStyle = 'rgba(12,16,14,0.55)';
         g.fillRect(A.x, A.y, A.w, A.h);
         const dots = '.'.repeat(1 + (Math.floor(ts / 300) % 3));
-        Sym.text(g, 'Reading your line' + dots, W / 2, A.y + A.h / 2, { align: 'center', baseline: 'middle', size: 20, weight: 800 });
+        Sym.text(g, 'Reading your line' + dots, W / 2, A.y + A.h / 2, { align: 'center', baseline: 'middle', size: 20, weight: 820 });
         return;
       }
       // controls
@@ -74,7 +74,7 @@
       bx += button(g, bx, by, 'Undo  ↓', undo) + 8;
       bx += button(g, bx, by, 'Clear', clearAll) + 14;
       const cov = st.cov;
-      Sym.text(g, cov.ok ? (cov.off > 8 ? 'Parts of it leave the road: the car will be kept on the edge there.' : 'Draw over any part to redo it.') : cov.msg, bx, by + 19, { size: 13, weight: 600, color: cov.ok && cov.off <= 8 ? COL.dim : COL.quiz });
+      Sym.text(g, cov.ok ? (cov.off > 8 ? 'Parts of it leave the road: the car will be kept on the edge there.' : 'Draw over any part to redo it.') : cov.msg, bx, by + 19, { size: 13, weight: 620, color: cov.ok && cov.off <= 8 ? COL.dim : COL.quiz });
       button(g, W - 16, by, 'Submit  (Space)', submit, { primary: true, right: true, disabled: !cov.ok });
     }
 
@@ -111,7 +111,7 @@
         const ok = !r.issues.length;
         const color = ok ? COL.ideal : r.cost > 0.04 ? COL.bad : COL.quiz;
         Sym.text(g, T(r.ci), tx, y, { size: 15, weight: 900, color });
-        Sym.text(g, sec(r.cost), tx + tw, y, { align: 'right', size: 13, weight: 800, color: r.cost > 0.02 ? COL.bad : COL.dim });
+        Sym.text(g, sec(r.cost), tx + tw, y, { align: 'right', size: 13, weight: 820, color: r.cost > 0.02 ? COL.bad : COL.dim });
         y += wrapText(g, cornerText(r), tx + 34, y, tw - 100, 13, 17, '#cfd5df', 3) * 17 + 12;
       });
       y += 4;
@@ -178,7 +178,7 @@
       g.fill();
       g.fillStyle = cap.color;
       g.fillRect(16, cy + 10, 3, capH - 20);
-      Sym.text(g, cap.title, 30, cy + 22, { size: 15, weight: 850, color: cap.color });
+      Sym.text(g, cap.title, 30, cy + 22, { size: 15, weight: 820, color: cap.color });
       wrapText(g, cap.text, 30, cy + 43, W - 64, 13, 16, '#cfd5df', 2);
       scene.renderTrace(g, q, rp, 16, cy + capH + gap, W - 32, traceH);
       // controls

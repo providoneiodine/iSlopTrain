@@ -19,7 +19,8 @@
   const OPP = { up: 'down', down: 'up', left: 'right', right: 'left' };
   const PERP = { up: ['left', 'right'], down: ['left', 'right'], left: ['up', 'down'], right: ['up', 'down'] };
 
-  const APPROACH = 1600; // ms from entering the lane to the hit line
+  const APPROACH = 1600; // default ms from entering the lane to the hit line (setting: approach)
+  const APPROACH_OPTS = [['2200', 'Slow (2.2 s)'], ['1600', 'Normal (1.6 s)'], ['1200', 'Fast (1.2 s)'], ['900', 'Very fast (0.9 s)']];
   const BEAT = 850; // ms between rows
   const RUSH_BEAT = 480; // ms between rows during a rush burst
   const HW = 150; // hit window half-width (ms)
@@ -31,7 +32,7 @@
   const CLEAN_RUN = 3; // consecutive clean answers = recovered
   const SLOW_X = 1.25; // a clean answer is also no slower than 1.25x baseline median
   const TARGET = 0.88; // staircase target accuracy
-  const LEAD_MIN = 200, LEAD_MAX = APPROACH;
+  const LEAD_MIN = 200; // the most is the approach time: revealed as it enters the lane
   const MIN_BURSTS = 3;
   const MAX_LEVEL = 6;
 
@@ -66,7 +67,7 @@
     [['auto', 'Auto (adapts)']].concat(withOff ? [['off', 'Off']] : []).concat([1, 2, 3, 4, 5, 6].map((n) => [String(n), String(n)]));
 
   Object.assign(CS, {
-    DIRS, OPP, PERP, APPROACH, BEAT, RUSH_BEAT, HW, PERFECT, GREAT, ORANGE_BASE, WARMUP, REC_WIN, CURVE, CLEAN_RUN, SLOW_X, TARGET,
-    LEAD_MIN, LEAD_MAX, MIN_BURSTS, MAX_LEVEL, COL, BURST_LEVELS, BURST_LABELS, DIST_LEVELS, DIST_LABELS, DIST_DUR, WORDS, POP_COLORS, levelOpts,
+    DIRS, OPP, PERP, APPROACH, APPROACH_OPTS, BEAT, RUSH_BEAT, HW, PERFECT, GREAT, ORANGE_BASE, WARMUP, REC_WIN, CURVE, CLEAN_RUN, SLOW_X, TARGET,
+    LEAD_MIN, MIN_BURSTS, MAX_LEVEL, COL, BURST_LEVELS, BURST_LABELS, DIST_LEVELS, DIST_LABELS, DIST_DUR, WORDS, POP_COLORS, levelOpts,
   });
 })();

@@ -14,7 +14,7 @@
     const f = U.clamp(t / TL.DT, 0, R.n - 1);
     const i = Math.min(R.n - 2, Math.floor(f)), u = f - i;
     const L = (a) => a[i] + (a[i + 1] - a[i]) * u;
-    return { sF: L(R.sF), vF: L(R.vF), lF: L(R.lF), sS: L(R.sS), vS: L(R.vS), lS: L(R.lS), i };
+    return { sF: L(R.sF), vF: L(R.vF), lF: L(R.lF), sS: L(R.sS), vS: L(R.vS), lS: L(R.lS), xs: (R.x || []).map((e) => ({ s: L(e.s), v: L(e.v), l: L(e.l) })), i };
   }
   function timeAtPos(R, key, s) {
     const a = R[key];

@@ -201,12 +201,12 @@
           const v = valid();
           const ty = y0 + unit * 2.2 + H * 0.16;
           if (!tr || tr.phase === 'ready') {
-            Sym.text(g, 'React when the lights go out', W / 2, ty, { align: 'center', size: Math.max(18, W * 0.018), weight: 350, color: '#cfd5df' });
+            Sym.text(g, 'React when the lights go out', W / 2, ty, { align: 'center', size: Math.max(18, W * 0.018), weight: 340, color: '#cfd5df' });
           } else if (tr.phase === 'result') {
             if (tr.msg) Sym.text(g, tr.msg, W / 2, ty, { align: 'center', size: Math.max(36, W * 0.04), weight: 900, color: '#ff453a' });
             else Sym.text(g, Math.round(tr.rt) + ' ms', W / 2, ty, { align: 'center', size: Math.max(48, W * 0.06), weight: 900, color: '#ffffff' });
             if (v.length)
-              Sym.text(g, 'Best ' + Math.round(Math.min.apply(null, v)) + ' ms   ·   Median ' + Math.round(U.median(v)) + ' ms', W / 2, ty + Math.max(36, W * 0.03), { align: 'center', size: 16, weight: 400, color: '#8a93a6' });
+              Sym.text(g, 'Best ' + Math.round(Math.min.apply(null, v)) + ' ms   ·   Median ' + Math.round(U.median(v)) + ' ms', W / 2, ty + Math.max(36, W * 0.03), { align: 'center', size: 16, weight: 420, color: '#8a93a6' });
           }
           Sym.text(g, 'Start ' + Math.min(S.trials, trials.length + (tr && tr.phase !== 'result' ? 1 : 0)) + ' / ' + S.trials, 18, 30, { size: 16, alpha: 0.7 });
           Sym.text(g, 'Esc', W - 18, 30, { size: 13, align: 'right', alpha: 0.45 });

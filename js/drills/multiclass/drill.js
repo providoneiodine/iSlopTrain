@@ -10,6 +10,11 @@
  *   GT:        hold your line, ease off and let it by, leave room, move
  *              across, move over under braking, cover the inside.
  *
+ * Variants (from level 2): you noticed late (radio, a dash setting, a
+ * fight in your own class, a wandering mind: a few seconds to decide, near
+ * the braking zone), two GTs nose to tail, or you're catching a GT limping
+ * to the pits with a prototype closing behind.
+ *
  * Every option is driven, not scripted (IST.TrafficLab): both cars on
  * their own paths at the speed IST.LineLab's lap-time model gives each car
  * there, the one behind following the one in front, and contact, squeezes,
@@ -20,9 +25,10 @@
  * close the call is: how much room a pass on the straight leaves.
  *
  * A rule set (blue flags and overtaking) is picked before the run. After
- * each answer, any option replays from your seat (with a mirror) beside the
- * top-down view and a gap trace, pausing at closing, braking, turn-in, the
- * pass and any conflict.
+ * each answer the answer cards stay up and the looped run-up becomes a
+ * replay of the clicked card: from your seat (with a mirror), the top-down
+ * view with both cars' lines and a gap trace, pausing at closing, braking,
+ * turn-in, the pass and any conflict.
  *
  * Split across js/drills/multiclass/ (content.js lists the files). This
  * one holds the definition, session state, input and results.
@@ -44,6 +50,7 @@
     description:
       'A prototype closing on a GT down a long straight into a corner. You\'re one of them: pick the pass, or how to be passed. ' +
       'Every option is driven by a two-car lap-time model, so contact, squeezes and time lost are worked out, not scripted. ' +
+      'Sometimes you notice late, catch a car limping to the pits, or meet two GTs racing each other. ' +
       'The best call is the fastest one for you with no contact risk that your rule set allows; a safe answer within 0.15 s of it still earns 75 % credit, a slower safe one 40 %. Pick the blue-flag rules before each run; the level closes the margins.',
     research: [
       { point: 'Projecting where the other car will be (level 3 situation awareness) is what lets you act before a conflict.', source: 'Endsley (1995), Human Factors 37(1).' },
@@ -107,6 +114,8 @@
       const auto = !S.level || S.level === 'auto';
       const startLevel = def.levelFor(S, ctx.history);
       const timeLimit = Number(S.timeLimit) || 0;
+      // a late call brings its own few seconds; the setting can only make it shorter
+      const limitFor = (q) => (q && q.timeLimit ? (timeLimit ? Math.min(timeLimit, q.timeLimit) : q.timeLimit) : timeLimit);
       const J = new IST.Juice({ history: ctx.history });
       const canvas = document.getElementById('stage');
       let lastRules = 'hold';
@@ -162,6 +171,7 @@
       queue();
 
       function prepare(q) {
+        q.me = q.role === 'fast' ? 'F' : 'S'; // first: the explanations are written from your seat
         q.opts.forEach((o) => {
           Object.assign(o, optText(q, o.id));
           o.grade = gradeOf(o);
@@ -170,8 +180,8 @@
           o.tag = tagOf(o);
         });
         q.order = shuffle(q.opts.map((_, i) => i), rnd);
+        q.brief = MC.brief(q);
         q.views = {};
-        q.me = q.role === 'fast' ? 'F' : 'S';
         return q;
       }
 
@@ -222,7 +232,7 @@
         bump(byRules, q.rules);
         const risky = !!(o && (o.risk.level !== 'safe' || o.offline || o.legal === false));
         rows.push({
-          scen: q.spec.id, role: q.role, rules: q.rules, sit: q.sit, level: q.level, correct: correct ? 1 : 0, good: good ? 1 : 0, credit,
+          scen: q.spec.id, variant: q.variant, role: q.role, rules: q.rules, sit: q.sit, level: q.level, correct: correct ? 1 : 0, good: good ? 1 : 0, credit,
           pick: o ? o.id : 'timeout', best: q.best.id, risky: risky ? 1 : 0,
           cost: o && !risky ? +o.cost.toFixed(3) : null, lead: +q.lead.toFixed(1), dec: +dec.toFixed(2),
         });
@@ -261,17 +271,13 @@
         st.mode = 'replay';
         st.rp = MC.replay.start(st.q, oi);
       }
-      function cycle(dir) {
-        const ord = st.q.order, k = ord.indexOf(st.rp.oi);
-        startReplay(ord[(k + dir + ord.length) % ord.length]);
-      }
       const skipPhase = () => MC.replay.skip(st.rp);
       function updateReplay(dt) {
         if (MC.replay.step(st.rp, dt) && J.audio) J.audio.tick();
       }
 
       const scene = MC.createScene({ S, VIEW, SEAT, CP });
-      const screens = MC.createScreens({ st, rows, S, ctx, timeLimit, scene, act: { cycle, startReplay, skipPhase, advance, wantsReplay } });
+      const screens = MC.createScreens({ st, rows, S, ctx, limit: () => limitFor(st.q), scene, act: { startReplay, skipPhase, advance, wantsReplay } });
 
       // ------------------------------------------------------------- input
       const nOpts = () => (st.q ? st.q.opts.length : 4);
@@ -291,10 +297,10 @@
         } else if (st.mode === 'reveal') {
           if (a === 'confirm' || a === 'right' || a === 'left') leaveReveal(a !== 'confirm' || wantsReplay());
         } else if (st.mode === 'replay') {
-          if (a === 'left') cycle(-1);
-          else if (a === 'right') cycle(1);
-          else if (a === 'up') skipPhase();
-          else if (a === 'down') startReplay(st.rp.oi);
+          // the answer cards stay up: move between them like in the question, each move replays that answer
+          const n = nOpts(), cols = gridCols(), k = st.q.order.indexOf(st.rp.oi);
+          const to = a === 'left' ? k - 1 : a === 'right' ? k + 1 : a === 'up' ? k - cols : a === 'down' ? k + cols : null;
+          if (to != null) startReplay(st.q.order[(to + n * 2) % n]);
           else if (a === 'confirm') advance();
         }
       }
@@ -319,6 +325,7 @@
         e.preventDefault();
         if (b.rule != null && st.mode === 'rules') chooseRules(b.rule);
         else if (b.panel != null && st.mode === 'question') answer(b.panel);
+        else if (b.panel != null && (st.mode === 'replay' || st.mode === 'reveal')) startReplay(st.q.order[b.panel]);
         else if (b.act) b.act();
       }
       canvas.addEventListener('pointermove', onMove);
@@ -330,7 +337,7 @@
         update(dt, clock) {
           pump();
           if (st.mode === 'loading' && st.next) startQuestion();
-          if (st.mode === 'question' && timeLimit && clock - st.tMode > timeLimit * 1000) answer(-1);
+          if (st.mode === 'question' && limitFor(st.q) && clock - st.tMode > limitFor(st.q) * 1000) answer(-1);
           if (st.mode === 'reveal' && clock - st.tMode > REVEAL) {
             if (wantsReplay()) leaveReveal(true);
             else if (clock - st.tMode > REVEAL + 1800) leaveReveal(false);
@@ -365,10 +372,9 @@
           else if (st.mode === 'loading' || !st.q) {
             screens.header(g, W, 'Class Traffic', null);
             const dots = '.'.repeat(1 + (Math.floor(ts / 300) % 3));
-            Sym.text(g, 'Setting up the traffic' + dots, W / 2, H / 2, { align: 'center', size: 18, weight: 600, color: COL.text2 });
+            Sym.text(g, 'Setting up the traffic' + dots, W / 2, H / 2, { align: 'center', size: 18, weight: 620, color: COL.text2 });
             if (!rows.length) Sym.text(g, 'Read the gap, the closing speed and the distance to the braking zone, then pick the responsible move.', W / 2, H / 2 + 30, { align: 'center', size: 14, color: COL.dim });
-          } else if (st.mode === 'replay') screens.renderReplay(g, W, H, ts);
-          else screens.renderQuiz(g, W, H, ts);
+          } else screens.renderQuiz(g, W, H, ts); // the replay is drawn inside the quiz screen
           if (st.mode !== 'rules') J.render(g, W, H, { x: W - 54, y: 14, size: 24, side: -1, callY: H * 0.42, vignette: st.mode === 'reveal' });
         },
 

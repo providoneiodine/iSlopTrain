@@ -284,14 +284,14 @@
         Sym.text(g, String(this.brokenChain), cx, cy + bp * size, { align: 'center', baseline: 'middle', size: size * (1 - bp * 0.3), weight: 900, color: '#ff453a', alpha: 1 - bp, shadow: false });
       }
       const ly = top + size + 10;
-      Sym.text(g, 'CHAIN ×' + T.m, cx, ly, { align: 'center', size: 11, weight: 800, color: ti ? T.c : '#a1a9b7', alpha: 0.9 });
+      Sym.text(g, 'CHAIN ×' + T.m, cx, ly, { align: 'center', size: 11, weight: 820, color: ti ? T.c : '#a1a9b7', alpha: 0.9 });
       const next = TIERS[ti + 1];
       const bw = size * 2.6, by = ly + 6;
       g.fillStyle = 'rgba(255,255,255,0.12)';
       g.fillRect(cx - bw / 2, by, bw, 3);
       g.fillStyle = T.c;
       g.fillRect(cx - bw / 2, by, bw * U.clamp(next ? (this.chain - T.at) / (next.at - T.at) : 1, 0, 1), 3);
-      Sym.text(g, Math.round(this.score).toLocaleString(), cx, by + 18, { align: 'center', size: 13, weight: 700, color: this.score < 0 ? '#ff6b5e' : '#d5dae3' });
+      Sym.text(g, Math.round(this.score).toLocaleString(), cx, by + 18, { align: 'center', size: 13, weight: 720, color: this.score < 0 ? '#ff6b5e' : '#d5dae3' });
 
       // effects
       const fxX = cx + side * size * 1.25;
@@ -307,7 +307,7 @@
           const y = cy - p * size * 0.9;
           const al = side > 0 ? 'left' : 'right';
           if (f.text) Sym.text(g, f.text, fxX, y, { align: al, baseline: 'middle', size: Math.round(size * 0.48), weight: 900, color: f.color, alpha: Math.min(1, a * 1.6) });
-          if (f.sub) Sym.text(g, f.sub, fxX, y + size * 0.42, { align: al, baseline: 'middle', size: Math.round(size * 0.32), weight: 800, color: f.color, alpha: a });
+          if (f.sub) Sym.text(g, f.sub, fxX, y + size * 0.42, { align: al, baseline: 'middle', size: Math.round(size * 0.32), weight: 820, color: f.color, alpha: a });
         } else if (f.k === 'tier') {
           const s = 1 + 0.5 * U.smooth(Math.min(1, p * 3));
           Sym.text(g, f.text, cx - side * size * 1.2, cy - p * 14, { align: side > 0 ? 'right' : 'left', baseline: 'middle', size: size * 0.7 * s, weight: 900, color: f.color, alpha: a });
@@ -324,7 +324,7 @@
           const y = o.callY != null ? o.callY : H * 0.2;
           const s = 1 + 0.25 * (1 - U.smooth(Math.min(1, p * 4)));
           Sym.text(g, f.text, W / 2, y, { align: 'center', baseline: 'middle', size: (f.small ? 20 : 28) * s, weight: 900, color: f.color, alpha: Math.min(1, a * 1.8) });
-          if (f.sub) Sym.text(g, f.sub, W / 2, y + 26, { align: 'center', baseline: 'middle', size: 15, weight: 700, color: f.color, alpha: a });
+          if (f.sub) Sym.text(g, f.sub, W / 2, y + 26, { align: 'center', baseline: 'middle', size: 15, weight: 720, color: f.color, alpha: a });
         }
       }
     }

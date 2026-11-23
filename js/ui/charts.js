@@ -251,7 +251,7 @@
     }
     items.forEach((it, k) => {
       const y = k * rowH + (rowH - barH) / 2;
-      const t = txt(svg, 0, y + barH - 2, it.label, { fill: it.tag ? C.text : C.text2, 'font-size': 12, 'font-weight': it.tag ? 700 : 400 });
+      const t = txt(svg, 0, y + barH - 2, it.label, { fill: it.tag ? C.text : C.text2, 'font-size': 12, 'font-weight': it.tag ? 720 : 420 });
       if (it.tag) {
         const ts = el('tspan', { fill: C.muted, 'font-weight': 400, 'font-size': 11 }, t);
         ts.textContent = '  ▼ ' + it.tag;

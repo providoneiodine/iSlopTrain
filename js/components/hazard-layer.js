@@ -438,15 +438,15 @@
   };
 
   HazardLayer.prototype.renderHUD = function (g, W, H, ts, clock, showFb) {
-    Sym.text(g, 'threat ' + this.level, W - 18, 74, { size: 13, weight: 400, align: 'right', alpha: 0.6 });
+    Sym.text(g, 'threat ' + this.level, W - 18, 74, { size: 13, weight: 420, align: 'right', alpha: 0.6 });
     const now = performance.now();
     if (this.o.framing === 'compare') {
       const f = this.framingAt(clock);
       if (this.banner && now < this.banner.until) {
         const a = U.clamp((this.banner.until - now) / 500, 0, 1);
-        Sym.text(g, this.banner.text, W / 2, H * 0.16, { align: 'center', size: Math.max(22, W * 0.022), weight: 850, alpha: a, color: f === 'avoid' ? '#ffcc00' : '#fff' });
+        Sym.text(g, this.banner.text, W / 2, H * 0.16, { align: 'center', size: Math.max(22, W * 0.022), weight: 820, alpha: a, color: f === 'avoid' ? '#ffcc00' : '#fff' });
       } else {
-        Sym.text(g, CUES[f], W / 2, 30, { align: 'center', size: 14, weight: 600, alpha: 0.7, color: f === 'avoid' ? '#ffcc00' : '#fff' });
+        Sym.text(g, CUES[f], W / 2, 30, { align: 'center', size: 14, weight: 620, alpha: 0.7, color: f === 'avoid' ? '#ffcc00' : '#fff' });
       }
     }
     if (showFb && now < this.capFb) Sym.text(g, 'eyes on the wall', W / 2, H * 0.08 + 20, { align: 'center', size: 14, color: '#ffb000' });

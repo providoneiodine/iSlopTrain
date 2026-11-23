@@ -35,6 +35,12 @@
   const MIN_GAP = 8; // m between keypoints
   const TAIL = 900; // extra straight after the finish so the in-car view has road ahead
   const CAR = { aLat: 13.5, aBrake: 14, aTrac: 9, power: 330, drag: 0.0007, vMax: 95 };
+  /*
+   * Grip that grows with speed (downforce): a car may add dfLat / dfBrake (m/s^2 per
+   * (m/s)^2) to its lateral and braking limits. Pick the Line's CAR has none.
+   */
+  const latA = (car, v) => car.aLat + (car.dfLat || 0) * v * v;
+  const brkA = (car, v) => car.aBrake + (car.dfBrake || 0) * v * v;
 
   const smoother = (t) => t * t * t * (t * (t * 6 - 15) + 10);
 
@@ -213,15 +219,16 @@
     }
     k[iStop] = k[iStop - 1];
 
-    const aLat = car.aLat, vMax = car.vMax;
+    const vMax = car.vMax, df = car.dfLat || 0;
     for (let i = 0; i <= iStop; i++) {
-      const c = Math.abs(k[i]);
-      v[i] = c > 1e-6 ? Math.min(vMax, Math.sqrt(aLat / c)) : vMax;
+      // v^2 c = aLat + df v^2
+      const c = Math.abs(k[i]), den = c - df;
+      v[i] = c > 1e-6 && den > 0 ? Math.min(vMax, Math.sqrt(car.aLat / den)) : vMax;
     }
     v[0] = Math.min(v[0], o.vIn || geo.vIn);
     // forward: drive (traction / power / drag), limited by the grip left after cornering
     for (let i = 0; i < iStop; i++) {
-      const vi = v[i], u = (vi * vi * Math.abs(k[i])) / aLat;
+      const vi = v[i], u = (vi * vi * Math.abs(k[i])) / latA(car, vi);
       const ell = u < 1 ? Math.sqrt(1 - u * u) : 0;
       const a = Math.min(car.aTrac, car.power / Math.max(vi, 1)) * ell - car.drag * vi * vi;
       const vn = Math.sqrt(Math.max(0, vi * vi + 2 * L[i] * a));
@@ -229,9 +236,9 @@
     }
     // backward: braking on the same friction ellipse; drag helps
     for (let i = iStop - 1; i >= 0; i--) {
-      const vj = v[i + 1], u = (vj * vj * Math.abs(k[i + 1])) / aLat;
+      const vj = v[i + 1], u = (vj * vj * Math.abs(k[i + 1])) / latA(car, vj);
       const ell = u < 1 ? Math.sqrt(1 - u * u) : 0;
-      const b = car.aBrake * ell + car.drag * vj * vj;
+      const b = brkA(car, vj) * ell + car.drag * vj * vj;
       const vp = Math.sqrt(vj * vj + 2 * L[i] * b);
       if (vp < v[i]) v[i] = vp;
     }
@@ -883,7 +890,7 @@
         const im = Math.round((c.startPos + c.endPos) / 2 / DS);
         const e = -c.dir * (1 + 14 / HW / Math.max(0.6, sc));
         const t = V.map(geo.cx[im] + e * HW * geo.nx[im], geo.cy[im] + e * HW * geo.ny[im]);
-        IST.Symbols.text(g, 'T' + (i + 1), U.clamp(t[0], 14, V.w - 14), U.clamp(t[1], 12, V.h - 6), { align: 'center', baseline: 'middle', size: fs, weight: 800, color: '#cfd5df', alpha: 0.85 });
+        IST.Symbols.text(g, 'T' + (i + 1), U.clamp(t[0], 14, V.w - 14), U.clamp(t[1], 12, V.h - 6), { align: 'center', baseline: 'middle', size: fs, weight: 820, color: '#cfd5df', alpha: 0.85 });
       });
       // what follows matters: label the exit straight
       const ie = i1 - Math.round(20 / DS);
@@ -891,7 +898,7 @@
       const ea = Math.atan2(e2[1] - e1[1], e2[0] - e1[0]);
       const lx = U.clamp(e2[0] + Math.cos(ea) * 6, 30, V.w - 30), ly = U.clamp(e2[1] + Math.sin(ea) * 6, 12, V.h - 8);
       const al = Math.cos(ea) > 0.4 ? 'right' : Math.cos(ea) < -0.4 ? 'left' : 'center';
-      IST.Symbols.text(g, Math.round(geo.exitLen / 10) * 10 + ' m straight', al === 'right' ? Math.min(V.w - 6, lx + 20) : al === 'left' ? Math.max(6, lx - 20) : lx, ly + (Math.sin(ea) > 0.5 ? 2 : Math.sin(ea) < -0.5 ? 10 : 4), { align: al, baseline: 'middle', size: fs, weight: 700, color: '#f6d98f', alpha: 0.9 });
+      IST.Symbols.text(g, Math.round(geo.exitLen / 10) * 10 + ' m straight', al === 'right' ? Math.min(V.w - 6, lx + 20) : al === 'left' ? Math.max(6, lx - 20) : lx, ly + (Math.sin(ea) > 0.5 ? 2 : Math.sin(ea) < -0.5 ? 10 : 4), { align: al, baseline: 'middle', size: fs, weight: 720, color: '#f6d98f', alpha: 0.9 });
     }
     g.restore();
   }
@@ -931,7 +938,7 @@
   IST.LineLab = {
     SEG, HW, DS, NMAX, CAR, FLAWS, BANDS, MAX_LEVEL,
     build, knots, template, ctrlToN, simulate, optimize, optimizeGen, run, solveGen, solveIdeal, priorityGen, priorityLines, lineFrom, applyFlaw, distractors,
-    phases, timeAt, sampleAt, sampleN, posAtTime, maxDev, project, fitDrawn, intentGen, judge,
+    latA, brkA, phases, timeAt, sampleAt, sampleN, posAtTime, maxDev, project, fitDrawn, intentGen, judge,
     windowOf, fitView, drawTrack, drawLine, pointAt,
   };
 })();

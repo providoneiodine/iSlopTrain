@@ -21,10 +21,15 @@
       'f-straight': 'When the speed gap gets you clear before the braking zone, take it there: it costs nothing and risks nothing.',
       'f-dive': 'Out-braking only works if you\'re clearly ahead before it turns in.',
       'f-outside': 'Round the outside works only where your extra grip carries you clear before its track-out.',
-      'f-follow': 'If you won\'t be clear before braking, sit behind and use the exit. A dive at a car that is turning in is the classic multiclass crash.',
+      'f-follow': 'If you\'ll only reach it at the apex, lift early and get it on the exit (slow in, fast out). A dive at a car that is turning in is the classic multiclass crash.',
       's-clear': 'If it will be past before the braking zone, do nothing: your normal line is the most useful thing you can give it.',
       's-committed': 'If it will be alongside into the corner, make room: ease off early so it clears, or brake a touch early and turn in behind it.',
+      's-marginal': 'If it\'s right behind and lining up a late dive but hasn\'t committed, one early move to cover the inside, done before braking, tells it to wait for the exit. Once it has pulled out to that side, don\'t move across.',
       's-behind': 'Stuck behind you: under give-way and point-by rules, let it by on the straight if there is room before braking; otherwise wait for the next straight.',
+      's-late': 'Noticed late: the predictable move still wins. Hold your line unless it\'s already alongside, then make room. Then check the mirror more often on long straights.',
+      's-traffic': 'Catching a slow car: check the mirror before you pull out. If the prototype is close, it gets the passing lane first; pull out behind it.',
+      'f-late': 'Noticed late: don\'t force a pass you haven\'t set up. Follow it in and use the exit.',
+      'f-pair': 'Two GTs fighting won\'t be predictable. Pass both cleanly on a straight or wait; never dive into the middle of their battle.',
     };
     if (worst && worst.r < 0.7) tips.push(SITS[worst.k] + ': ' + worst.e[1] + ' of ' + worst.e[0] + ' right. ' + txt[worst.k]);
     if (U.isNum(s.riskRate) && s.riskRate >= 0.25) tips.push('A quarter of your picks were risky. When in doubt, the predictable option is the safe one: hold your line, or wait behind.');
@@ -58,7 +63,8 @@
         if (x && x.r >= min) out.insim.push({ id, score: 0.35 + x.r, evidence: 'Picked ' + what + ' ' + x.e[1] + ' of ' + x.e[0] + ' times it was wrong' });
       };
       push('MC_DIVE', ['dive', 'outside', 'straight'], 0.2, 'a pass that wasn\'t on');
-      push('MC_PREDICT', ['across', 'brakeMove', 'defend'], 0.12, 'a move off your line');
+      push('MC_PREDICT', ['across', 'brakeMove', 'early', 'defend'], 0.12, 'a move off your line or braking point');
+      push('MC_MIRROR', ['overtake'], 0.25, 'pulling out to pass with a prototype closing');
       push('MC_ROOM', ['hold'], 0.25, 'holding your line with a car alongside or stuck behind');
       push('MC_PATIENCE', ['letby', 'room'], 0.25, 'giving away time you didn\'t need to');
     }

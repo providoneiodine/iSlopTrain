@@ -25,7 +25,7 @@ A guide for whoever maintains this next. It covers how the pieces fit together; 
 | Component | What it is | Used by |
 |---|---|---|
 | `IST.LineLab` | corner complexes, a quasi-steady-state lap-time model, the minimum-time line solver, flawed lines, the corner-by-corner verdict, top-down drawing | Draw the Line, Class Traffic (through TrafficLab) |
-| `IST.TrafficLab` | two cars (prototype and GT) on one complex, car following, contact/squeeze/cut-off detection, question generation | Class Traffic |
+| `IST.TrafficLab` | a prototype and a GT (plus an optional third car) on one complex, calibrated to IMSA/WEC class gaps, car following, contact/squeeze/cut-off detection, question generation | Class Traffic |
 | `IST.Track` / `IST.TrackRenderer` | generated circuits and the in-car renderer | Apex Snap family, Two-Point Focus, the replays, View screen |
 | `IST.RaceLayer` | traffic, relative box, dash, radio/spotter, audio | Apex Snap: Race Mode; `drawCar` is reused by the replays |
 | `IST.HazardLayer` | threats on the outside of corners (walls, wrecks, yellows, spins) | Eyes Off the Wall |

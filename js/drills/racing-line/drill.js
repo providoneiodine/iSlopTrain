@@ -368,7 +368,7 @@
           if (st.mode === 'loading' || !st.q) {
             screens.header(g, W, 'Draw the Line', null);
             const dots = '.'.repeat(1 + (Math.floor(ts / 300) % 3));
-            Sym.text(g, 'Working out the fastest line' + dots, W / 2, H / 2, { align: 'center', size: 18, weight: 600, color: '#cfd5df' });
+            Sym.text(g, 'Working out the fastest line' + dots, W / 2, H / 2, { align: 'center', size: 18, weight: 620, color: '#cfd5df' });
             if (!rows.length) Sym.text(g, 'Drag to draw the line you would drive, from the start mark to the finish. Space to submit.', W / 2, H / 2 + 30, { align: 'center', size: 14, color: COL.dim });
           } else if (st.mode === 'replay') screens.renderReplay(g, W, H, ts);
           else if (st.mode === 'result') screens.renderResult(g, W, H);

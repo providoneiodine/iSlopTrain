@@ -592,28 +592,28 @@
     g.fillStyle = '#eef0f4';
     g.textAlign = 'center';
     g.textBaseline = 'middle';
-    g.font = '600 0.22px Allo, system-ui, sans-serif';
+    g.font = '620 0.22px ' + IST.Symbols.FONT;
     g.fillText(String(info.gear || 'N'), 0, -0.225);
-    g.font = '500 0.07px Allo, system-ui, sans-serif';
+    g.font = '520 0.07px ' + IST.Symbols.FONT;
     g.fillStyle = '#c9cfd9';
     g.textAlign = 'left';
     g.fillText(String(Math.round(info.kmh || 0)), -0.27, -0.31);
-    g.font = '400 0.05px Allo, system-ui, sans-serif';
+    g.font = '420 0.05px ' + IST.Symbols.FONT;
     g.fillStyle = '#a1a9b7';
     g.fillText('KM/H', -0.27, -0.245);
     g.textAlign = 'right';
-    g.font = '500 0.07px Allo, system-ui, sans-serif';
+    g.font = '520 0.07px ' + IST.Symbols.FONT;
     if (U.isNum(info.delta)) {
       const d = info.delta;
       g.fillStyle = d <= 0 ? '#a6e3c4' : '#f09ca6';
       g.fillText((d <= 0 ? '−' : '+') + Math.abs(d).toFixed(2), 0.27, -0.31);
-      g.font = '400 0.05px Allo, system-ui, sans-serif';
+      g.font = '420 0.05px ' + IST.Symbols.FONT;
       g.fillStyle = '#a1a9b7';
       g.fillText('DELTA', 0.27, -0.245);
     } else {
       g.fillStyle = '#c9cfd9';
       g.fillText(Math.round((info.rpm || 0) * 100) + '%', 0.27, -0.31);
-      g.font = '400 0.05px Allo, system-ui, sans-serif';
+      g.font = '420 0.05px ' + IST.Symbols.FONT;
       g.fillStyle = '#a1a9b7';
       g.fillText('RPM', 0.27, -0.245);
     }

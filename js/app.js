@@ -345,7 +345,7 @@
     // canvas text needs the webfont ready before the first frame
     if (document.fonts && document.fonts.load) {
       try {
-        await Promise.race([document.fonts.load('700 16px Allo'), new Promise((r) => setTimeout(r, 800))]);
+        await Promise.race([document.fonts.load('720 16px Allo'), new Promise((r) => setTimeout(r, 800))]);
       } catch (e) {
         /* fall back to system font */
       }
