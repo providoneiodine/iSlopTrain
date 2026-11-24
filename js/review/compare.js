@@ -1,7 +1,8 @@
 /*
  * Lines laps up for comparison. Pure functions, no DOM.
  *
- *   IST.Review.Compare.build(ref, laps)  -> comparison (below)
+ *   IST.Review.Compare.build(ref, laps, colors, track?)  -> comparison (below)
+ *     track: { lines: [[[x, y], ...], ...], halfWidth? }, from the map
  *   IST.Review.Compare.fmtLap(s)         1:42.315
  *
  * Every lap is sampled on the reference lap's distance grid by fraction of
@@ -12,14 +13,18 @@
  *
  * Comparison:
  *   { n, step, len, laps: [{ lap, color, t, x, y, z, speed, throttle, brake,
- *     steer, gear, delta, shifts: [{ i, from, to }] }],
- *     centre: { x, y, z, w (half width) }, bounds: { x0, x1, y0, y1, z0, z1 },
+ *     steer, gear, delta, off, shifts: [{ i, from, to }] }],
+ *     centre: { x, y, z, w (half width), source }, bounds: { x0, x1, y0, y1, z0, z1 },
  *     corners, complexes (findCorners, below) }
  * laps[0] is the reference.
  *
- * The track surface is the laps' average path, widened to cover every lap
- * plus a margin (at least 5 m each side). It's an estimate: telemetry has no
- * track edges.
+ * The track's centre comes from the map when there is one (track.lines, in
+ * the laps' frame: see track.js), so a line that clips an apex is drawn off
+ * centre. Without a map it's the laps' average path, which follows the
+ * drivers' lines: an estimate, since telemetry has no track edges.
+ * centre.source says which ('map' | 'laps'). The half width covers every
+ * lap plus a margin (at least 5 m each side), or the map's width if wider.
+ * Each lap's off[i] is its signed distance from the centre (m, + left).
  */
 (function () {
   'use strict';
@@ -46,7 +51,7 @@
     return out;
   }
 
-  function build(ref, laps, colors) {
+  function build(ref, laps, colors, track) {
     const all = [ref].concat(laps.filter((l) => l !== ref));
     const n = ref.n, step = ref.len / (n - 1);
     const out = all.map((lap, i) => {
@@ -70,7 +75,7 @@
       }
     });
 
-    // average path and width
+    // centre: the map's, else the laps' average path
     const cx = new Float32Array(n), cy = new Float32Array(n), cz = new Float32Array(n), w = new Float32Array(n);
     for (let i = 0; i < n; i++) {
       let sx = 0, sy = 0, sz = 0;
@@ -78,17 +83,30 @@
       cx[i] = sx / out.length;
       cy[i] = sy / out.length;
       cz[i] = sz / out.length;
-      let dev = 0;
-      out.forEach((s) => (dev = Math.max(dev, Math.hypot(s.x[i] - cx[i], s.y[i] - cy[i]))));
-      w[i] = dev;
     }
+    const onMap = track && track.lines && track.lines.length ? IST.Review.Track.centreOn(out[0].x, out[0].y, track.lines, step) : null;
+    if (onMap) {
+      cx.set(onMap.x);
+      cy.set(onMap.y);
+    }
+    // each lap's signed distance from the centre (+ left of travel)
+    out.forEach((s) => {
+      s.off = new Float32Array(n);
+      for (let i = 0; i < n; i++) {
+        const a = Math.max(0, i - 3), b = Math.min(n - 1, i + 3);
+        const tx = cx[b] - cx[a], ty = cy[b] - cy[a], l = Math.hypot(tx, ty) || 1;
+        s.off[i] = ((s.x[i] - cx[i]) * -ty + (s.y[i] - cy[i]) * tx) / l;
+        w[i] = Math.max(w[i], Math.abs(s.off[i]));
+      }
+    });
     // smooth the width over ~60 m so the edges don't wobble with the lines
     const win = Math.max(2, Math.round(30 / step));
     const ws = new Float32Array(n);
+    const minW = Math.max(5, (onMap && track.halfWidth) || 0);
     for (let i = 0; i < n; i++) {
       let m = 0;
       for (let k = -win; k <= win; k++) m = Math.max(m, w[Math.min(n - 1, Math.max(0, i + k))]);
-      ws[i] = Math.max(5, m + 2.5);
+      ws[i] = Math.max(minW, m + (onMap ? 1 : 2.5));
     }
     let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity, z0 = Infinity, z1 = -Infinity;
     for (let i = 0; i < n; i++) {
@@ -100,7 +118,7 @@
       z1 = Math.max(z1, cz[i]);
     }
     const corners = findCorners(out[0], n, step);
-    return { n, step, len: ref.len, laps: out, centre: { x: cx, y: cy, z: cz, w: ws }, bounds: { x0, x1, y0, y1, z0, z1 }, corners: corners.list, complexes: corners.complexes };
+    return { n, step, len: ref.len, laps: out, centre: { x: cx, y: cy, z: cz, w: ws, source: onMap ? 'map' : 'laps' }, bounds: { x0, x1, y0, y1, z0, z1 }, corners: corners.list, complexes: corners.complexes };
   }
 
   /*

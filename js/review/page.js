@@ -14,7 +14,11 @@
  * was at the reference's time at the cursor, so their spacing is the gap.
  *
  * Loaded sessions stay in memory while the app is open, so leaving and
- * coming back keeps them. Nothing is saved or uploaded.
+ * coming back keeps them. Telemetry is never saved or uploaded. With the Map
+ * option on, each session's track is looked up (mapdata.js: where the track
+ * is goes to OpenStreetMap and Esri) for the true centreline and satellite
+ * ground; until then, or if nothing is found, the track is estimated from
+ * the laps.
  */
 (function () {
   'use strict';
@@ -24,11 +28,13 @@
   const MAX_LAPS = COLORS.length;
   const ACCEPT = '.ibt,.ld,.ldx,.csv,.tsv,.txt';
   const FONT = IST.Symbols.FONT;
+  const COARSE_HIDE = 350, COARSE_SHOW = 450; // m from the camera to what it looks at
 
   const state = {
     sessions: [], laps: [], refId: null, sel: [], errors: [], warnings: [],
-    opts: { inputs: 'all', lean: false, cars: true, tags: true, gears: true, exag: 1 },
+    opts: { inputs: 'all', lean: false, cars: true, tags: true, gears: true, exag: 1, map: true },
     cursor: -1, cursorF: -1, camMode: 'orbit', playing: false, playT: 0, rate: 1, loading: null,
+    partialsOpen: new Set(), // sessions whose partials footer is unfolded
   };
   let V = null; // live view (GL, camera, traces, DOM refs) while the page is open
   let originRef = null;
@@ -75,9 +81,13 @@
     state.sessions.push(s);
     s.warnings.forEach((w) => state.warnings.push(s.file + ': ' + w));
     s.laps.forEach((l, k) => state.laps.push({ id: si + ':' + k, s, lap: l }));
+    if (state.opts.map) findMap(s);
     // pick the fastest full lap as the reference, and the next fastest to compare
-    if (!state.refId) {
-      const full = state.laps.filter((x) => x.lap.kind === 'full' && !x.lap.pit).sort((a, b) => a.lap.time - b.lap.time);
+    // (and swap a partial reference for a complete lap once one arrives)
+    const cur = state.refId && byId(state.refId);
+    if (!cur || !complete(cur.lap)) {
+      const full = state.laps.filter((x) => complete(x.lap)).sort((a, b) => a.lap.time - b.lap.time);
+      if (cur && !full.length) return;
       const any = full.length ? full : state.laps.slice().sort((a, b) => b.lap.len - a.lap.len);
       if (any[0]) {
         state.refId = any[0].id;
@@ -85,6 +95,28 @@
       }
     }
   }
+
+  /** Look the session's track up on the map (once), then redraw if it's on screen. */
+  function findMap(s) {
+    if (s.mapState) return;
+    const lap = s.laps.filter((l) => l.kind === 'full').sort((a, b) => a.time - b.time)[0] || s.laps.slice().sort((a, b) => b.len - a.len)[0];
+    const gps = s.posSource === 'gps' && originRef;
+    if (!lap || (!gps && s.posSource !== 'world')) return (s.mapState = 'none');
+    s.mapState = 'loading';
+    // GPS laps already know where they are: show the imagery now, the centre when it arrives
+    if (gps) s.map = { geo: IST.Review.Track.geo(originRef.lat, originRef.lon), lines: [], halfWidth: 0, how: 'gps' };
+    IST.Review.MapData.lookup({ origin: gps ? originRef : null, track: s.meta.track, x: lap.x, y: lap.y }).then((m) => {
+      s.map = m;
+      s.mapState = m ? 'ok' : 'none';
+    }, (e) => {
+      s.mapState = 'error';
+      s.mapError = e && e.message;
+    }).then(() => {
+      if (V && V.cmp && V.cmp.laps[0].entry.s === s) rebuild(true);
+      else mapStatus();
+    });
+  }
+  const refSession = () => (byId(state.refId) || {}).s;
 
   function loadDemo() {
     const text = IST.Review.Demo.csv(7);
@@ -95,7 +127,7 @@
   // ------------------------------------------------------------- selection
   const byId = (id) => state.laps.find((x) => x.id === id);
   const bestFull = () => {
-    const f = state.laps.filter((x) => x.lap.kind === 'full');
+    const f = state.laps.filter((x) => complete(x.lap));
     return f.length ? Math.min.apply(null, f.map((x) => x.lap.time)) : NaN;
   };
   function toggle(id) {
@@ -123,7 +155,8 @@
     const ref = byId(state.refId);
     if (!ref) return null;
     const others = state.sel.filter((id) => id !== state.refId).map(byId).filter(Boolean);
-    const cmp = Cmp.build(ref.lap, others.map((o) => o.lap), COLORS);
+    const m = state.opts.map && ref.s.map;
+    const cmp = Cmp.build(ref.lap, others.map((o) => o.lap), COLORS, m && m.lines.length ? { lines: m.lines, halfWidth: m.halfWidth } : null);
     cmp.laps.forEach((L, k) => (L.entry = k === 0 ? ref : others[k - 1]));
     return cmp;
   }
@@ -167,7 +200,7 @@
   }
 
   function clearAll() {
-    Object.assign(state, { sessions: [], laps: [], refId: null, sel: [], errors: [], warnings: [], cursor: -1, cursorF: -1, playing: false });
+    Object.assign(state, { sessions: [], laps: [], refId: null, sel: [], errors: [], warnings: [], cursor: -1, cursorF: -1, playing: false, partialsOpen: new Set() });
     originRef = null;
     render();
   }
@@ -202,7 +235,8 @@
       state.errors.length ? errorList() : null,
       dropTarget(h('div', { class: 'rv-drop' },
         h('div', { class: 'rv-drop-title' }, 'Drop telemetry files here'),
-        h('p', { class: 'muted' }, 'Read in this browser. Nothing is uploaded or saved.'),
+        h('p', { class: 'muted' }, 'Read in this browser. Telemetry is never uploaded or saved.'),
+        h('p', { class: 'muted small' }, 'With Map on, the track’s location is sent to OpenStreetMap and Esri for its outline and satellite imagery.'),
         h('div', { class: 'card-actions rv-drop-actions' },
           h('button', { class: 'btn primary', onclick: picker }, 'Open files'),
           h('button', { class: 'btn ghost', onclick: loadDemo }, 'Try a demo session')),
@@ -251,6 +285,32 @@
     return h('label', { class: 'view-check', title: title || null }, input, label);
   }
 
+  function mapCheck() {
+    const input = h('input', { type: 'checkbox', checked: state.opts.map });
+    input.addEventListener('change', () => {
+      state.opts.map = input.checked;
+      if (input.checked) state.sessions.forEach(findMap);
+      rebuild(true);
+    });
+    return h('label', { class: 'view-check', title: 'Satellite ground and the true track centre, looked up by the track’s location (OpenStreetMap, Esri)' }, input, 'Map');
+  }
+
+  /** The line under the 3D view saying where the track and ground came from. */
+  function mapStatus() {
+    const el = V && V.stage.querySelector('.rv-map-status');
+    if (!el || !V.cmp) return;
+    const s = refSession(), src = V.cmp.centre.source;
+    let text = '';
+    if (!state.opts.map) text = 'Map off · track edges estimated from the laps';
+    else if (!s || (s.mapState === 'loading' && !s.map)) text = 'Looking the track up…';
+    else if (s.mapState === 'loading') text = 'Looking up the track centre…' + (V.noImagery ? ' · imagery unavailable' : '') + ' · ' + IST.Review.MapData.ATTRIB;
+    else if (s.mapState === 'error' && s.map) text = 'Track centre lookup failed' + (s.mapError ? ' (' + s.mapError + ')' : '') + ' · centre estimated from the laps · ' + IST.Review.MapData.ATTRIB;
+    else if (s.mapState === 'error') text = 'Map lookup failed' + (s.mapError ? ' (' + s.mapError + ')' : '') + ' · track estimated from the laps';
+    else if (s.mapState !== 'ok') text = s.posSource === 'reckoned' || s.posSource === 'none' ? 'No position in this file to place it on a map · track estimated from the laps' : 'Track not found on the map · edges estimated from the laps';
+    else text = (src === 'map' ? 'Centre: OpenStreetMap' : 'No track outline on the map · centre estimated from the laps') + (V.noImagery ? ' · imagery unavailable' : '') + ' · ' + IST.Review.MapData.ATTRIB;
+    el.textContent = text;
+  }
+
   const HINTS = {
     orbit: 'Drag to orbit · right-drag to pan · wheel to zoom · hover a line to scrub',
     follow: 'Drag to turn the camera · wheel for distance · scrub on the traces, with ← → or Play',
@@ -268,6 +328,7 @@
         camSeg,
         h('div', { class: 'rv-toolbar-row' }, play, seg([[0.5, '½×'], [1, '1×'], [2, '2×'], [4, '4×']], state.rate, (r) => (state.rate = r)))),
       hint,
+      h('div', { class: 'rv-map-status', title: '' }),
       h('div', { class: 'rv-legend' },
         h('span', null, h('i', { class: 'rv-key rv-key-thr' }), 'Throttle'),
         h('span', null, h('i', { class: 'rv-key rv-key-brk' }), 'Brake'),
@@ -289,6 +350,7 @@
       check('Cars', 'cars', 'A car for each lap where it was at the reference’s time, with the gap'),
       check('Lap tags', 'tags', 'Lap labels along each line'),
       check('Gear numbers', 'gears'),
+      mapCheck(),
       h('label', null, 'Elevation ', elev),
       h('button', { class: 'btn ghost small', onclick: () => { V.traces.zoom(); frameAll(); } }, 'Fit view'));
 
@@ -329,16 +391,20 @@
       P.append(h('div', { class: 'rv-file' },
         h('div', { class: 'rv-file-name', title: s.file }, s.file),
         h('div', { class: 'rv-file-meta muted' }, (meta ? meta + ' · ' : '') + s.format)));
-      const list = h('ul', { class: 'rv-lap-list' });
+      // complete laps are the list; out, in, pit and cut-short laps fold into a footer
+      const list = h('ul', { class: 'rv-lap-list' }), rest = h('ul', { class: 'rv-lap-list' });
+      let partials = 0;
       entries.forEach((x) => {
+        const done = complete(x.lap);
+        if (!done) partials++;
         const k = selIndex(x.id);
         const on = k >= 0;
         const isRef = x.id === state.refId;
         const tag = x.lap.pit ? 'pit' : x.lap.kind !== 'full' ? x.lap.kind : null;
-        const d = x.lap.kind === 'full' && isFinite(best) ? x.lap.time - best : NaN;
+        const d = done && isFinite(best) ? x.lap.time - best : NaN;
         const box = h('input', { type: 'checkbox', checked: on, disabled: isRef, 'aria-label': 'Compare lap ' + x.lap.lapNo });
         box.addEventListener('change', () => toggle(x.id));
-        list.append(h('li', { class: 'rv-lap' + (on ? ' on' : '') + (isRef ? ' ref' : '') },
+        (done ? list : rest).append(h('li', { class: 'rv-lap' + (on ? ' on' : '') + (isRef ? ' ref' : '') },
           h('label', { class: 'rv-lap-main' },
             box,
             h('i', { class: 'rv-swatch', style: on ? 'background:' + COLORS[k] : '' }),
@@ -348,9 +414,18 @@
             h('span', { class: 'rv-lap-d' + (d === 0 ? ' best' : '') }, isFinite(d) ? (d === 0 ? 'best' : '+' + d.toFixed(3)) : '')),
           h('button', { class: 'rv-ref' + (isRef ? ' on' : ''), title: 'Use as reference', onclick: () => setRef(x.id) }, 'Ref')));
       });
-      P.append(list);
+      if (list.children.length) P.append(list);
+      if (partials) {
+        const open = state.partialsOpen.has(s) || (!list.children.length);
+        const box = h('details', { class: 'rv-partials', open: open || null },
+          h('summary', null, partials + (partials === 1 ? ' partial' : ' partials')), rest);
+        box.addEventListener('toggle', () => (box.open ? state.partialsOpen.add(s) : state.partialsOpen.delete(s)));
+        P.append(box);
+      }
     });
   }
+  /** A lap to compare: start line to start line, not through the pits. */
+  const complete = (lap) => lap.kind === 'full' && !lap.pit;
   function selIndex(id) {
     // colour slot: the reference is 0, the rest in picked order
     if (id === state.refId) return 0;
@@ -365,15 +440,17 @@
     const i = state.cursor;
     P.append(h('h3', null, 'At cursor' + (i >= 0 ? ' · ' + Math.round(i * cmp.step) + ' m' : '')));
     if (i < 0) return P.append(h('p', { class: 'hint' }, 'Hover a line in the 3D view or the traces.'));
+    const onMap = cmp.centre.source === 'map';
     const row = (L) => h('tr', null,
       h('td', null, h('i', { class: 'rv-swatch', style: 'background:' + L.color }), 'Lap ' + L.lap.lapNo),
       h('td', null, Math.round(L.speed[i] * 3.6)),
       h('td', null, L.throttle ? Math.round(L.throttle[i] * 100) : '–'),
       h('td', null, L.brake ? Math.round(L.brake[i] * 100) : '–'),
       h('td', null, L.gear ? Math.round(L.gear[i]) : '–'),
+      onMap ? h('td', { title: 'From the track centre' }, Math.abs(L.off[i]) < 0.05 ? '0.0' : Math.abs(L.off[i]).toFixed(1) + (L.off[i] > 0 ? ' L' : ' R')) : null,
       h('td', { class: 'delta ' + (L === cmp.laps[0] ? 'flat' : L.delta[i] > 0.005 ? 'bad' : L.delta[i] < -0.005 ? 'good' : 'flat') }, L === cmp.laps[0] ? 'ref' : U.signedSec(L.delta[i]).replace(' s', '')));
     P.append(h('table', { class: 'grid rv-table' },
-      h('thead', null, h('tr', null, ['Lap', 'km/h', 'Thr', 'Brk', 'Gear', 'Δ s'].map((x) => h('th', null, x)))),
+      h('thead', null, h('tr', null, ['Lap', 'km/h', 'Thr', 'Brk', 'Gear'].concat(onMap ? ['Ctr m'] : [], ['Δ s']).map((x) => h('th', null, x)))),
       h('tbody', null, cmp.laps.map(row))));
   }
 
@@ -423,6 +500,7 @@
     if (state.cursor >= V.cmp.n) state.cursor = state.cursorF = -1;
     lapList();
     readout();
+    mapStatus();
     V.fences = inputOptions();
     V.traces.set(V.cmp);
     V.traces.setCursor(state.cursor);
@@ -430,7 +508,15 @@
       if (V.scene) V.scene.dispose();
       // close-up cameras sit a few metres off the road: low fences there, tall ones for the overview
       V.closeUp = V.cam.mode !== 'orbit';
-      V.scene = IST.Review.Scene.build(V.R, V.cmp, { exag: state.opts.exag, fences: V.fences, lean: state.opts.lean, fenceH: V.closeUp ? 3.5 : 0, closeUp: V.closeUp });
+      const map = state.opts.map && V.cmp.laps[0].entry.s.map;
+      V.scene = IST.Review.Scene.build(V.R, V.cmp, { exag: state.opts.exag, fences: V.fences, lean: state.opts.lean, fenceH: V.closeUp ? 3.5 : 0, closeUp: V.closeUp, map: !!map });
+      V.noImagery = false;
+      if (map) {
+        IST.Review.MapLayer.build(V.R, V.scene, V.cmp, map.geo, (err) => {
+          if (err && V) (V.noImagery = true), mapStatus();
+          dirty();
+        });
+      }
       if (first || !keepCam) {
         if (first || !V.framed) V.cam.frame(V.scene.size, V.glEl.clientWidth, V.glEl.clientHeight);
         V.framed = true;
@@ -563,7 +649,11 @@
     } else V.rigKey = null;
     const m = V.cam.matrices(W, H);
     V.vp = m.vp;
-    const items = V.scene.items.slice();
+    // close up, the coarse satellite layer is only a blur beside the sharp corridor:
+    // stop drawing it (with a gap between the two distances so it doesn't flicker)
+    if (m.dist < COARSE_HIDE) V.hideCoarse = true;
+    else if (m.dist > COARSE_SHOW) V.hideCoarse = false;
+    const items = V.hideCoarse ? V.scene.items.filter((it) => !it.coarse) : V.scene.items.slice();
     if (state.opts.cars && C.length) {
       const Vt = IST.Review.GL.Verts();
       C.forEach((c) => IST.Review.Scene.car(Vt, { p: [c.pose.p[0], c.pose.p[1] - 0.1, c.pose.p[2]], fwd: c.pose.fwd, left: c.pose.left }, IST.Review.GL.rgb(V.cmp.laps[c.k].color)));
@@ -580,7 +670,7 @@
     const g = c.getContext('2d');
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
     V.ov.draw(g, W, H, {
-      vp: m.vp, scene: V.scene, cmp: V.cmp, cursorF: state.cursorF, cars: state.opts.cars ? C : [], range: V.range,
+      vp: m.vp, scene: V.scene, cmp: V.cmp, cursorF: state.cursorF, cars: state.opts.cars ? C : [], gaps: C.map((c) => c.gapM), range: V.range,
       gears: state.opts.gears, tags: state.opts.tags, fences: V.fences, chipsBeside: V.cam.mode === 'top', dt,
     });
   }

@@ -2,8 +2,10 @@
  * Builds the Review viewer's geometry from a comparison (compare.js).
  *
  *   const S = IST.Review.Scene.build(R, cmp, opt)
- *     opt: { exag (elevation x), fences ([bool] per lap: draw its inputs), lean (bool), fenceH (m), closeUp (bool) }
- *   S.items       draw list for R.draw
+ *     opt: { exag (elevation x), fences ([bool] per lap: draw its inputs), lean (bool), fenceH (m), closeUp (bool),
+ *            map (bool: satellite ground coming, so no road surface, edges or centre line) }
+ *   S.items       draw list for R.draw (maplayer.js adds the ground tiles to it)
+ *   S.centre      Float32Array(n * 3): the track centre in GL space (S.centreLat its left normal)
  *   S.base[k]     Float32Array(n * 3): lap k's line on the road surface, in GL space
  *   S.lateral[k]  Float32Array(n * 2): lap k's left-pointing unit normal (GL x, z)
  *   S.toGL(x, y, z), S.size (extent, m), S.fenceH
@@ -12,8 +14,11 @@
  *
  * What's drawn:
  *   - a ground plane with a 50 / 100 m grid, the page's blueprint look in 3D
- *   - the track: the laps' average path, with edges and a skirt down to the
- *     ground so elevation reads
+ *   - the track round its centre (the map's when there is one, else the laps'
+ *     average path: compare.js), with edges and a skirt down to the ground so
+ *     elevation reads. A map centre is drawn as a faint dashed line. Over
+ *     satellite ground none of this is drawn: the imagery is the road, and
+ *     edges from an estimated width wouldn't line up with it.
  *   - each lap's line on the surface: a thin ribbon in its colour over a dark
  *     outline with a 1 px core, the reference solid and the others dashed at
  *     their own rhythm, lifted a little more per lap
@@ -60,7 +65,7 @@
     const toGL = (x, y, z) => [x - ox, (z - oz) * exag, -(y - oy)];
     const dec = Math.max(1, Math.round(2 / cmp.step)); // geometry every ~2 m
     const items = [];
-    const meshes = [];
+    const meshes = [], textures = [];
     const add = (mode, V, it) => {
       if (!V.length) return;
       const m = R.mesh(mode, V.data());
@@ -132,9 +137,24 @@
           skirt[s].push(o[0], groundY, o[2], 0, 1, 0, cSkirt, 0.2);
         });
       });
-      add('strip', road, { lit: true });
-      edges.forEach((V) => add('strip', V, { lit: true, lift: 1 }));
-      skirt.forEach((V) => add('strip', V, { lit: false, blend: true }));
+      // over satellite ground the imagery is the road: drawn edges from an estimated
+      // width wouldn't line up with the real asphalt, so they're left out
+      if (!opt.map) {
+        add('strip', road, { lit: true });
+        skirt.forEach((V) => add('strip', V, { lit: false, blend: true }));
+        edges.forEach((V) => add('strip', V, { lit: true, lift: 1 }));
+      }
+    }
+    // the map's centreline, dashed 4 m on / 4 m off (not over imagery, for the same reason)
+    if (ce.source === 'map' && !opt.map) {
+      const D = GL.Verts(), cc = [1, 1, 1];
+      const every = Math.max(1, Math.round(4 / cmp.step));
+      for (let i = 0; i + every < n; i += every * 2) {
+        const a = i * 3, b = (i + every) * 3;
+        D.push(cGL[a], cGL[a + 1] + 0.05, cGL[a + 2], 0, 1, 0, cc, 0.45);
+        D.push(cGL[b], cGL[b + 1] + 0.05, cGL[b + 2], 0, 1, 0, cc, 0.45);
+      }
+      add('lines', D, { lit: false, blend: true });
     }
 
     // ------------------------------------------------------------ lap lines
@@ -240,10 +260,19 @@
     }
 
     return {
-      items, base, lateral, toGL, size, fenceH, groundY,
+      items, base, lateral, toGL, exag, size, fenceH, groundY, centre: cGL, centreLat: lat2, pad: size * 0.25,
+      /** Keep a mesh or texture made elsewhere (the map layer) until dispose. */
+      adopt(m, tex) {
+        if (m) meshes.push(m);
+        if (tex) textures.push(tex);
+      },
+      disposed: false,
       dispose() {
         meshes.forEach((m) => R.free(m));
+        textures.forEach((t) => R.freeTexture(t));
         meshes.length = 0;
+        textures.length = 0;
+        this.disposed = true;
       },
     };
   }

@@ -101,9 +101,11 @@ A telemetry viewer, kept apart from the drills. Nothing outside the folder depen
 | `telemetry/ibt.js`, `motec.js`, `csv.js` | one parser per format, each producing that session record |
 | `telemetry/laps.js` | positions (world, GPS, or dead-reckoned), lap boundaries, resampling every metre; `T.process(name, buf)` is the whole pipeline for one file |
 | `telemetry/loader.js` | `IST.Telemetry.load(files)`: runs the pipeline in a Web Worker |
-| `compare.js` | lines laps up on the reference's distance grid; delta, gear shifts, track estimate, corners and complexes (for the apex cameras) |
+| `track.js` | map geometry, no network: the true centreline under a lap from OSM raceway lines, and the rigid fit that places non-GPS laps on them |
+| `mapdata.js` | the only network code, behind the Map option: OSM raceways (Overpass), track-name lookup (Nominatim), Esri imagery tiles; raceways cached in localStorage |
+| `compare.js` | lines laps up on the reference's distance grid; delta, gear shifts, track centre (map or laps), each lap's offset from it, corners and complexes (for the apex cameras) |
 | `demo.js` | a generated session as CSV text, for trying the viewer |
-| `gl/` | the WebGL layer: `math.js` (matrices), `renderer.js` (one shader, buffers, draw list), `camera.js` (orbit, and easing toward a follow rig), `rigs.js` (where each follow camera wants to be: chase, top, side, apex, complex), `scene.js` (track, lines, fences, gear posts from a comparison; the car marker) |
+| `gl/` | the WebGL layer: `math.js` (matrices), `renderer.js` (a flat-colour and a textured shader, buffers, draw list), `camera.js` (orbit, and easing toward a follow rig), `rigs.js` (where each follow camera wants to be: chase, top, side, apex, complex), `scene.js` (track, lines, fences, gear posts from a comparison; the car marker), `maplayer.js` (satellite tiles draped on a terrain built from the track's heights) |
 | `traces.js` | the 2D trace strip under the 3D view |
 | `overlay.js` | the 2D labels over the 3D view: car chips with the gap, cursor posts, lap tags, gear numbers; labels fade rather than pop |
 | `page.js` | `IST.Review.open()`: the page, lap list, cursor readout, and the glue between them |

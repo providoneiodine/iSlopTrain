@@ -47,7 +47,8 @@
 .rv-toolbar-row { display: flex; gap: 8px; align-items: center; }
 .rv-toolbar .seg-b.on { background: var(--butter); }
 .rv-toolbar .btn { min-width: 64px; }
-.rv-hint { position: absolute; left: 12px; bottom: 9px; font-size: 12px; color: var(--muted); font-weight: var(--w-light); pointer-events: none; }
+.rv-hint { position: absolute; left: 12px; bottom: 9px; font-size: 12px; color: var(--muted); font-weight: var(--w-light); pointer-events: none; text-shadow: 0 1px 2px #000; }
+.rv-map-status { position: absolute; left: 12px; right: 24px; bottom: 28px; font-size: 11px; color: var(--muted); font-weight: var(--w-light); pointer-events: none; text-shadow: 0 1px 2px #000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rv-legend {
   position: absolute; right: 10px; bottom: 8px; display: flex; gap: 12px; font-size: 12px; color: var(--text2);
   background: rgba(31, 35, 42, .85); border: 1px solid var(--line); padding: 4px 10px; pointer-events: none;
@@ -88,6 +89,10 @@
 .rv-lap-time { margin-left: auto; font-variant-numeric: tabular-nums; font-weight: var(--w-bold); }
 .rv-lap-d { width: 52px; text-align: right; font-variant-numeric: tabular-nums; font-size: 12px; color: var(--muted); }
 .rv-lap-d.best { color: var(--butter); font-weight: var(--w-bold); }
+.rv-partials { margin-top: 4px; }
+.rv-partials summary { cursor: pointer; font-size: 12px; color: var(--muted); font-weight: var(--w-light); padding: 4px 0 2px 7px; list-style-position: inside; }
+.rv-partials summary:hover { color: var(--text2); }
+.rv-partials[open] summary { margin-bottom: 2px; }
 .rv-ref {
   appearance: none; font: inherit; font-size: 10.5px; text-transform: uppercase; letter-spacing: .1em; font-weight: var(--w-bold);
   background: transparent; color: var(--muted); border: 1px solid var(--line); padding: 2px 6px; cursor: pointer;

@@ -12,7 +12,7 @@
  *              the clearest view of where each line sits across the track
  *   side       level with the car from its right, so the input fences read
  *              like a trace
- *   trackside  a fixed camera on the outside of the nearest apex, panning to
+ *   trackside  a fixed camera beyond the outside edge at the nearest apex, panning to
  *              follow the car through the corner, like a TV camera
  *   complex    a high camera beyond the last apex of the corner complex the
  *              car is in, looking back down the whole sequence
@@ -33,8 +33,10 @@
     ['complex', 'Complex', 'High camera past the last apex of the corner sequence'],
   ];
 
-  function pose(scene, k, f) {
-    const P = scene.base[k], n = P.length / 3;
+  const pose = (scene, k, f) => poseOn(scene.base[k], f);
+  /** The same along any GL polyline (the track centre, for the trackside cameras). */
+  function poseOn(P, f) {
+    const n = P.length / 3;
     f = Math.max(0, Math.min(n - 1, f));
     const i = Math.min(n - 2, Math.floor(f)), r = f - i;
     const p = [0, 1, 2].map((d) => P[i * 3 + d] + (P[(i + 1) * 3 + d] - P[i * 3 + d]) * r);
@@ -89,7 +91,7 @@
     const { cmp, scene, f, pose: q, user } = ctx;
     const k = nearestCorner(cmp, f);
     if (k < 0) return chase(ctx);
-    const c = cmp.corners[k], a = pose(scene, 0, c.apex);
+    const c = cmp.corners[k], a = poseOn(scene.centre, c.apex);
     const out = add([0, 0, 0], a.left, -c.dir); // outside of the corner
     const w = cmp.centre.w[c.apex];
     const eye = add(add(add(a.p, out, w + 14 * user.zoom), a.fwd, -6), UP, 5 + 4 * user.zoom + user.pitch * 20);
@@ -102,7 +104,7 @@
     if (k < 0) return chase(ctx);
     const cx = cmp.complexes[cmp.corners[k].complex];
     const last = cmp.corners[cx.corners[cx.corners.length - 1]];
-    const a = pose(scene, 0, last.apex);
+    const a = poseOn(scene.centre, last.apex);
     const out = add([0, 0, 0], a.left, -last.dir);
     const w = cmp.centre.w[last.apex];
     const eye = add(add(add(a.p, a.fwd, 30 * user.zoom), out, w + 18 * user.zoom), UP, 20 * user.zoom + user.pitch * 40);

@@ -4,7 +4,8 @@
  * ends of a zoomed stretch.
  *
  *   const ov = IST.Review.Overlay.create()
- *   ov.draw(g, W, H, f)    f: { vp, scene, cmp, cursorF, cars, range, gears, tags, fences, chipsBeside, dt }
+ *   ov.draw(g, W, H, f)    f: { vp, scene, cmp, cursorF, cars, gaps, range, gears, tags, fences, chipsBeside, dt }
+ *           gaps[k]: lap k's distance behind the reference (m), for the cursor posts
  *     cars: [{ k, pose, gapM }] one per lap, at where that lap was at the
  *           reference's time (k = 0 is the reference, at the cursor)
  *
@@ -15,6 +16,7 @@
  */
 (function () {
   'use strict';
+  const POST_GAP = 25; // m
   const Th = IST.Theme, M = IST.Review.M3, FONT = IST.Symbols.FONT;
   const FADE = 9; // per second
 
@@ -55,9 +57,12 @@
         g.setLineDash([]);
       }
 
-      // ---- cursor posts: every lap at the same distance as the reference
+      // ---- cursor posts: every lap at the same distance as the reference. A lap more
+      // than POST_GAP behind or ahead is left out: its car is far from the cursor, so a
+      // post there reads as a second car rather than a comparison of lines.
       if (f.cursorF >= 0) {
         cmp.laps.forEach((L, li) => {
+          if (li && f.gaps && Math.abs(f.gaps[li]) > POST_GAP) return;
           const q = IST.Review.Rigs.pose(S, li, f.cursorF);
           const b = proj(q.p), t = proj(q.p, top);
           if (b.w <= 0 || t.w <= 0) return;

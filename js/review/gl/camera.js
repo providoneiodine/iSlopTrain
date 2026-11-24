@@ -6,7 +6,7 @@
  *   cam.frame(size, W, H)           orbit: fit the whole track
  *   cam.flyTo(target, dist, ms)     orbit: ease there; cam.fitDist(extent, W, H) sizes it
  *   cam.follow(rig, dt)             follow modes: ease toward a rig { eye, target, up, cut, rate }
- *   cam.matrices(W, H)              -> { vp, eye, fog }
+ *   cam.matrices(W, H)              -> { vp, eye, fog, dist (eye to what it looks at, m) }
  *   cam.attach(el, onChange)        returns detach()
  *
  * Orbit: drag to orbit, right / shift-drag to pan, wheel to zoom.
@@ -69,7 +69,7 @@
         if (cam.mode !== 'orbit' && cam.view) {
           const v = cam.view, d = M.v.len(M.v.sub(v.eye, v.target));
           const vp = M.mul(M.perspective(cam.fov, aspect, 0.3, Math.max(2000, cam.size * 4)), M.lookAt(v.eye, v.target, v.up));
-          return { vp, eye: v.eye, fog: { near: Math.max(200, d * 4), far: Math.max(200, d * 4) + cam.size * 2 } };
+          return { vp, eye: v.eye, dist: d, fog: { near: Math.max(200, d * 4), far: Math.max(200, d * 4) + cam.size * 2 } };
         }
         if (cam.anim) {
           const a = cam.anim, f = Math.min(1, (performance.now() - a.t0) / a.dur), e = 1 - Math.pow(1 - f, 3);
@@ -82,7 +82,7 @@
         const eye = [t[0] + cam.dist * cp * Math.sin(cam.yaw), t[1] + cam.dist * Math.sin(cam.pitch), t[2] + cam.dist * cp * Math.cos(cam.yaw)];
         const near = Math.max(0.3, cam.dist * 0.01), far = Math.max(cam.dist * 4, cam.size * 4);
         const vp = M.mul(M.perspective(cam.fov, aspect, near, far), M.lookAt(eye, t, [0, 1, 0]));
-        return { vp, eye, fog: { near: cam.dist * 1.2, far: cam.dist * 1.2 + cam.size * 2.5 } };
+        return { vp, eye, dist: cam.dist, fog: { near: cam.dist * 1.2, far: cam.dist * 1.2 + cam.size * 2.5 } };
       },
       attach(el, onChange) {
         let drag = null;
