@@ -5,6 +5,7 @@ iSlopTrain trains three things, one tab each:
 - **Vision** (sections 1-3b): **eyes as far down the track as possible, moving to the apex of the next corner as early as possible, without conscious effort.**
 - **Mind** (sections 3c-3e): keeping that habit under threat, recovering from a run of mistakes, and reading the racing line.
 - **Reflex** (section 4): start reactions and a daily readiness baseline.
+- **Review** (section 8): the Lap Viewer. Only its derived values are explained: how balance, sideslip, grip used and the other calculated channels are worked out, and where each threshold comes from.
 
 This document explains why each drill is built the way it is, and the feedback, dosing and game-feel rules they share (section 5).
 
@@ -241,3 +242,115 @@ Rules that keep it from working against the training:
 - **Real circuits:** import track centre-lines from sim telemetry / track maps so the habit is rehearsed on the circuit you race next.
 - **Imagery:** Draw the Line's in-car replay is a first step (section 3e). Still open: PETTLEP-structured lap visualisation (Holmes & Collins, 2001, *J. Appl. Sport Psychol.* 13(1)) with reference-point callouts.
 - **Pressure training:** threat-under-load is covered by Eyes Off the Wall (section 3c). a peripheral "call the hazard" response is covered by Eyes Off the Wall: Call the Hazard. Still open: score stakes/time pressure (one-shot qualifying attempts).
+
+---
+
+## 8. Lap Viewer: derived values (Review tab)
+
+Most of what the Lap Viewer shows is read straight from the file (speed, pedals, steering, gear, yaw rate, g, tyre temperatures). This section covers only the values it **works out**, how, and where each number comes from. Each threshold is tagged:
+
+- **[lit]** taken from the vehicle-dynamics or data-logging literature,
+- **[measured]** chosen from the local iRacing files (GT3, GT4, M2, GR22, F4, Cup; analysis scripts in `tmp/telemetry-research`, not shipped),
+- **[heuristic]** a display or noise-filtering choice with no source behind it. Treat these as tunable.
+
+All derived channels are computed in `js/review/telemetry/derive.js` at the file's own sample rate, before laps are cut, and then resampled with the lap like any other channel.
+
+### 8.1 Shared groundwork
+
+- **Smoothing.** Steering, yaw rate, lateral and longitudinal g and the body velocities get a centred moving average over 0.15 s (9 samples at 60 Hz) before anything is derived, because derivatives of raw 60 Hz data are mostly noise. **[heuristic]**
+- **Clean samples.** Calibration only uses samples above 12 m/s, off pit road, on track, on asphalt, and with vertical g within 5 m/s² of the session median. That keeps kerb strikes and crashes out: one Porsche Cup file read 2.7 g peak lateral from kerb spikes alone. **[measured]**
+- **Low-speed floor.** Balance, sideslip and the attitude arrows aren't computed below 12 m/s. There r/V blows up and slip-angle concepts stop meaning much (slow hairpins); the line is drawn in "no data" slate instead. **[heuristic]**
+- **Per stint.** Calibration (steering gain, offset, lag, peak lateral g, usual sideslip, grip envelope) is fitted separately for each run between pit exits. One file with several stints gave a steering-gain spread of 11–66 when fitted as a whole. A stint too short to fit (under 150 usable samples) borrows the nearest stint that could. **[measured]**
+
+### 8.2 Balance (understeer / oversteer angle)
+
+The steady-state single-track ("bicycle") model, the textbook basis for handling balance (Gillespie, 1992, *Fundamentals of Vehicle Dynamics*, ch. 6; Milliken & Milliken, 1995, *Race Car Vehicle Dynamics*, ch. 5):
+
+    δ = L/R + (α_f − α_r)        and in steady state 1/R = r/V
+
+So the **understeer angle** α_f − α_r = δ − L·r/V. Above 0, the front slips more than the rear and the car turns less than the lock asks for. Below 0, the rear slips more. This is the standard "understeer angle" math channel of data-logging practice (Segers, *Analysis Techniques for Racecar Data Acquisition*; Templeman, *The Competition Car Data Logging Manual*). Stability-control systems use the same model to build their reference yaw rate (Rajamani, *Vehicle Dynamics and Control*; van Zanten, 2000, SAE 2000-01-1633).
+
+The file gives the **steering-wheel** angle, not the road-wheel angle, and no wheelbase or steering ratio. Multiplying through by the ratio SR gives a version that needs neither:
+
+    US = [(δ_sw − δ_0) − G · r(t + τ) / V] · sign(a_y)        G = SR · L
+
+- **δ_0**, the steering offset: median wheel angle on straights (above 30 m/s, |r| < 0.01 rad/s). Offsets of −7.5° to +0.8° were seen. **[measured]**
+- **τ**, the yaw lag: the shift between 0 and 0.25 s at which steering and yaw rate correlate best. Yaw built 0.07–0.12 s after the steering in 6 of 7 cars tested. **[measured]**
+- **G**, the steering gain: the median of (δ_sw − δ_0)·V / r(t + τ) over steady, linear-range cornering. The filter is 10–35 % of the stint's peak lateral g, wheel rate under 20 °/s, and yaw acceleration under 0.15 rad/s². The linear bicycle model holds to about 0.6 of peak lateral acceleration (US patent 6658342B1, vehicle stability control). The fit band sits well inside that. **[lit]** for the model's range, **[heuristic]** for the exact band.
+- **Peak lateral g** is the 98th percentile of |a_y| over clean samples, so one spike doesn't set it. **[heuristic]**
+
+Because G is fitted in the linear range, it absorbs the car's own built-in understeer gradient. US therefore sits near 0 through normal cornering *by construction* and measures balance **beyond the car's linear behaviour**: limit understeer and oversteer, which is what a driver changes. Across the test files US was flat at ~0 up to ~0.6 of peak lateral g, then showed the knee of a handling diagram. Front-limited cars (GT4, M2, GR22) reached 15–20° of extra lock at the limit; the F4 and two GT3s went negative mid-corner (rotation on entry). **[measured]** If G's interquartile spread exceeds 50 % of its median, the lane says the calibration is uncertain. **[heuristic]**
+
+The unit is **degrees of steering wheel**: "you held 15° more lock than the car's yaw needed", which is what a driver feels. Without a yaw-rate channel, r ≈ a_y / V (path curvature) and the lane says so.
+
+**Balance state** (line paint, fence, markers), per sample in priority order:
+
+1. Countersteer (wheel turned against the yaw, |r| > 0.1 rad/s, wheel past 2°): **oversteer**. Unambiguous. **[lit]** (sign test), **[heuristic]** (cut-offs)
+2. US < −T, or sideslip excess > 1.5° (8.3): **oversteer**.
+3. US > +T and lateral g above half the stint's peak: **understeer**. Below half peak, extra lock is too often a transient to call.
+4. Otherwise neutral.
+
+T = 6° × G / 50: 6° of wheel for a car with a typical steering gain of 50, scaled so cars with very quick or slow steering get the same road-wheel threshold. **[heuristic]**, just above the ±5° of wheel that transients alone produce at low lateral g in the test files **[measured]**.
+
+### 8.3 Sideslip, sideslip excess and the attitude arrows
+
+iRacing records the car's velocity in its own frame (`VelocityX` forward, `VelocityY` left), so body sideslip is measured rather than modelled:
+
+    β = atan2(V_y, V_x)        turn-signed:  β_T = −β · sign(a_y)
+
+β_T is positive when the nose points further into the corner than the car is travelling, for left and right turns alike. Every car sits at some sideslip in a normal fast corner. Measured medians at the limit ranged from 1.6° (GT3s) to 4.4° (GR22); the F4's 10th percentile reached 7° **[measured]**. A raw angle therefore doesn't say "slide". What matters is the excess over what this car usually does at this lateral g:
+
+    β_X = β_T − β_norm(|a_y|)
+
+β_norm is the stint's median β_T in each of 10 bands of lateral g (as a share of peak), needing at least 30 samples per band; gaps are interpolated. β_X > 1.5° means the car is more sideways than it usually is at that grip level, and counts as oversteer (a slide). **[heuristic]**: a starting value, not derived from a published figure or a fit. Re-tune it if slides are missed or ordinary corners get flagged.
+
+The **sideslip rate** β̇ (lane only) is the derivative of smoothed β. The β–β̇ phase plane is the standard way to tell a slide that is settling from one that is diverging (Inagaki, Kshiro & Yamamoto, 1995, "Analysis on vehicle stability in critical cornering using phase-plane method", AVEC; SAE 2017-01-1560).
+
+**Attitude arrows** (Layers → Markers → Attitude) draw the same quantity on the 3D line. The arrow points along the body axis at the angle −atan2(V_y, V_x) from the travel direction; the angle between them is shaded. The shading is coloured by β_X, not by β itself, so it reads relative to the car's own normal:
+
+| β_X | Colour | Meaning |
+|---|---|---|
+| below −1° (full sky at −3°) | sky | less rotation than usual at this lateral g |
+| −1° to +1.5° | grey | usual |
+| +1.5° to +4° | grey → peach | more sideways than usual: the slide threshold above |
+| +4° to +7° and beyond | peach → rose | a large slide |
+
+The 1.5° start follows the slide threshold above. The −1°, 4° and 7° cut-offs are **[heuristic]**: 4° is about the biggest *usual* limit sideslip measured (GR22), so a further 4° on top of usual is unambiguous. The drawn angle is capped at ±35°. The optional ×2 / ×4 angle scale exaggerates the drawing only, never the numbers, because real slip is a few degrees and hard to see at true scale. The cars at the cursor yaw by the same (scaled) angle; the car chips show β_T and yaw rate unscaled.
+
+Files without body velocities (most non-iRacing sources) have no sideslip, so no sideslip excess and no attitude arrows. Oversteer then rests on the balance angle and countersteer alone.
+
+### 8.4 Grip used
+
+    grip used = hypot(a_x, a_y) / env(V)
+
+env(V) is the session's own limit: the 98th percentile of combined g in each 10 km/h speed band (at least 30 samples), interpolated, and forced non-decreasing with speed. The speed bands matter because an aero car's available grip rises with speed (the g-g diagram, Milliken & Milliken, ch. 2) **[lit]**. 100 % is "as hard as you used the tyres anywhere at this speed in this session", not the tyre's true limit, so a session driven well under the limit everywhere still shows 100 % somewhere. The 98th percentile and band width are **[heuristic]**. Gravity from banking and pitch isn't removed yet: banked corners read high.
+
+### 8.5 Wheel slip, lockups and wheelspin
+
+    κ = (wheel speed − V_x) / max(V_x, 5 m/s)
+
+The slip ratio per wheel; the yaw correction for inside and outside wheels is about 1 % and left out. Lanes show the most-locked front and the most-spinning rear.
+
+- **Lockup:** a wheel 15 % slower than the car with brake above 20 % for at least 0.1 s. Peak longitudinal force sits at roughly 10–20 % slip on racing tyres (Pacejka, *Tire and Vehicle Dynamics*), so past 15 % the tyre is on the falling side **[lit]**. The F4 (no ABS) spent half its heavy braking below −12 % front slip; the GT3s a few hundred samples **[measured]**.
+- **Wheelspin:** a wheel 10 % faster than the car with throttle above 30 % for at least 0.1 s. **[heuristic]**
+
+### 8.6 Phase, coasting and events
+
+- **Phase**, which names events "entry", "mid" or "exit" because those point at different fixes (brake release vs throttle application): entry = brake above 5 %; exit = throttle above 20 %; mid = neither pedal above 20 % with lateral g above half the peak. **[heuristic]**
+- **Coasting:** throttle under 5 % and brake under 2 % above 15 m/s for at least 0.25 s. Time with neither pedal at speed is time not spent accelerating or braking. **[heuristic]**
+- **Events** are runs of a state (understeer, oversteer, countersteer, lockup, wheelspin, ABS, kerb, off track, coasting) that last at least 0.15 s (lockups and wheelspin 0.1 s), merged when less than 10 m apart, so single-sample noise never becomes a marker. The label shows the run's peak. **[heuristic]** "Off track" and "kerb" come straight from the sim's surface and material channels.
+
+### 8.7 Lining laps up
+
+- **Distance grid.** Each lap is resampled every metre along its own distance. Laps are then compared **by fraction of lap**: point k of the reference sits at k/(n−1) of every other lap. The same corner then lands at the same index even when one line is a few metres longer.
+- **Delta** at any point is that lap's time to there minus the reference's, so at the line it equals the lap-time difference.
+- **Time gain / loss** (line paint) is the slope of the delta: s per 100 m over a ±10 m window. **[heuristic]** window.
+- **Corners** for the follow cameras: an apex is a minimum of speed (smoothed over ±10 m, lowest within ±60 m) that the car slows at least 12 km/h into and gains at least 9 km/h out of, within 250 m either side. Apexes under 30 m apart merge; under 300 m apart they form a complex (chicane, esses). **[heuristic]**, set so flat-out kinks don't count.
+- **Track centre and width.** With a map match, the centre is OpenStreetMap's track line. Without one, it's the average of the loaded laps: an estimate that follows the drivers' lines, since telemetry has no track edges. The half width covers every lap's distance from the centre over ±30 m plus 2.5 m (1 m on a map), and at least 5 m. **[heuristic]**
+- **Position without world coordinates.** Files with neither world x/y nor GPS get a line dead-reckoned from speed and heading (yaw, else integrated yaw rate, else lateral g / speed). Each lap's closing error is spread back along it so the lap meets itself. The line drifts and the view says so.
+
+### 8.8 Limits
+
+- Everything in 8.2–8.4 is **relative to the session itself**. A whole session driven with understeer calibrates that understeer in as "normal", and the balance channel shows only what's beyond it. Compare laps of the same car and setup; each session keeps its own calibration.
+- The balance model is steady-state. In fast transients (quick direction changes, kerb hops), US swings ±5° of wheel without meaning anything. That's why events need a duration and understeer needs half the peak lateral g.
+- The tagged heuristics were set on a handful of iRacing cars. Other cars, and other sims' channel conventions, may need them re-tuned.
