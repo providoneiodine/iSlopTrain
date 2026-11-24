@@ -3,7 +3,7 @@
  * overlay and the page's Layers drawer.
  *
  *   Layers.PAINTS     line colour choices  [{ key, label, needs, title, legend }]
- *   Layers.FENCES     fence choices        [{ key, label, needs, title }]
+ *   Layers.FENCES     fence choices        [{ key, label, needs, cmp?, title }]  (cmp: needs a lap to compare)
  *   Layers.MARKERS    marker toggles       [{ key, label, kinds, color, label?, pip, def, title }]
  *   Layers.paint(key, L, i, ctx) -> [r, g, b] (0..1) for lap L at index i
  *   Layers.eventLabel(e)         -> "Entry US 14°", or '' for events shown without a label
@@ -44,6 +44,7 @@
     { key: 'inputs', label: 'Inputs', needs: [], title: 'Throttle (green) and brake (red), with ABS striped on the brake' },
     { key: 'balance', label: 'Balance', needs: ['us'], title: 'Height = understeer (sky) or oversteer (peach), up to 20° of steering wheel' },
     { key: 'grip', label: 'Grip used', needs: ['gripUse'], title: 'Height = share of this session’s grip at that speed; rose above 100 %' },
+    { key: 'delta', label: 'Delta', needs: [], cmp: true, title: 'Height = how far one lap is behind or ahead of the reference at that point; fill = where it gains (mint) or loses (rose) time. One lap at a time: with 3 or more laps, pick it in Whose' },
     { key: 'none', label: 'None', needs: [], title: 'No fence' },
   ];
   const MARKERS = [

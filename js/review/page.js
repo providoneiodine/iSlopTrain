@@ -704,8 +704,21 @@
   };
   const fenceOk = (k) => {
     const d = Ly.FENCES.find((x) => x.key === k);
-    return !!d && V && V.cmp && d.needs.every((c) => hasCh(V.cmp, c));
+    return !!d && V && V.cmp && d.needs.every((c) => hasCh(V.cmp, c)) && (!d.cmp || V.cmp.laps.length > 1);
   };
+
+  /**
+   * The one lap the Delta fence draws (several gaps stacked on the lines would be unreadable):
+   * the lap picked in Whose, or with Whose on all laps the first one compared. -1 when Whose
+   * is the reference or none.
+   */
+  function deltaLap() {
+    const cmp = V && V.cmp, o = state.opts.inputs;
+    if (!cmp || cmp.laps.length < 2) return -1;
+    if (o === 'all') return 1;
+    const k = o.startsWith('lap') ? +o.slice(3) : 0;
+    return k > 0 && k < cmp.laps.length ? k : -1;
+  }
 
   function setDrawer(open) {
     state.drawer = open;
@@ -731,7 +744,7 @@
     return {
       fences: V.fences, lean: o.lean, fenceH: V.closeUp ? 3.5 : 0, closeUp: V.closeUp,
       paint: paintOk(o.paint) ? o.paint : 'lap', fence: fenceOk(o.fence) ? o.fence : 'inputs', absTint: o.absTint, markers: markerKinds(), gears: markerOn('gears'),
-      attitude: attitudeOn(), attScale: o.attScale,
+      attitude: attitudeOn(), attScale: o.attScale, deltaLap: deltaLap(),
     };
   }
 
@@ -822,6 +835,22 @@
       if (o.absTint && hasCh(V.cmp, 'absActive')) E.append(item('rv-key-abs', 'ABS'));
     } else if (fence === 'balance') E.append(item('', 'Understeer', 'background:' + Th.sky), item('', 'Oversteer', 'background:' + Th.peach));
     else if (fence === 'grip') E.append(item('', 'Grip used', 'background:' + Th.butter), item('', 'Over 100 %', 'background:' + Th.rose));
+    else if (fence === 'delta') {
+      const k = deltaLap(), L = k > 0 ? V.cmp.laps[k] : null;
+      if (!L) E.append(h('span', { class: 'rv-legend-note' }, 'Delta: pick a lap other than the reference in Whose'));
+      else {
+        let big = 0.05;
+        for (let i = 0; i < V.cmp.n; i++) big = Math.max(big, Math.abs(L.delta[i]));
+        const end = L.delta[V.cmp.n - 1];
+        E.append(h('span', { class: 'rv-legend-grad', title: 'Fence height: Lap ' + L.lap.lapNo + '’s gap to the reference, full height = ' + big.toFixed(3) + ' s. Fill: gaining (mint) or losing (rose) time there' },
+          h('b', null, 'L' + L.lap.lapNo + ' gap 0–' + big.toFixed(2) + ' s · gaining'),
+          h('i', { class: 'rv-grad wide', style: 'background:linear-gradient(90deg, ' + Th.mint + ', #a1a9b7, ' + Th.rose + ')' }), h('b', null, 'losing')),
+          h('span', { class: 'rv-legend-note' }, (end >= 0 ? '+' : '−') + Math.abs(end).toFixed(3) + ' s at the line'));
+        if (V.cmp.laps.length > 2 && state.opts.inputs === 'all') {
+          E.append(h('span', { class: 'rv-legend-note', title: 'With 3 or more laps the Delta fence shows one: pick which in Layers → Whose' }, 'one lap at a time: choose in Whose'));
+        }
+      }
+    }
     if (fence !== 'none' || paint) E.append(item('rv-key-cap', 'Lap colour', null, paint ? 'Painted lines keep an edge in their lap’s colour' : 'Each fence is edged in its lap’s colour'));
     if (markerOn('gears')) E.append(item('rv-key-gear', 'Gear change'));
     if (attitudeOn()) {

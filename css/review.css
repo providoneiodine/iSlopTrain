@@ -56,6 +56,7 @@
 .rv-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .rv-legend:empty { display: none; }
 .rv-legend-grad b { font-weight: var(--w-semi); font-size: 11px; color: var(--muted); }
+.rv-legend-note { font-size: 11px; color: var(--muted); }
 .rv-key-abs { background: repeating-linear-gradient(90deg, #ff453a 0 3px, #8a1a14 3px 6px); }
 .rv-stage.rv-drawer-open .rv-legend { right: 280px; }
 .rv-key { display: inline-block; width: 12px; height: 10px; }

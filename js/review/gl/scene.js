@@ -4,7 +4,8 @@
  *   const S = IST.Review.Scene.build(R, cmp, opt)
  *     opt: { exag (elevation x), fences ([bool] per lap, "whose": its fence, paint and markers), lean (bool),
  *            fenceH (m), closeUp (bool), map (bool: satellite ground coming, so no road surface, edges or centre line),
- *            paint ('lap' or a Layers.PAINTS key), fence ('inputs' | 'balance' | 'grip' | 'none'), absTint (bool),
+ *            paint ('lap' or a Layers.PAINTS key), fence ('inputs' | 'balance' | 'grip' | 'delta' | 'none'), absTint (bool),
+ *            deltaLap (the one lap whose delta fence is drawn, or -1),
  *            markers (Set of event kinds to underline), gears (bool: gear posts),
  *            attitude (bool: body-slip arrows and wedges), attScale (drawn angle x) }
  *   S.items       the static draw list for R.draw (maplayer.js adds the ground tiles to it)
@@ -292,6 +293,21 @@
           fence((i) => -L.us[i] / (20 * DEG), C_OS, 0.55);
         } else if (fenceKind === 'grip' && L.gripUse) {
           fence(L.gripUse, (i, v) => [v > 1 ? C_ROSE : C_BUT, 1], 0.5, 1.15);
+        } else if (fenceKind === 'delta' && k > 0 && k === opt.deltaLap) {
+          // the gap to the reference, full height at this lap's biggest gap: a rising fence is
+          // time going, a falling one time coming back; the fill says which, per 100 m
+          let big = 0.05;
+          for (let i = 0; i < n; i++) big = Math.max(big, Math.abs(L.delta[i]));
+          // fill saturates at this lap's own 90th-percentile rate, so small gaps still show colour
+          const g = [];
+          for (let i = 0; i < n; i += 5) g.push(Math.abs(L.gain[i]));
+          g.sort((a, b) => a - b);
+          const gs = Math.max(0.004, g[Math.floor(g.length * 0.9)] || 0);
+          const NEU = Ly.rgb('#a1a9b7'), MINT = Ly.rgb(Th.mint);
+          fence((i) => Math.abs(L.delta[i]) / big, (i) => {
+            const v = L.gain[i], t = Math.min(1, Math.abs(v) / gs);
+            return [Ly.mix(NEU, v < 0 ? MINT : C_ROSE, t), 0.6 + 0.4 * t];
+          }, 0.75);
         }
       });
 
@@ -383,7 +399,7 @@
 
     const cache = new Map(); // layer key -> { items, meshes, fenceH }
     const MAX_CACHED = 6;
-    const keyOf = (o) => JSON.stringify([o.paint, o.fence, o.fences, o.lean, o.absTint !== false, o.markers ? [...o.markers].sort() : [], o.gears !== false, o.fenceH || 0, !!o.closeUp, !!o.attitude, o.attScale || 1]);
+    const keyOf = (o) => JSON.stringify([o.paint, o.fence, o.fences, o.lean, o.absTint !== false, o.markers ? [...o.markers].sort() : [], o.gears !== false, o.fenceH || 0, !!o.closeUp, !!o.attitude, o.attScale || 1, o.deltaLap == null ? -1 : o.deltaLap]);
     const S = {
       items, layerItems: [], base, lateral, toGL, exag, size, fenceH: autoFenceH, groundY, centre: cGL, centreLat: lat2, pad: size * 0.25,
       /** Show these layers (scene opt fields: paint, fence, fences, lean, absTint, markers, gears, fenceH, closeUp). */
