@@ -62,7 +62,54 @@
       yawRate: ['yawrate', 'yawvelocity', 'roty', 'gyroz', 'yawspeed'],
       latG: ['latacc', 'lataccel', 'latg', 'glat', 'gforcelat', 'lateralacceleration', 'lateralg', 'accellat'],
       onPit: ['onpitroad', 'inpits', 'pitlane', 'inpitlane'],
+      // body-frame velocities (never plain x / y: those are positions)
+      vx: ['velocityx', 'vx', 'localvelx', 'velx', 'longvelocity'],
+      vy: ['velocityy', 'vy', 'localvely', 'vely', 'latvelocity'],
+      longG: ['longaccel', 'longacc', 'glong', 'glon', 'accellong', 'longitudinalacceleration', 'gforcelong', 'longg'],
+      vertG: ['vertaccel', 'vertacc', 'gvert', 'accelvert', 'verticalacceleration', 'gforcevert'],
+      roll: ['roll', 'rollangle'],
+      pitch: ['pitch', 'pitchangle'],
+      absActive: ['brakeabsactive', 'absactive', 'abs', 'absinaction'],
+      tcActive: ['tcactive', 'tc', 'tcinaction'],
+      drs: ['drsactive', 'drs'],
+      p2p: ['p2pactive', 'pushtopass'],
+      wsLF: ['lfspeed', 'wheelspeedlf', 'wheelspeedfl', 'wheelspdfl', 'wheelspeedfrontleft'],
+      wsRF: ['rfspeed', 'wheelspeedrf', 'wheelspeedfr', 'wheelspdfr', 'wheelspeedfrontright'],
+      wsLR: ['lrspeed', 'wheelspeedlr', 'wheelspeedrl', 'wheelspdrl', 'wheelspeedrearleft'],
+      wsRR: ['rrspeed', 'wheelspeedrr', 'wheelspdrr', 'wheelspeedrearright'],
+      // one surface temperature per tyre (ACC and most CSVs); iRacing's inner / mid / outer come from ibt.js
+      tLF: ['tyretemplf', 'tyretempfl', 'tyretairlf', 'tiretemplf', 'tiretempfl', 'tyretempfrontleft'],
+      tRF: ['tyretemprf', 'tyretempfr', 'tyretairrf', 'tiretemprf', 'tiretempfr', 'tyretempfrontright'],
+      tLR: ['tyretemplr', 'tyretemprl', 'tyretairlr', 'tiretemplr', 'tiretemprl', 'tyretemprearleft'],
+      tRR: ['tyretemprr', 'tyretairrr', 'tiretemprr', 'tyretemprearright'],
+      pLF: ['lfpressure', 'tyrepresslf', 'tyrepressfl', 'tirepressurelf', 'tirepressurefl', 'tyrepressurefl'],
+      pRF: ['rfpressure', 'tyrepressrf', 'tyrepressfr', 'tirepressurerf', 'tirepressurefr', 'tyrepressurefr'],
+      pLR: ['lrpressure', 'tyrepresslr', 'tyrepressrl', 'tirepressurelr', 'tirepressurerl', 'tyrepressurerl'],
+      pRR: ['rrpressure', 'tyrepressrr', 'tirepressurerr', 'tyrepressurerr'],
+      steerTq: ['steeringwheeltorque', 'steertorque', 'steeringtorque'],
+      surface: ['playertracksurface', 'tracksurface'],
+      material: ['playertracksurfacematerial', 'surfacematerial'],
+      bb: ['dcbrakebias', 'brakebias'],
+      absSet: ['dcabs', 'abssetting', 'abslevel'],
+      tcSet: ['dctractioncontrol', 'tcsetting', 'tclevel'],
     };
+
+    /**
+     * Channels every lap carries (resampled by distance in laps.js, sent back from the
+     * Worker, lined up in compare.js). Missing ones are null on the lap. Derived channels
+     * (derive.js) are in the list too: they're computed at the native rate, then cut
+     * like the rest.
+     */
+    T.TYRES = ['LF', 'RF', 'LR', 'RR'];
+    T.LAP_CHANNELS = ['t', 'x', 'y', 'z', 'speed', 'throttle', 'brake', 'steer', 'gear', 'rpm',
+      'yawRate', 'latG', 'longG', 'vx', 'vy', 'absActive', 'absCut', 'tcActive', 'bpF', 'bpR',
+      'wsLF', 'wsRF', 'wsLR', 'wsRR', 'tLF', 'tRF', 'tLR', 'tRR',
+      'tLF_i', 'tLF_m', 'tLF_o', 'tRF_i', 'tRF_m', 'tRF_o', 'tLR_i', 'tLR_m', 'tLR_o', 'tRR_i', 'tRR_m', 'tRR_o',
+      'pLF', 'pRF', 'pLR', 'pRR', 'rhF', 'rhR', 'steerTq', 'surface', 'material', 'bb', 'absSet', 'tcSet',
+      // derived (derive.js)
+      'us', 'beta', 'betaX', 'betaRate', 'counter', 'slipF', 'slipR', 'gripUse', 'balState', 'phase', 'coast'];
+    /** Channels that hold a state, not a measurement: resampled by nearest sample, never blended. */
+    T.STEP_CHANNELS = ['gear', 'absActive', 'tcActive', 'surface', 'material', 'bb', 'absSet', 'tcSet', 'counter', 'balState', 'phase', 'coast'];
 
     T.norm = (s) => String(s || '').toLowerCase().replace(/\[.*?\]|\(.*?\)/g, '').replace(/[^a-z0-9]/g, '');
 
@@ -122,7 +169,12 @@
         else if (!u && maxAbs(a) > 7) k = Math.PI / 180;
       } else if (key === 'yawRate') {
         if (/deg|°/.test(u)) k = Math.PI / 180;
-      } else if (key === 'latG') {
+      } else if (key === 'vx' || key === 'vy' || /^ws/.test(key)) {
+        if (/km\/?h|kph|kmh/.test(u)) k = 1 / 3.6;
+        else if (/mph/.test(u)) k = 0.44704;
+      } else if (key === 'roll' || key === 'pitch') {
+        if (/deg|°/.test(u)) k = Math.PI / 180;
+      } else if (key === 'latG' || key === 'longG' || key === 'vertG') {
         if (u === 'g' || /^g$/.test(u) || (!/m\/s/.test(u) && maxAbs(a) < 6)) k = 9.80665;
       } else if (key === 't') {
         if (u === 'ms') k = 0.001;

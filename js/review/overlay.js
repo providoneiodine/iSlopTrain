@@ -4,7 +4,9 @@
  * ends of a zoomed stretch.
  *
  *   const ov = IST.Review.Overlay.create()
- *   ov.draw(g, W, H, f)    f: { vp, scene, cmp, cursorF, cars, gaps, range, gears, tags, fences, chipsBeside, dt }
+ *   ov.draw(g, W, H, f)    f: { vp, scene, cmp, cursorF, cars, gaps, range, gears, tags, fences, markers, chipsBeside, dt }
+ *     markers: Set of event kinds (derive.js) to mark: a pip at each event's peak, and a
+ *           label chip ("Entry US 14°") within LABEL_DIST of the camera or near the cursor
  *           gaps[k]: lap k's distance behind the reference (m), for the cursor posts
  *     cars: [{ k, pose, gapM }] one per lap, at where that lap was at the
  *           reference's time (k = 0 is the reference, at the cursor)
@@ -19,6 +21,18 @@
   const POST_GAP = 25; // m
   const Th = IST.Theme, M = IST.Review.M3, FONT = IST.Symbols.FONT;
   const FADE = 9; // per second
+  const LABEL_DIST = 350, NEAR_CURSOR = 60; // m
+  const Ly = IST.Review.Layers;
+
+  function diamond(g, x, y, r) {
+    g.beginPath();
+    g.moveTo(x, y - r);
+    g.lineTo(x + r, y);
+    g.lineTo(x, y + r);
+    g.lineTo(x - r, y);
+    g.closePath();
+    g.fill();
+  }
 
   function create() {
     const mem = new Map(); // label key -> { a: opacity, y: eased stack offset }
@@ -145,8 +159,31 @@
         g.fillText(sub, x + tw + 8, y + 25);
       });
 
-      // ---- fading labels: lap tags along the lines and gear numbers
+      // ---- event pips (labels join the fading labels below)
       const cand = [];
+      if (f.markers && f.markers.size) {
+        const cur = f.cursorF >= 0 ? f.cursorF : -1e9, near = NEAR_CURSOR / cmp.step;
+        cmp.laps.forEach((L, li) => {
+          if (f.fences && !f.fences[li]) return;
+          const P = S.base[li];
+          (L.events || []).forEach((e) => {
+            if (!f.markers.has(e.kind)) return;
+            const mk = Ly.markerFor(e.kind);
+            if (!mk || !mk.pip) return;
+            const i = e.iPeak, at = [P[i * 3], P[i * 3 + 1] + 0.4, P[i * 3 + 2]], p = proj(at);
+            if (!onScreen(p, 10)) return;
+            g.fillStyle = '#111317';
+            diamond(g, p.x, p.y, 6);
+            g.fillStyle = mk.color;
+            diamond(g, p.x, p.y, 4);
+            const close = Math.abs(i - cur) < near || (cur >= e.i0 && cur <= e.i1);
+            const text = Ly.eventLabel(e);
+            if (text && (p.w < LABEL_DIST || close)) cand.push({ key: 'e' + li + ':' + e.kind + ':' + e.i0, li, p: at, text, kind: 'event', color: mk.color, near: close ? 1 : 0 });
+          });
+        });
+      }
+
+      // ---- fading labels: event chips, lap tags along the lines and gear numbers
       if (f.tags) {
         const every = Math.round(200 / cmp.step);
         cmp.laps.forEach((L, li) => {
@@ -163,14 +200,20 @@
       }
       // labels already showing keep their place; new ones fit round them
       cand.forEach((c) => (c.m = slot(c.key)));
-      cand.sort((a, b) => b.m.a - a.m.a);
+      cand.sort((a, b) => (b.near || 0) - (a.near || 0) || b.m.a - a.m.a);
       g.textAlign = 'center';
       cand.forEach((c) => {
         const p = proj(c.p);
         let want = false, r = null;
         if (onScreen(p, 10)) {
-          const w = c.kind === 'tag' ? 24 : 17, hh = c.kind === 'tag' ? 15 : 16;
-          r = c.kind === 'tag' ? [p.x - w / 2, p.y - hh / 2, w, hh] : [p.x - w / 2, p.y - hh, w, hh];
+          if (c.kind === 'event') {
+            g.font = '700 10.5px ' + FONT;
+            const w = g.measureText(c.text).width + 14, hh = 17;
+            r = [p.x - w / 2, p.y - 10 - hh, w, hh];
+          } else {
+            const w = c.kind === 'tag' ? 24 : 17, hh = c.kind === 'tag' ? 15 : 16;
+            r = c.kind === 'tag' ? [p.x - w / 2, p.y - hh / 2, w, hh] : [p.x - w / 2, p.y - hh, w, hh];
+          }
           // tags thin out with distance so the far track doesn't fill with them
           want = !overlaps(r) && (c.kind !== 'tag' || p.w < S.size * 0.9);
           if (want) taken.push(r);
@@ -179,6 +222,17 @@
         if (c.m.a < 0.02 || !r) return;
         const L = cmp.laps[c.li];
         g.globalAlpha = c.m.a;
+        if (c.kind === 'event') {
+          g.fillStyle = Th.deep;
+          g.fillRect(r[0], r[1], r[2], r[3]);
+          g.fillStyle = c.color;
+          g.fillRect(r[0], r[1], 3, r[3]);
+          g.fillStyle = Th.text;
+          g.font = '700 10.5px ' + FONT;
+          g.fillText(c.text, r[0] + r[2] / 2 + 1.5, r[1] + r[3] / 2 + 0.5);
+          g.globalAlpha = 1;
+          return;
+        }
         if (c.kind === 'tag') {
           g.fillStyle = Th.deep;
           g.fillRect(r[0], r[1], r[2], r[3]);

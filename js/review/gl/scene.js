@@ -2,9 +2,13 @@
  * Builds the Review viewer's geometry from a comparison (compare.js).
  *
  *   const S = IST.Review.Scene.build(R, cmp, opt)
- *     opt: { exag (elevation x), fences ([bool] per lap: draw its inputs), lean (bool), fenceH (m), closeUp (bool),
- *            map (bool: satellite ground coming, so no road surface, edges or centre line) }
- *   S.items       draw list for R.draw (maplayer.js adds the ground tiles to it)
+ *     opt: { exag (elevation x), fences ([bool] per lap, "whose": its fence, paint and markers), lean (bool),
+ *            fenceH (m), closeUp (bool), map (bool: satellite ground coming, so no road surface, edges or centre line),
+ *            paint ('lap' or a Layers.PAINTS key), fence ('inputs' | 'balance' | 'grip' | 'none'), absTint (bool),
+ *            markers (Set of event kinds to underline), gears (bool: gear posts) }
+ *   S.items       the static draw list for R.draw (maplayer.js adds the ground tiles to it)
+ *   S.layerItems  the current layers' draw list (lap ribbons, fences, halos, gear posts): draw both
+ *   S.setLayers(opt)  swap the layer fields of opt without rebuilding the rest (recent sets cached)
  *   S.centre      Float32Array(n * 3): the track centre in GL space (S.centreLat its left normal)
  *   S.base[k]     Float32Array(n * 3): lap k's line on the road surface, in GL space
  *   S.lateral[k]  Float32Array(n * 2): lap k's left-pointing unit normal (GL x, z)
@@ -31,8 +35,10 @@
  */
 (function () {
   'use strict';
-  const GL = IST.Review.GL, Th = IST.Theme;
-  const C_THR = GL.rgb(Th.hit), C_BRK = GL.rgb(Th.miss), OUTLINE = GL.rgb('#111317');
+  const GL = IST.Review.GL, Th = IST.Theme, Ly = IST.Review.Layers;
+  const DEG = Math.PI / 180;
+  const C_THR = GL.rgb(Th.hit), C_BRK = GL.rgb(Th.miss), C_ABS = GL.rgb('#8a1a14'), OUTLINE = GL.rgb('#111317');
+  const C_US = GL.rgb(Th.sky), C_OS = GL.rgb(Th.peach), C_ROSE = GL.rgb(Th.rose), C_BUT = GL.rgb(Th.butter);
 
   /**
    * A car-sized marker (4.6 x 1.9 m body, cabin on top) at pose { p, fwd, left },
@@ -61,16 +67,18 @@
     const exag = opt.exag || 1;
     const ox = (B.x0 + B.x1) / 2, oy = (B.y0 + B.y1) / 2, oz = B.z0;
     const size = Math.max(200, B.x1 - B.x0, B.y1 - B.y0);
-    const fenceH = opt.fenceH || Math.max(5, Math.min(16, size / 160));
+    const autoFenceH = Math.max(5, Math.min(16, size / 160));
     const toGL = (x, y, z) => [x - ox, (z - oz) * exag, -(y - oy)];
     const dec = Math.max(1, Math.round(2 / cmp.step)); // geometry every ~2 m
     const items = [];
     const meshes = [], textures = [];
+    // add() puts a mesh in the current sink: the static scene, or one set of layers
+    let sink = { items, meshes };
     const add = (mode, V, it) => {
       if (!V.length) return;
       const m = R.mesh(mode, V.data());
-      meshes.push(m);
-      items.push(Object.assign({ mesh: m }, it));
+      sink.meshes.push(m);
+      sink.items.push(Object.assign({ mesh: m }, it));
     };
     const idx = [];
     for (let i = 0; i < n; i += dec) idx.push(i);
@@ -159,6 +167,11 @@
 
     // ------------------------------------------------------------ lap lines
     const base = [], lateral = [];
+    const speedRange = (L) => {
+      let lo = Infinity, hi = -Infinity;
+      for (let i = 0; i < n; i++) (lo = Math.min(lo, L.speed[i])), (hi = Math.max(hi, L.speed[i]));
+      return { lo, hi };
+    };
     cmp.laps.forEach((L, k) => {
       const lift = 0.12 + 0.1 * k;
       const P = new Float32Array(n * 3), Lt = new Float32Array(n * 2);
@@ -171,96 +184,182 @@
       for (let i = 0; i < n; i++) lateralOf(P, i, Lt, i * 2);
       base.push(P);
       lateral.push(Lt);
-      // a thin ribbon over a dark outline so overlapping colours stay separate, a pattern
-      // per lap (reference solid, the others dashed at their own rhythm), and a 1 px core
-      // line so the lap still shows when the ribbon is thinner than a pixel far away
-      const c = GL.rgb(L.color), shade = c.map((x) => x * 0.45), hw = k === 0 ? 0.32 : 0.24;
-      const dash = k === 0 ? 0 : 3 + 2 * k; // metres per dash
-      const O = GL.Verts(), V = GL.Verts(), Core = GL.Verts();
-      idx.forEach((i) => {
-        const lx = Lt[i * 2], lz = Lt[i * 2 + 1], x = P[i * 3], y = P[i * 3 + 1], z = P[i * 3 + 2];
-        const ow = hw + 0.12;
-        O.push(x + lx * ow, y - 0.02, z + lz * ow, 0, 1, 0, OUTLINE);
-        O.push(x - lx * ow, y - 0.02, z - lz * ow, 0, 1, 0, OUTLINE);
-        const col = dash && Math.floor((i * cmp.step) / dash) % 2 ? shade : c;
-        V.push(x + lx * hw, y, z + lz * hw, 0, 1, 0, col);
-        V.push(x - lx * hw, y, z - lz * hw, 0, 1, 0, col);
-        Core.push(x, y + 0.02, z, 0, 1, 0, c);
-      });
-      add('strip', O, { lit: false, lift: 1.5 + k });
-      add('strip', V, { lit: false, lift: 2 + k });
-      add('linestrip', Core, { lit: false, lift: 2.5 + k });
     });
 
-    // ---------------------------------------------------------------- fences
-    // Throttle (green) and brake (red) float a little above the road, so a few per cent
-    // of pedal shows as a sliver clear of the line rather than vanishing into it. Each
-    // fence is edged with thin lines in its lap's colour (bottom at 0 %, top at the
-    // value), and in close-up faint guides mark 25, 50 and 75 %.
-    const show = opt.fences || cmp.laps.map(() => true);
-    const gap = Math.max(0.3, fenceH * 0.08);
-    const guides = opt.closeUp ? [0.25, 0.5, 0.75] : [];
-    cmp.laps.forEach((L, k) => {
-      if (!show[k]) return;
-      const P = base[k], Lt = lateral[k], lc = GL.rgb(L.color);
-      let smax = 0;
-      if (opt.lean && L.steer) for (let i = 0; i < n; i++) smax = Math.max(smax, Math.abs(L.steer[i]));
-      const fence = (vals, col, alpha) => {
-        if (!vals) return;
-        const V = GL.Verts(), E = GL.Verts(), G = GL.Verts();
-        let prev = null;
+    /*
+     * Everything that depends on the Layers choices: lap ribbons (lap colour or painted),
+     * fences, event halos and gear posts. Built into its own mesh set so a change of
+     * layer never touches the ground, the track or the map tiles, and kept in a small
+     * cache so switching back to a recent choice is instant.
+     */
+    function buildLayers(opt) {
+      const fenceH = opt.fenceH || autoFenceH;
+      const show = opt.fences || cmp.laps.map(() => true);
+      const paintKey = opt.paint && opt.paint !== 'lap' ? opt.paint : null;
+      cmp.laps.forEach((L, k) => {
+        const P = base[k], Lt = lateral[k];
+        // a thin ribbon over a dark outline so overlapping colours stay separate, a pattern
+        // per lap (reference solid, the others dashed at their own rhythm), and a 1 px core
+        // line so the lap still shows when the ribbon is thinner than a pixel far away
+        // a painted line (balance, grip...) keeps a lap-colour edge so laps stay apart
+        const c = GL.rgb(L.color), shade = c.map((x) => x * 0.45), hw = k === 0 ? 0.32 : 0.24;
+        const pk = paintKey && show[k] && !(paintKey === 'gain' && k === 0) ? paintKey : null;
+        const ctx = pk === 'speed' ? speedRange(L) : null;
+        const dash = k === 0 ? 0 : 3 + 2 * k; // metres per dash
+        const O = GL.Verts(), V = GL.Verts(), Core = GL.Verts();
         idx.forEach((i) => {
-          const v = Math.max(0, Math.min(1, vals[i]));
-          // steering + is left in iRacing; lean the top toward the turn
-          const leanAt = (f) => (smax > 0 ? (L.steer[i] / smax) * fenceH * 0.5 * f : 0);
-          const bx = P[i * 3], by = P[i * 3 + 1] + gap, bz = P[i * 3 + 2];
-          const at = (f) => {
-            const l = leanAt(f);
-            return [bx + Lt[i * 2] * l, by + f * fenceH, bz + Lt[i * 2 + 1] * l];
-          };
-          const top = at(v);
-          V.push(bx, by, bz, 0, 1, 0, col, alpha * 0.4);
-          V.push(top[0], top[1], top[2], 0, 1, 0, col, alpha);
-          const cur = { v, top, bot: [bx, by, bz], at };
-          if (prev && (v > 0.005 || prev.v > 0.005)) {
-            E.push(prev.top[0], prev.top[1], prev.top[2], 0, 1, 0, lc, 1);
-            E.push(top[0], top[1], top[2], 0, 1, 0, lc, 1);
-            E.push(prev.bot[0], prev.bot[1], prev.bot[2], 0, 1, 0, lc, 0.45);
-            E.push(bx, by, bz, 0, 1, 0, lc, 0.45);
-            guides.forEach((gl) => {
-              if (v < gl || prev.v < gl) return;
-              const a = prev.at(gl), b = at(gl);
-              G.push(a[0], a[1], a[2], 0, 1, 0, [1, 1, 1], 0.28);
-              G.push(b[0], b[1], b[2], 0, 1, 0, [1, 1, 1], 0.28);
-            });
-          }
-          prev = cur;
+          const lx = Lt[i * 2], lz = Lt[i * 2 + 1], x = P[i * 3], y = P[i * 3 + 1], z = P[i * 3 + 2];
+          const ow = hw + (pk ? 0.2 : 0.12), edgeC = pk ? c : OUTLINE;
+          O.push(x + lx * ow, y - 0.02, z + lz * ow, 0, 1, 0, edgeC);
+          O.push(x - lx * ow, y - 0.02, z - lz * ow, 0, 1, 0, edgeC);
+          const off = dash && Math.floor((i * cmp.step) / dash) % 2;
+          const pc = pk ? Ly.paint(pk, L, i, ctx) : null;
+          const col = pc ? (off ? pc.map((q) => q * 0.72) : pc) : off ? shade : c;
+          V.push(x + lx * hw, y, z + lz * hw, 0, 1, 0, col);
+          V.push(x - lx * hw, y, z - lz * hw, 0, 1, 0, col);
+          Core.push(x, y + 0.02, z, 0, 1, 0, pc || c);
         });
-        add('strip', V, { lit: false, blend: true });
-        add('lines', G, { lit: false, blend: true });
-        add('lines', E, { lit: false, blend: true });
-      };
-      fence(L.throttle, C_THR, 0.42);
-      fence(L.brake, C_BRK, 0.6);
-    });
+        add('strip', O, { lit: false, lift: 1.5 + k });
+        add('strip', V, { lit: false, lift: 2 + k });
+        add('linestrip', Core, { lit: false, lift: 2.5 + k });
+      });
 
-    // ------------------------------------------------------------ gear posts
-    {
-      const V = GL.Verts();
+      // ---------------------------------------------------------------- fences
+      // Throttle (green) and brake (red) float a little above the road, so a few per cent
+      // of pedal shows as a sliver clear of the line rather than vanishing into it. Each
+      // fence is edged with thin lines in its lap's colour (bottom at 0 %, top at the
+      // value), and in close-up faint guides mark 25, 50 and 75 %.
+      const gap = Math.max(0.3, fenceH * 0.08);
+      const fenceKind = opt.fence || 'inputs';
+      const guides = opt.closeUp ? [0.25, 0.5, 0.75] : [];
       cmp.laps.forEach((L, k) => {
         if (!show[k]) return;
-        const c = GL.rgb(L.color);
-        L.shifts.forEach((s) => {
-          const P = base[k], i = s.i;
-          V.push(P[i * 3], P[i * 3 + 1], P[i * 3 + 2], 0, 1, 0, c, 0.9);
-          V.push(P[i * 3], P[i * 3 + 1] + fenceH * 1.25, P[i * 3 + 2], 0, 1, 0, c, 0.9);
-        });
+        const P = base[k], Lt = lateral[k], lc = GL.rgb(L.color);
+        let smax = 0;
+        if (opt.lean && L.steer) for (let i = 0; i < n; i++) smax = Math.max(smax, Math.abs(L.steer[i]));
+        // vals: 0..1 array or (i) -> value; col: rgb, or (i, v) -> [rgb, alpha factor]
+        const fence = (vals, col, alpha, max) => {
+          if (!vals) return;
+          const V = GL.Verts(), E = GL.Verts(), G = GL.Verts();
+          const get = typeof vals === 'function' ? vals : (i) => vals[i];
+          const colAt = typeof col === 'function' ? col : () => [col, 1];
+          let prev = null;
+          idx.forEach((i) => {
+            const raw = get(i);
+            const v = isFinite(raw) ? Math.max(0, Math.min(max || 1, raw)) : 0;
+            const [cc, af] = colAt(i, v);
+            // steering + is left in iRacing; lean the top toward the turn
+            const leanAt = (f) => (smax > 0 ? (L.steer[i] / smax) * fenceH * 0.5 * f : 0);
+            const bx = P[i * 3], by = P[i * 3 + 1] + gap, bz = P[i * 3 + 2];
+            const at = (f) => {
+              const l = leanAt(f);
+              return [bx + Lt[i * 2] * l, by + f * fenceH, bz + Lt[i * 2 + 1] * l];
+            };
+            const top = at(v);
+            V.push(bx, by, bz, 0, 1, 0, cc, alpha * 0.4 * af);
+            V.push(top[0], top[1], top[2], 0, 1, 0, cc, alpha * af);
+            const cur = { v, top, bot: [bx, by, bz], at };
+            if (prev && (v > 0.005 || prev.v > 0.005)) {
+              E.push(prev.top[0], prev.top[1], prev.top[2], 0, 1, 0, lc, 1);
+              E.push(top[0], top[1], top[2], 0, 1, 0, lc, 1);
+              E.push(prev.bot[0], prev.bot[1], prev.bot[2], 0, 1, 0, lc, 0.45);
+              E.push(bx, by, bz, 0, 1, 0, lc, 0.45);
+              guides.forEach((gl) => {
+                if (v < gl || prev.v < gl) return;
+                const a = prev.at(gl), b = at(gl);
+                G.push(a[0], a[1], a[2], 0, 1, 0, [1, 1, 1], 0.28);
+                G.push(b[0], b[1], b[2], 0, 1, 0, [1, 1, 1], 0.28);
+              });
+            }
+            prev = cur;
+          });
+          add('strip', V, { lit: false, blend: true });
+          add('lines', G, { lit: false, blend: true });
+          add('lines', E, { lit: false, blend: true });
+        };
+        if (fenceKind === 'inputs') {
+          fence(L.throttle, C_THR, 0.42);
+          // ABS: the brake fence striped darker every 2 m where it was cutting force
+          const abs = opt.absTint !== false && L.absActive;
+          const brkCol = abs ? (i) => (abs[i] > 0.5 ? (Math.floor((i * cmp.step) / 2) % 2 ? [C_ABS, 1] : [C_BRK, 0.55]) : [C_BRK, 1]) : C_BRK;
+          fence(L.brake, brkCol, 0.6);
+        } else if (fenceKind === 'balance' && L.us) {
+          fence((i) => L.us[i] / (20 * DEG), C_US, 0.55);
+          fence((i) => -L.us[i] / (20 * DEG), C_OS, 0.55);
+        } else if (fenceKind === 'grip' && L.gripUse) {
+          fence(L.gripUse, (i, v) => [v > 1 ? C_ROSE : C_BUT, 1], 0.5, 1.15);
+        }
       });
-      add('lines', V, { lit: false, blend: true });
+
+      // ----------------------------------------------------- event underlines
+      // a halo round the lap line from an event's start to its end (kerbs and coasting
+      // dashed), under the line so the lap's own colour stays on top
+      if (opt.markers && opt.markers.size) {
+        const H = GL.Verts();
+        cmp.laps.forEach((L, k) => {
+          if (!show[k] || !L.events) return;
+          const P = base[k], Lt = lateral[k];
+          const hw = 0.85 + 0.1 * k;
+          const side = (i, s) => [P[i * 3] + Lt[i * 2] * hw * s, P[i * 3 + 1] - 0.03, P[i * 3 + 2] + Lt[i * 2 + 1] * hw * s];
+          L.events.forEach((e) => {
+            if (!opt.markers.has(e.kind) || e.kind === 'bbChange') return;
+            const col = GL.rgb(Ly.markerFor(e.kind).color);
+            const dashed = e.kind === 'kerb' || e.kind === 'coast';
+            const a = Math.max(0, e.i0 - 1), b = Math.min(n - 1, e.i1 + 1);
+            const st = Math.max(1, Math.min(dec, b - a));
+            for (let i = a; i < b; i += st) {
+              const j = Math.min(b, i + st);
+              if (dashed && Math.floor((i * cmp.step) / 2) % 2) continue;
+              const p = [side(i, 1), side(i, -1), side(j, 1), side(j, -1)];
+              [0, 1, 2, 2, 1, 3].forEach((q) => H.push(p[q][0], p[q][1], p[q][2], 0, 1, 0, col, 0.85));
+            }
+          });
+        });
+        add('tris', H, { lit: false, blend: true, lift: 1.2 });
+      }
+
+      // ------------------------------------------------------------ gear posts
+      if (opt.gears !== false) {
+        const V = GL.Verts();
+        cmp.laps.forEach((L, k) => {
+          if (!show[k]) return;
+          const c = GL.rgb(L.color);
+          L.shifts.forEach((s) => {
+            const P = base[k], i = s.i;
+            V.push(P[i * 3], P[i * 3 + 1], P[i * 3 + 2], 0, 1, 0, c, 0.9);
+            V.push(P[i * 3], P[i * 3 + 1] + fenceH * 1.25, P[i * 3 + 2], 0, 1, 0, c, 0.9);
+          });
+        });
+        add('lines', V, { lit: false, blend: true });
+      }
     }
 
-    return {
-      items, base, lateral, toGL, exag, size, fenceH, groundY, centre: cGL, centreLat: lat2, pad: size * 0.25,
+    const cache = new Map(); // layer key -> { items, meshes, fenceH }
+    const MAX_CACHED = 6;
+    const keyOf = (o) => JSON.stringify([o.paint, o.fence, o.fences, o.lean, o.absTint !== false, o.markers ? [...o.markers].sort() : [], o.gears !== false, o.fenceH || 0, !!o.closeUp]);
+    const S = {
+      items, layerItems: [], base, lateral, toGL, exag, size, fenceH: autoFenceH, groundY, centre: cGL, centreLat: lat2, pad: size * 0.25,
+      /** Show these layers (scene opt fields: paint, fence, fences, lean, absTint, markers, gears, fenceH, closeUp). */
+      setLayers(o) {
+        const key = keyOf(o);
+        let L = cache.get(key);
+        if (L) cache.delete(key); // re-insert: most recent last
+        else {
+          L = { items: [], meshes: [], fenceH: o.fenceH || autoFenceH };
+          sink = L;
+          buildLayers(o);
+          sink = { items, meshes };
+          while (cache.size >= MAX_CACHED) {
+            const [k0, old] = cache.entries().next().value;
+            old.meshes.forEach((m) => R.free(m));
+            cache.delete(k0);
+          }
+        }
+        cache.set(key, L);
+        S.layerItems = L.items;
+        S.fenceH = L.fenceH;
+        return S;
+      },
       /** Keep a mesh or texture made elsewhere (the map layer) until dispose. */
       adopt(m, tex) {
         if (m) meshes.push(m);
@@ -268,6 +367,8 @@
       },
       disposed: false,
       dispose() {
+        cache.forEach((L) => L.meshes.forEach((m) => R.free(m)));
+        cache.clear();
         meshes.forEach((m) => R.free(m));
         textures.forEach((t) => R.freeTexture(t));
         meshes.length = 0;
@@ -275,6 +376,7 @@
         this.disposed = true;
       },
     };
+    return S.setLayers(opt);
   }
 
   IST.Review.Scene = { build, car };

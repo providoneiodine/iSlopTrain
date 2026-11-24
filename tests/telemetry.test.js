@@ -43,6 +43,10 @@ function writeIbt(rate) {
     ['SessionTime', 5, 's', (p) => p.t], ['Lap', 2, '', (p) => p.lap], ['LapDist', 4, 'm', (p) => p.s], ['LapDistPct', 4, '%', (p) => p.s / L],
     ['Speed', 4, 'm/s', (p) => p.v], ['Throttle', 4, '%', (p) => p.thr], ['Brake', 4, '%', (p) => p.brk], ['Gear', 2, '', (p) => p.gear],
     ['Lat', 5, 'deg', (p) => lat0 + (R * Math.sin(p.a)) / ky], ['Lon', 5, 'deg', (p) => lon0 + (R * Math.cos(p.a)) / kx], ['Alt', 4, 'm', () => 100],
+    // ABS keeps 70 % of the force; tyre columns run car-left to car-right on every tyre
+    ['BrakeABSactive', 2, '', () => 1], ['BrakeABScutPct', 4, '%', () => 0.7],
+    ['LFtempL', 4, 'C', () => 80], ['LFtempM', 4, 'C', () => 85], ['LFtempR', 4, 'C', () => 90],
+    ['RFtempL', 4, 'C', () => 81], ['RFtempM', 4, 'C', () => 86], ['RFtempR', 4, 'C', () => 91],
   ];
   const SIZE = [1, 1, 4, 4, 4, 8];
   let off = 0;
@@ -52,7 +56,7 @@ function writeIbt(rate) {
     return v;
   });
   const bufLen = off;
-  const yaml = '---\nWeekendInfo:\n TrackDisplayName: Test Circle\n TrackLength: ' + (L / 1000).toFixed(4) + ' km\nDriverInfo:\n DriverCarIdx: 0\n Drivers:\n - CarIdx: 0\n   UserName: Test Driver\n   CarScreenName: Test Car\n...\n';
+  const yaml = '---\nWeekendInfo:\n TrackDisplayName: Test Circle\n TrackLength: ' + (L / 1000).toFixed(4) + ' km\nDriverInfo:\n DriverCarIdx: 1\n Drivers:\n - CarIdx: 0\n   UserName: Someone Else\n   CarScreenName: Other Car\n - CarIdx: 1\n   UserName: Test Driver\n   CarScreenName: Test Car\n...\n'; // a multi-car session: the player's car isn't listed first
   const varOff = 144, infoOff = varOff + vars.length * 144, dataOff = infoOff + yaml.length;
   const buf = new ArrayBuffer(dataOff + bufLen * S.length);
   const dv = new DataView(buf), u8 = new Uint8Array(buf);
@@ -189,12 +193,20 @@ test('iRacing .ibt: laps, times, units and the GPS line come out as recorded', (
   const T = load().Telemetry.lib();
   const r = T.process('session.ibt', writeIbt(60));
   assert.equal(r.meta.track, 'Test Circle');
-  assert.equal(r.meta.car, 'Test Car');
+  assert.equal(r.meta.car, 'Test Car', 'the player’s own car, not the first car listed');
   assert.equal(r.meta.driver, 'Test Driver');
   assert.equal(r.posSource, 'gps');
   const full = checkLaps(r, 'ibt', 0.005);
   const [lo, hi] = radius(full[0]);
   assert.ok(lo > R - 1 && hi < R + 1, 'GPS turned into a ' + R + ' m circle (got ' + lo.toFixed(1) + '-' + hi.toFixed(1) + ')');
+  const l = full[0], mid = l.n >> 1;
+  assert.ok(Math.abs(l.absCut[mid] - 0.3) < 1e-6, 'ABS cut is the share of force removed (1 - kept)');
+  assert.equal(l.absActive[mid], 1);
+  assert.equal(l.tLF_o[mid], 80, 'left tyre: the left column is the outer edge');
+  assert.equal(l.tLF_i[mid], 90, 'left tyre: the right column is the inner edge');
+  assert.equal(l.tRF_i[mid], 81, 'right tyre: the left column is the inner edge');
+  assert.equal(l.tRF_o[mid], 91, 'right tyre: the right column is the outer edge');
+  assert.ok(Math.abs(l.tLF[mid] - 85) < 1e-6, 'tyre mean of inner, middle and outer');
 });
 
 test('MoTeC .ld + .ldx: mixed channel rates, unit conversion, laps from the beacons', () => {

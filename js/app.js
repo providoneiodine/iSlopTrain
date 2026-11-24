@@ -584,5 +584,5 @@
   renderMenu();
   show('screen-menu');
 
-  IST.App = { startDrill, startSession, showResults, renderMenu, show, exitToMenu };
+  IST.App = { startDrill, startSession, showResults, renderMenu, show, exitToMenu, openModal, closeModal };
 })();

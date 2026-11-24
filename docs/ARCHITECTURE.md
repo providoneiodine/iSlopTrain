@@ -97,18 +97,20 @@ A telemetry viewer, kept apart from the drills. Nothing outside the folder depen
 
 | Path | Role |
 |---|---|
-| `telemetry/common.js` | `IST.Telemetry`: the factory registry, channel aliases, unit conversion, the common session record |
+| `telemetry/common.js` | `IST.Telemetry`: the factory registry, channel aliases, unit conversion, the common session record, `T.LAP_CHANNELS` (every channel a lap carries) and `T.STEP_CHANNELS` (resampled by nearest, never blended) |
 | `telemetry/ibt.js`, `motec.js`, `csv.js` | one parser per format, each producing that session record |
+| `telemetry/derive.js` | handling channels worked out at the native rate before laps are cut: balance (understeer angle, steering gain fitted per stint), sideslip and its excess, wheel slip, grip used, coasting, entry/mid/exit phase; `T.events(lap)` turns them into per-lap events (understeer, oversteer, lockups, ABS, kerbs...) |
 | `telemetry/laps.js` | positions (world, GPS, or dead-reckoned), lap boundaries, resampling every metre; `T.process(name, buf)` is the whole pipeline for one file |
 | `telemetry/loader.js` | `IST.Telemetry.load(files)`: runs the pipeline in a Web Worker |
 | `track.js` | map geometry, no network: the true centreline under a lap from OSM raceway lines, and the rigid fit that places non-GPS laps on them |
 | `mapdata.js` | the only network code, behind the Map option: OSM raceways (Overpass), track-name lookup (Nominatim), Esri imagery tiles; raceways cached in localStorage |
-| `compare.js` | lines laps up on the reference's distance grid; delta, gear shifts, track centre (map or laps), each lap's offset from it, corners and complexes (for the apex cameras) |
+| `compare.js` | lines laps up on the reference's distance grid; delta, time gain rate, events, gear shifts, track centre (map or laps), each lap's offset from it, corners and complexes (for the apex cameras) |
 | `demo.js` | a generated session as CSV text, for trying the viewer |
-| `gl/` | the WebGL layer: `math.js` (matrices), `renderer.js` (a flat-colour and a textured shader, buffers, draw list), `camera.js` (orbit, and easing toward a follow rig), `rigs.js` (where each follow camera wants to be: chase, top, side, apex, complex), `scene.js` (track, lines, fences, gear posts from a comparison; the car marker), `maplayer.js` (satellite tiles draped on a terrain built from the track's heights) |
-| `traces.js` | the 2D trace strip under the 3D view |
-| `overlay.js` | the 2D labels over the 3D view: car chips with the gap, cursor posts, lap tags, gear numbers; labels fade rather than pop |
-| `page.js` | `IST.Review.open()`: the page, lap list, cursor readout, and the glue between them |
+| `layers.js` | what the 3D view can draw on the laps: line-colour maps, fence choices, the marker catalogue and event labels |
+| `gl/` | the WebGL layer: `math.js` (matrices), `renderer.js` (a flat-colour and a textured shader, buffers, draw list), `camera.js` (orbit, and easing toward a follow rig), `rigs.js` (where each follow camera wants to be: chase, top, side, apex, complex), `scene.js` (track, lines (painted by a channel or in lap colour), fences, event halos, gear posts from a comparison; the car marker), `maplayer.js` (satellite tiles draped on a terrain built from the track's heights) |
+| `traces.js` | the 2D trace strip under the 3D view: a lane registry (catalogue order, per-tyre picks, ABS / coasting / balance shading) |
+| `overlay.js` | the 2D labels over the 3D view: car chips with the gap, cursor posts, event pips and chips, lap tags, gear numbers; labels fade rather than pop |
+| `page.js` | `IST.Review.open()`: the page, lap list, lanes box, Layers drawer, cursor readout, and the glue between them |
 
 **Telemetry files are factories.** Each file in `telemetry/` (except `loader.js`) registers `function (T) { … }` with `IST.Telemetry.def`, and may use nothing outside its own body: `loader.js` stringifies them into a Blob Worker so a 100 MB `.ibt` parses off the main thread and it still works from `file://`. The tests run the same source in a bare sandbox to keep that true. To add a format, add a factory that sets `T.formats.<name> = { label, exts, sniff, parse }` returning `T.session(...)`, and a `<script>` before `laps.js`.
 

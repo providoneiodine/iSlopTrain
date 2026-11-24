@@ -7,7 +7,8 @@
  *   IST.Review.Demo.csv(seed) -> CSV text
  *
  * The laps differ on purpose: lap 2 brakes early and soft for one corner,
- * lap 3 carries less speed through another. The physics is a simple
+ * lap 3 carries less speed through another. Every lap understeers at the
+ * limit; lap 2 also steps out on corner exits and locks a front wheel. The physics is a simple
  * point-mass speed profile (grip, braking and power limits), not LineLab's
  * solver: it's for showing the viewer, not for judging a line.
  */
@@ -124,7 +125,11 @@
     ];
     const UP = [0, 23, 33, 42, 51, 60, 69, 999];
     const rows = ['"Format","Generated demo CSV"', '"Venue","Demo Circuit"', '"Vehicle","GT demo car"', '"Driver","You"', '',
-      'Time [s],Lap,Lap Distance [m],Speed [km/h],Throttle [%],Brake [%],Steering [deg],Gear,RPM,Pos X [m],Pos Y [m],Pos Z [m]'];
+      'Time [s],Lap,Lap Distance [m],Speed [km/h],Throttle [%],Brake [%],Steering [deg],Gear,RPM,Pos X [m],Pos Y [m],Pos Z [m],' +
+      'Yaw Rate [deg/s],Lat Accel [m/s^2],Long Accel [m/s^2],Velocity X [m/s],Velocity Y [m/s],ABS Active,' +
+      'Wheel Speed FL [m/s],Wheel Speed FR [m/s],Wheel Speed RL [m/s],Wheel Speed RR [m/s],' +
+      'Tyre Temp FL [C],Tyre Temp FR [C],Tyre Temp RL [C],Tyre Temp RR [C],Tyre Press FL [kPa],Tyre Press FR [kPa],Tyre Press RL [kPa],Tyre Press RR [kPa]'];
+    const AYMAX = 16.5, tyre = { FL: 70, FR: 70, RL: 68, RR: 68 };
     const dt = 1 / 60;
     let t = 0, s = n * 0.55, li = 0, gear = 2, blip = 0;
     const pedal = { thr: 0.5, brk: 0 };
@@ -166,9 +171,24 @@
         blip -= dt;
       }
       const rpm = 3200 + U.clamp((sp - (UP[gear - 1] - 4)) / (UP[gear] - UP[gear - 1] + 4), 0, 1.05) * 5400;
-      const steer = (Math.atan(2.7 * C.kappa[i]) * 14 * 180) / Math.PI;
+      // handling: kinematic steer (14:1, 2.7 m) plus extra lock at the limit (understeer);
+      // lap 2 steps out on corner exits (oversteer: less lock, more sideslip)
+      const k = C.kappa[i], dir = k >= 0 ? 1 : -1, ay = sp * sp * k, band = Math.abs(ay) / AYMAX;
+      const loose = li === 2 && thr > 0.5 && band > 0.45;
+      const extra = loose ? -9 * Math.min(1, (band - 0.45) / 0.3) : 18 * Math.max(0, band - 0.62) / 0.38;
+      const steer = (Math.atan(2.7 * k) * 14 * 180) / Math.PI + extra * dir;
+      const beta = -dir * (0.3 + 2 * band * band + (loose ? 3 * Math.min(1, (band - 0.45) / 0.3) : 0)) * (Math.PI / 180);
       const p = pos(s);
-      rows.push([t.toFixed(4), L.lap, (s % n).toFixed(2), (sp * 3.6).toFixed(2), (thr * 100).toFixed(1), (brk * 100).toFixed(1), steer.toFixed(2), gear, Math.round(rpm), p[0].toFixed(2), p[1].toFixed(2), p[2].toFixed(2)].join(','));
+      const abs = brk > 0.8 && acc < -12;
+      const lock = li === 2 && brk > 0.72 && !abs;
+      const ws = [sp * (1 - 0.04 * brk - (lock ? 0.2 : 0)), sp * (1 - 0.04 * brk), sp * (1 + 0.03 * thr), sp * (1 + 0.03 * thr)];
+      // tyre surface temps: outside tyres heat in corners, fronts under braking, rears on power
+      const load = { FL: Math.max(0, -ay) / AYMAX + brk * 0.6, FR: Math.max(0, ay) / AYMAX + brk * 0.6, RL: Math.max(0, -ay) / AYMAX * 0.8 + thr * 0.25, RR: Math.max(0, ay) / AYMAX * 0.8 + thr * 0.25 };
+      for (const w in tyre) tyre[w] += (6 * load[w] - 0.08 * (tyre[w] - 58)) * dt;
+      const W4 = ['FL', 'FR', 'RL', 'RR'];
+      rows.push([t.toFixed(4), L.lap, (s % n).toFixed(2), (sp * 3.6).toFixed(2), (thr * 100).toFixed(1), (brk * 100).toFixed(1), steer.toFixed(2), gear, Math.round(rpm), p[0].toFixed(2), p[1].toFixed(2), p[2].toFixed(2),
+        ((sp * k * 180) / Math.PI).toFixed(3), ay.toFixed(3), U.clamp(acc, -15, 9).toFixed(3), (sp * Math.cos(beta)).toFixed(3), (sp * Math.sin(beta)).toFixed(3), abs ? 'true' : 'false']
+        .concat(ws.map((x) => x.toFixed(3)), W4.map((w) => tyre[w].toFixed(1)), W4.map((w) => (172 + 0.3 * (tyre[w] - 70)).toFixed(1))).join(','));
       t += dt;
       s += sp * dt;
       if (s >= n) {

@@ -18,12 +18,12 @@
  * A lap record (Float32Array channels, all n long, index i at i * step metres):
  *   { lapNo, kind: 'full' | 'out' | 'in' | 'partial', pit, time (s), len (m), step, n,
  *     t (s from the line), x, y, z (m, z up), speed (m/s), throttle, brake (0..1),
- *     steer (rad), gear, rpm }  missing channels are null.
+ *     steer (rad), gear, rpm, ... every channel in T.LAP_CHANNELS (common.js), derived ones
+ *     included; events: T.events (derive.js) }  missing channels are null.
  */
 (function () {
   'use strict';
   IST.Telemetry.def('laps', function (T) {
-    const OUT = ['t', 'x', 'y', 'z', 'speed', 'throttle', 'brake', 'steer', 'gear', 'rpm'];
     const R_EARTH = 6371008.8;
 
     const median = (a) => {
@@ -160,6 +160,11 @@
       if (P.source === 'none') warnings.push('No position, heading or lateral-g channel: the 3D line can’t be drawn for this file.');
       if (P.source === 'reckoned') warnings.push('No world position in this file: the line is rebuilt from speed and heading, so it may drift.');
 
+      // derived channels at the native rate (they need time for rates and lags), cut like the rest
+      const D = T.derive ? T.derive(S, t) : { ch: {}, calib: null };
+      Object.assign(C, D.ch);
+      if (D.calib) D.calib.notes.forEach((w) => warnings.push(w));
+
       // track length: from the file, or the lap distance channel, or the laps themselves
       let L = S.meta.trackLen || 0;
       if (!L && C.lapDist && !monotonic(C.lapDist)) {
@@ -205,10 +210,11 @@
           lap.pit = pit;
         }
         if (kind === 'full' && P.source === 'reckoned') closeLoop(lap);
+        lap.events = T.events ? T.events(lap) : [];
         laps.push(lap);
       });
       if (B.how === 'none' && laps.length === 1 && laps[0].kind !== 'full') warnings.push('No lap markers found: showing the whole run as one segment.');
-      return { laps, posSource: P.source, origin: P.origin || null, trackLen: refLen, warnings, split: B.how };
+      return { laps, posSource: P.source, origin: P.origin || null, trackLen: refLen, warnings, split: B.how, calib: D.calib };
     };
 
     /** Resample one segment [s.a, s.b] (fractional sample indices) every `step` metres. */
@@ -217,7 +223,9 @@
       const d0 = lerpAt(cum, s.a), len = lerpAt(cum, s.b) - d0;
       if (!(len > step * 10)) return null;
       const m = Math.floor(len / step) + 1;
-      const src = { t, x: P.x, y: P.y, z: P.z, speed: v, throttle: C.throttle, brake: C.brake, steer: C.steer, gear: C.gear, rpm: C.rpm };
+      const OUT = T.LAP_CHANNELS, STEP = {};
+      T.STEP_CHANNELS.forEach((k) => (STEP[k] = true));
+      const src = Object.assign({}, C, { t, x: P.x, y: P.y, z: P.z, speed: v });
       const out = {};
       OUT.forEach((k) => (out[k] = src[k] ? new Float32Array(m) : null));
       const t0 = lerpAt(t, s.a);
@@ -231,7 +239,7 @@
         for (const k of OUT) {
           const a = src[k];
           if (!a) continue;
-          out[k][i] = k === 'gear' ? (f < 0.5 ? a[j] : a[j + 1]) : a[j] + (a[j + 1] - a[j]) * f;
+          out[k][i] = STEP[k] ? (f < 0.5 ? a[j] : a[j + 1]) : a[j] + (a[j + 1] - a[j]) * f;
         }
         out.t[i] -= t0;
       }
@@ -259,7 +267,7 @@
       const S = F.parse(buf, name, { sidecar: opt.sidecar, progress: (p) => prog(0.1 + 0.7 * p, 'Reading ' + F.label) });
       prog(0.85, 'Cutting laps');
       const R = T.laps(S, { step: opt.step });
-      return { name, format: F.label, meta: S.meta, rate: S.rate, laps: R.laps, posSource: R.posSource, origin: R.origin, trackLen: R.trackLen, split: R.split, warnings: R.warnings, channels: Object.keys(S.ch) };
+      return { name, format: F.label, meta: S.meta, rate: S.rate, laps: R.laps, posSource: R.posSource, origin: R.origin, trackLen: R.trackLen, split: R.split, warnings: R.warnings, channels: Object.keys(S.ch), calib: R.calib };
     };
   });
 })();

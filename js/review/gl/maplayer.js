@@ -102,7 +102,18 @@
     };
   }
 
-  function build(R, S, cmp, geo, onChange) {
+  // Tile work per frame, so the view keeps drawing while the ground fills in. Script time
+  // alone isn't the limit: a tile's mesh is ~30 KB of vertices, cheap to hand over but not
+  // to upload, and hundreds in one frame stall the page on the GPU. So: a time budget and
+  // a tile count, whichever comes first.
+  const BUDGET = 6, PER_FRAME = 40;
+
+  /**
+   * opt.texCache: a Map ('z/x/y' -> texture) that outlives the scene (the page keeps one per
+   * GL context), so a rebuild re-drapes tiles it already has without fetching or uploading them.
+   */
+  function build(R, S, cmp, geo, onChange, opt) {
+    const texCache = opt && opt.texCache;
     const ce = cmp.centre, n = cmp.n, B = cmp.bounds, pad = S.pad;
     const height = terrain(S, cmp, S.exag || 1);
     // the ground's corners in lat / lon
@@ -176,16 +187,45 @@
     // lift: further layers are pushed back further, so finer always wins
     const LIFT = [-4, -2, -1];
     let pending = 0, failed = 0, total = 0;
+    // tiles that have arrived wait here and are draped a few at a time each frame
+    const queue = [];
+    let pumping = false;
+    const place = (t, img) => {
+      const key = t.z + '/' + t.x + '/' + t.y;
+      let tex = texCache && texCache.get(key);
+      if (!tex) {
+        tex = R.texture(img);
+        if (texCache) texCache.set(key, tex);
+        else S.adopt(null, tex);
+      }
+      const mesh = R.texMesh('tris', patch(t));
+      S.adopt(mesh);
+      S.items.push({ mesh, tex, tint: TINT, lift: LIFT[t.layer || 0], coarse: !t.layer });
+    };
+    const pump = () => {
+      if (S.disposed) return (queue.length = 0), (pumping = false);
+      const t0 = performance.now();
+      let placed = 0;
+      while (queue.length && placed < PER_FRAME && (performance.now() - t0 < BUDGET || !placed)) {
+        const [t, img] = queue.shift();
+        place(t, img);
+        placed++;
+      }
+      onChange();
+      if (queue.length) requestAnimationFrame(pump);
+      else pumping = false;
+    };
+    const arrive = (t, img) => {
+      if (S.disposed) return;
+      queue.push([t, img]);
+      if (!pumping) (pumping = true), requestAnimationFrame(pump);
+    };
     const load = (list) => list.forEach((t) => {
+      // already uploaded for an earlier scene: no fetch, no decode, no upload
+      if (texCache && texCache.has(t.z + '/' + t.x + '/' + t.y)) return arrive(t, null);
       pending++;
       total++;
-      IST.Review.MapData.tile(t.z, t.x, t.y).then((img) => {
-        if (S.disposed) return;
-        const tex = R.texture(img), mesh = R.texMesh('tris', patch(t));
-        S.adopt(mesh, tex);
-        S.items.push({ mesh, tex, tint: TINT, lift: LIFT[t.layer || 0], coarse: !t.layer });
-        onChange();
-      }, () => failed++).finally(() => {
+      IST.Review.MapData.tile(t.z, t.x, t.y).then((img) => arrive(t, img), () => failed++).finally(() => {
         if (--pending === 0 && failed === total && !S.disposed) onChange(new Error('no imagery'));
       });
     });

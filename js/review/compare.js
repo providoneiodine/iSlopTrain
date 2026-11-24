@@ -13,7 +13,8 @@
  *
  * Comparison:
  *   { n, step, len, laps: [{ lap, color, t, x, y, z, speed, throttle, brake,
- *     steer, gear, delta, off, shifts: [{ i, from, to }] }],
+ *     steer, gear, ... (every T.LAP_CHANNELS channel), delta, gain (s / 100 m), off,
+ *     events (derive.js, on this grid), shifts: [{ i, from, to }] }],
  *     centre: { x, y, z, w (half width), source }, bounds: { x0, x1, y0, y1, z0, z1 },
  *     corners, complexes (findCorners, below) }
  * laps[0] is the reference.
@@ -29,7 +30,8 @@
 (function () {
   'use strict';
   IST.Review = IST.Review || {};
-  const KEYS = ['t', 'x', 'y', 'z', 'speed', 'throttle', 'brake', 'steer', 'gear', 'rpm'];
+  const TL = IST.Telemetry.lib();
+  const KEYS = TL.LAP_CHANNELS, STEP = new Set(TL.STEP_CHANNELS);
 
   function sampleOn(lap, n) {
     const out = {};
@@ -42,13 +44,23 @@
         const f = (i / (n - 1)) * last;
         const j = Math.min(last - 1, Math.floor(f));
         const r = f - j;
-        o[i] = k === 'gear' ? (r < 0.5 ? a[j] : a[j + 1]) : a[j] + (a[j + 1] - a[j]) * r;
+        o[i] = STEP.has(k) ? (r < 0.5 ? a[j] : a[j + 1]) : a[j] + (a[j + 1] - a[j]) * r;
       }
       out[k] = o;
     });
     // the end of the lap is the lap time, exactly
     out.t[n - 1] = lap.time;
     return out;
+  }
+
+  // the map centre under a reference lap only changes with the lap or the map: keep it
+  const centres = new WeakMap(); // ref lap -> { lines, step, c }
+  function centreFor(ref, lines, step) {
+    const hit = centres.get(ref);
+    if (hit && hit.lines === lines && hit.step === step) return hit.c;
+    const c = IST.Review.Track.centreOn(ref.x, ref.y, lines, step);
+    centres.set(ref, { lines, step, c });
+    return c;
   }
 
   function build(ref, laps, colors, track) {
@@ -62,11 +74,24 @@
       }
       s.lap = lap;
       s.color = colors ? colors[i % colors.length] : null;
+      // events onto the reference grid, by the same fraction-of-lap mapping
+      const f = lap === ref ? 1 : (n - 1) / Math.max(1, lap.n - 1);
+      const at = (j) => Math.max(0, Math.min(n - 1, Math.round(j * f)));
+      s.events = (lap.events || []).map((e) => Object.assign({}, e, { i0: at(e.i0), i1: at(e.i1), iPeak: at(e.iPeak) }));
       return s;
     });
     out.forEach((s) => {
       s.delta = new Float32Array(n);
       for (let i = 0; i < n; i++) s.delta[i] = s.t[i] - out[0].t[i];
+      // time gained (-) or lost (+) on the reference, s per 100 m, smoothed over ~20 m
+      s.gain = new Float32Array(n);
+      if (s !== out[0]) {
+        const w = Math.max(1, Math.round(10 / step));
+        for (let i = 0; i < n; i++) {
+          const a = Math.max(0, i - w), b = Math.min(n - 1, i + w);
+          s.gain[i] = b > a ? ((s.delta[b] - s.delta[a]) / ((b - a) * step)) * 100 : 0;
+        }
+      }
       s.shifts = [];
       if (s.gear) {
         for (let i = 1; i < n; i++) {
@@ -84,7 +109,7 @@
       cy[i] = sy / out.length;
       cz[i] = sz / out.length;
     }
-    const onMap = track && track.lines && track.lines.length ? IST.Review.Track.centreOn(out[0].x, out[0].y, track.lines, step) : null;
+    const onMap = track && track.lines && track.lines.length ? centreFor(ref, track.lines, step) : null;
     if (onMap) {
       cx.set(onMap.x);
       cy.set(onMap.y);

@@ -23,12 +23,26 @@
       t: 'SessionTime', lap: 'Lap', lapDist: 'LapDist', lapPct: 'LapDistPct', speed: 'Speed',
       throttle: 'Throttle', brake: 'Brake', steer: 'SteeringWheelAngle', gear: 'Gear', rpm: 'RPM',
       lat: 'Lat', lon: 'Lon', alt: 'Alt', yaw: 'YawNorth', yawRate: 'YawRate', latG: 'LatAccel', onPit: 'OnPitRoad',
+      vx: 'VelocityX', vy: 'VelocityY', longG: 'LongAccel', vertG: 'VertAccel', roll: 'Roll', pitch: 'Pitch',
+      absActive: 'BrakeABSactive', absCut: 'BrakeABScutPct', bpF: 'LFbrakeLinePress', bpR: 'LRbrakeLinePress',
+      wsLF: 'LFspeed', wsRF: 'RFspeed', wsLR: 'LRspeed', wsRR: 'RRspeed',
+      pLF: 'LFpressure', pRF: 'RFpressure', pLR: 'LRpressure', pRR: 'RRpressure',
+      steerTq: 'SteeringWheelTorque', surface: 'PlayerTrackSurface', material: 'PlayerTrackSurfaceMaterial',
+      bb: 'dcBrakeBias', absSet: 'dcABS', tcSet: 'dcTractionControl',
+      rhLF: 'LFrideHeight', rhRF: 'RFrideHeight', rhLR: 'LRrideHeight', rhRR: 'RRrideHeight',
     };
+    // Surface temps, columns car-left to car-right on every tyre (the session YAML says
+    // LastTempsOMI for left tyres, IMO for right): left tyres L = outer, right tyres L = inner.
+    ['LF', 'LR'].forEach((w) => Object.assign(WANT, { ['t' + w + '_o']: w + 'tempL', ['t' + w + '_m']: w + 'tempM', ['t' + w + '_i']: w + 'tempR' }));
+    ['RF', 'RR'].forEach((w) => Object.assign(WANT, { ['t' + w + '_i']: w + 'tempL', ['t' + w + '_m']: w + 'tempM', ['t' + w + '_o']: w + 'tempR' }));
     const FALLBACK = { yaw: 'Yaw' };
 
+    /** A YAML value; an empty one ("TrackConfigName: ") stays empty instead of taking the next line. */
     function yaml(info, re) {
       const m = info.match(re);
-      return m ? m[1].trim() : '';
+      if (!m) return '';
+      const lead = m[0].slice(0, m[0].indexOf(m[1]));
+      return /\n/.test(lead) ? '' : m[1].trim();
     }
 
     T.formats.ibt = {
@@ -55,16 +69,26 @@
         const meta = {
           track: yaml(info, /TrackDisplayName:\s*(.+)/) || yaml(info, /TrackName:\s*(.+)/),
           config: yaml(info, /TrackConfigName:\s*(.+)/),
-          car: yaml(info, /CarScreenName:\s*(.+)/),
+          car: '',
           driver: '',
           trackLen: (parseFloat(yaml(info, /TrackLength:\s*([\d.]+)\s*km/)) || 0) * 1000 || 0,
           date: Number(dv.getBigInt64 ? dv.getBigInt64(112, true) : 0) * 1000 || 0,
         };
+        // the player's own entry under Drivers: (the first CarScreenName is often someone else's
+        // car in a multi-car session; anchor on "- CarIdx:" so DriverCarIdx doesn't match)
         const me = yaml(info, /DriverCarIdx:\s*(\d+)/);
+        let own = '';
         if (me) {
-          const m = info.match(new RegExp('CarIdx:\\s*' + me + '\\s*\\n\\s*UserName:\\s*(.+)'));
-          if (m) meta.driver = m[1].trim();
+          const at = info.search(new RegExp('-\\s*CarIdx:\\s*' + me + '\\s*\\n'));
+          if (at >= 0) {
+            const rest = info.slice(at + 1);
+            const next = rest.search(/\n\s*-\s*CarIdx:|\n\S/);
+            own = next >= 0 ? rest.slice(0, next) : rest;
+          }
         }
+        meta.driver = yaml(own, /UserName:\s*(.+)/);
+        meta.car = yaml(own, /CarScreenName:\s*(.+)/) || yaml(info, /CarScreenName:\s*(.+)/);
+        meta.carPath = yaml(own, /CarPath:\s*(.+)/) || yaml(info, /CarPath:\s*(.+)/);
         if (meta.config && meta.track && meta.config !== meta.track) meta.track += ' · ' + meta.config;
 
         const ch = {}, units = {};
@@ -81,7 +105,16 @@
           units[key] = v.unit;
         }
         if (!ch.speed) throw new Error('No Speed channel in this .ibt');
-        if (ch.latG) T.toSI('latG', 'm/s^2', ch.latG);
+        // BrakeABScutPct reads as the share of brake force kept (1 with ABS idle): store the share removed
+        if (ch.absCut) for (let i = 0; i < n; i++) ch.absCut[i] = Math.max(0, Math.min(1, 1 - ch.absCut[i]));
+        // ride height: front and rear axle means, then drop the corners
+        const pair = (a, b) => (ch[a] && ch[b] ? ch[a].map((v, i) => (v + ch[b][i]) / 2) : null);
+        const rhF = pair('rhLF', 'rhRF'), rhR = pair('rhLR', 'rhRR');
+        ['rhLF', 'rhRF', 'rhLR', 'rhRR'].forEach((k) => delete ch[k]);
+        if (rhF) ch.rhF = rhF;
+        if (rhR) ch.rhR = rhR;
+        // a car without ABS logs zeros: no ABS channels at all, so its lanes read "Not in this file"
+        if (ch.absActive && !ch.absActive.some((v) => v > 0)) delete ch.absActive, delete ch.absCut;
         return T.session({ format: 'ibt', name, meta, n, rate: i32(8) || 60, ch, units });
       },
     };

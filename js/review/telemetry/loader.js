@@ -26,7 +26,7 @@
       try {
         const r = T.process(m.file.name, buf, { sidecar: m.sidecar, progress: (p, label) => post({ progress: p, label }) });
         const tr = [];
-        r.laps.forEach((l) => ['t', 'x', 'y', 'z', 'speed', 'throttle', 'brake', 'steer', 'gear', 'rpm'].forEach((k) => l[k] && tr.push(l[k].buffer)));
+        r.laps.forEach((l) => T.LAP_CHANNELS.forEach((k) => l[k] && tr.push(l[k].buffer)));
         post({ done: r }, tr);
       } catch (err) {
         post({ error: String((err && err.message) || err) });

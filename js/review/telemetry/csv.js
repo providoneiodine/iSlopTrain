@@ -34,7 +34,9 @@
         return out;
       };
     }
-    const isNumRow = (f) => f.length > 1 && f.filter((x) => x.trim() !== '' && isFinite(+x)).length >= f.length * 0.6;
+    // Garage 61 writes flags (ABSActive, DRSActive...) as true / false
+    const BOOL = { true: 1, false: 0 };
+    const isNumRow = (f) => f.length > 1 && f.filter((x) => x.trim() !== '' && (isFinite(+x) || /^(true|false)$/i.test(x.trim()))).length >= f.length * 0.6;
     const unitIn = (s) => {
       const m = String(s).match(/[[(]([^\])]+)[\])]/);
       return m ? m[1].trim() : '';
@@ -90,7 +92,7 @@
         if (f.length < 2) continue;
         for (let c = 0; c < keys.length; c++) {
           const s = f[idx[keys[c]]];
-          cols[c].push(s == null || s === '' ? NaN : +s);
+          cols[c].push(s == null || s === '' ? NaN : BOOL[s.trim().toLowerCase()] != null ? BOOL[s.trim().toLowerCase()] : +s);
         }
         if (opt && opt.progress && (r & 16383) === 0) opt.progress(r / lines.length);
       }
