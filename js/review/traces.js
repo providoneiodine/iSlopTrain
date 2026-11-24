@@ -118,8 +118,13 @@
   const AXIS = 22, PADL = 10, PADR = 10;
 
   function create(canvas, o) {
-    const g = canvas.getContext('2d');
-    let cmp = null, cursor = -1, v0 = 0, v1 = 1, W = 0, H = 0, panes = [];
+    // The lanes are drawn once into an offscreen layer; a cursor move only copies that
+    // layer back and paints the cursor over it. Redrawing every lane for every lap each
+    // metre of playback was most of the frame on long laps.
+    const out = canvas.getContext('2d');
+    const layer = document.createElement('canvas');
+    const g = layer.getContext('2d');
+    let cmp = null, cursor = -1, v0 = 0, v1 = 1, W = 0, H = 0, dpr = 1, panes = [], heads = [], axisY = 0;
     let cfg = Object.assign({}, DEFAULT, { on: new Set(DEFAULT.on) });
     const st = { drag: null };
     let cache = new WeakMap(); // lap -> Map(lane key -> [{ arr, dash }])
@@ -136,12 +141,17 @@
 
     function layout() {
       panes = cmp ? lanesFor(cmp, cfg) : [];
-      H = panes.reduce((s, p) => s + p.h, 0) + AXIS;
-      const dpr = Math.min(2, window.devicePixelRatio || 1);
-      W = canvas.clientWidth || 800;
-      canvas.style.height = H + 'px';
-      canvas.width = Math.round(W * dpr);
-      canvas.height = Math.round(H * dpr);
+      const h = panes.reduce((s, p) => s + p.h, 0) + AXIS;
+      const d = Math.min(2, window.devicePixelRatio || 1), w = canvas.clientWidth || 800;
+      // resizing a canvas reallocates and clears it: only when the size really changed
+      if (h !== H || w !== W || d !== dpr) {
+        H = h;
+        W = w;
+        dpr = d;
+        canvas.style.height = H + 'px';
+        canvas.width = layer.width = Math.round(W * dpr);
+        canvas.height = layer.height = Math.round(H * dpr);
+      }
       g.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
     const xOf = (i) => PADL + ((i - v0) / (v1 - v0)) * (W - PADL - PADR);
@@ -232,9 +242,9 @@
       g.stroke();
     }
 
-    function draw() {
-      if (!cmp) return;
-      layout();
+    /** Everything but the cursor, into the layer. */
+    function paint() {
+      heads = [];
       g.clearRect(0, 0, W, H);
       g.fillStyle = Th.deep;
       g.fillRect(0, 0, W, H);
@@ -306,19 +316,7 @@
         g.font = '500 10px ' + FONT;
         g.textAlign = 'right';
         g.fillText(p.fmt(hi), W - PADR - 2, y + 13);
-        if (cursor >= 0) {
-          g.font = '800 11.5px ' + FONT;
-          let x = W - PADR - 2 - g.measureText(p.fmt(hi)).width - 18;
-          for (let k = cmp.laps.length - 1; k >= 0; k--) {
-            const L = cmp.laps[k], s = seriesOf(p, L)[0];
-            if (!s) continue;
-            const v = s.arr[cursor];
-            const txt = p.key === 'delta' && k === 0 ? 'ref' : isFinite(v) ? p.fmt(v) : '–';
-            g.fillStyle = L.color;
-            g.fillText(txt, x, y + 13);
-            x -= g.measureText(txt).width + 12;
-          }
-        }
+        heads.push({ p, y, x: W - PADR - 2 - g.measureText(p.fmt(hi)).width - 18 });
         y += p.h;
       });
 
@@ -350,18 +348,48 @@
         g.fillText(Math.round(Math.abs(iOf(xb) - iOf(xa)) * cmp.step) + ' m', (xa + xb) / 2, y - 8);
       }
 
-      // cursor
-      if (cursor >= 0 && cursor >= v0 && cursor <= v1) {
+      axisY = y;
+    }
+
+    /** The layer, then the cursor and each lane's values at it. */
+    function compose() {
+      out.setTransform(1, 0, 0, 1, 0, 0);
+      out.clearRect(0, 0, canvas.width, canvas.height);
+      out.drawImage(layer, 0, 0);
+      if (cursor < 0) return;
+      out.setTransform(dpr, 0, 0, dpr, 0, 0);
+      out.font = '800 11.5px ' + FONT;
+      out.textAlign = 'right';
+      out.textBaseline = 'alphabetic';
+      heads.forEach(({ p, y, x }) => {
+        for (let k = cmp.laps.length - 1; k >= 0; k--) {
+          const L = cmp.laps[k], s = seriesOf(p, L)[0];
+          if (!s) continue;
+          const v = s.arr[cursor];
+          const txt = p.key === 'delta' && k === 0 ? 'ref' : isFinite(v) ? p.fmt(v) : '–';
+          out.fillStyle = L.color;
+          out.fillText(txt, x, y + 13);
+          x -= out.measureText(txt).width + 12;
+        }
+      });
+      if (cursor >= v0 && cursor <= v1) {
         const x = Math.round(xOf(cursor)) + 0.5;
-        g.strokeStyle = Th.text;
-        g.globalAlpha = 0.75;
-        g.lineWidth = 1;
-        g.beginPath();
-        g.moveTo(x, 0);
-        g.lineTo(x, y);
-        g.stroke();
-        g.globalAlpha = 1;
+        out.strokeStyle = Th.text;
+        out.globalAlpha = 0.75;
+        out.lineWidth = 1;
+        out.beginPath();
+        out.moveTo(x, 0);
+        out.lineTo(x, axisY);
+        out.stroke();
+        out.globalAlpha = 1;
       }
+    }
+
+    function draw() {
+      if (!cmp) return;
+      layout();
+      paint();
+      compose();
     }
 
     const local = (e) => {
@@ -478,13 +506,14 @@
       zoomed: () => !!cmp && (v0 > 0 || v1 < cmp.n - 1),
       setCursor(i) {
         cursor = i;
-        // keep the cursor in view while playing
-        if (cmp && i >= 0 && (i < v0 || i > v1)) {
+        if (!cmp) return;
+        // keep the cursor in view while playing (the lanes move: a full redraw)
+        if (i >= 0 && (i < v0 || i > v1)) {
           const w = v1 - v0;
           v0 = Math.max(0, Math.min(cmp.n - 1 - w, i - w * 0.1));
           v1 = v0 + w;
-        }
-        draw();
+          draw();
+        } else compose();
       },
       draw,
       destroy() {
