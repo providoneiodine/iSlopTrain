@@ -68,6 +68,19 @@ Controls: arrows / WASD to answer, Space / Enter to confirm, Esc to pause, **F**
 
 **Game feel:** every drill builds a chain with multiplier tiers, scores points (with bonuses for early snaps, short flashes and fast starts), plays rising tones and calls out new best chains and PB pace. The results screen grades each session S / A / B / C against your own history, with record badges, a score count-up and a short highlight on records. **Data → Game feel** sets Full, Silent or Off; "summary only" feedback keeps it hidden during a drill. Design rules: METHODOLOGY section 5c.
 
+## Review tab: 3D lap viewer (proof of concept)
+
+**Review → Lap Viewer** opens telemetry from a sim and draws the laps on a 3D track map. Files are read in the browser (in a Web Worker for big files); nothing is uploaded or saved.
+
+- **Formats:** iRacing `.ibt`, MoTeC `.ld` (drop the matching `.ldx` with it for lap markers), and CSV (MoTeC i2 export, Garage 61, SimHub and others; columns are matched by name and units converted). **Try a demo session** generates one if you have no file to hand.
+- **Laps:** split by lap number, lap distance or beacons, timed to the crossing, and lined up by distance. The fastest full lap is the reference; tick up to five laps to compare.
+- **3D view:** the track (the laps' average path) with elevation, each lap's line in its own colour and dash pattern with lap tags along it, throttle (green) and brake (red) drawn up from each line as fences topped with the lap's colour (all laps, one, or off), and a numbered post at every gear change. Optional steering lean and elevation scale.
+- **Cars and gaps:** a car for each lap where it was at the reference's time, so their spacing is the gap; each carries a chip with the delta to the reference and the gap in metres.
+- **Cameras (keys 1-6, C cycles):** Orbit; Chase; Top (straight down, travel direction up: track position against the reference); Side (inputs side-on); Apex (a trackside camera at the nearest apex, cutting corner to corner); Complex (high, past the last apex of a chicane or corner sequence). Play the lap at ½×-4×.
+- **Traces:** speed, delta to the reference, throttle, brake, steering and gear against distance, sharing one cursor with the 3D view and the readout.
+
+Not yet: per-corner mistake finding (brake points, minimum speed, coasting) and jump-to-corner. Track edges are estimated, since telemetry has none.
+
 ## Stats page
 
 **Stats** in the header (or **Full stats →** on any results screen) opens an aim-trainer-style dashboard:
@@ -112,6 +125,8 @@ js/drills/*.js        one file per small drill
 js/drills/*/          one folder per large drill (content, ui, replay, scene, screens, stats, drill)
 js/sessions.js        guided session playlists
 js/app.js             menu, settings, controls, data, results (all generated from definitions)
+js/review/            Review tab: telemetry import (telemetry/), lap comparison, trace strip, WebGL viewer (gl/), page
+css/review.css        Review tab styles
 tests/                `node --test`: model checks + every drill played headless (see tests/README.md)
 ```
 

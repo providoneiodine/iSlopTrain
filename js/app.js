@@ -7,7 +7,7 @@
   'use strict';
   const U = IST.util, h = U.h;
   const $ = (s) => document.querySelector(s);
-  const SCREENS = ['screen-menu', 'screen-drill', 'screen-results', 'screen-stats', 'screen-view'];
+  const SCREENS = ['screen-menu', 'screen-drill', 'screen-results', 'screen-stats', 'screen-view', 'screen-review'];
 
   function show(id) {
     SCREENS.forEach((s) => document.getElementById(s).classList.toggle('hidden', s !== id));
@@ -536,7 +536,7 @@
   });
 
   // ------------------------------------------------------------------- tabs
-  const TABS = { sessions: 'Sessions', vision: 'Vision', mind: 'Mind', reflex: 'Reflex' };
+  const TABS = { sessions: 'Sessions', vision: 'Vision', mind: 'Mind', reflex: 'Reflex', review: 'Review' };
   const tabBtns = Array.from(document.querySelectorAll('.tab'));
   function setTab(name, focus) {
     if (!TABS[name]) name = 'sessions';
@@ -548,7 +548,7 @@
       if (on && focus) b.focus();
     });
     Object.keys(TABS).forEach((t) => $('#panel-' + t).classList.toggle('hidden', t !== name));
-    $('#brand-sub').textContent = name === 'sessions' ? 'Guided Sessions' : TABS[name] + ' Trainer';
+    $('#brand-sub').textContent = name === 'sessions' ? 'Guided Sessions' : name === 'review' ? 'Lap Review' : TABS[name] + ' Trainer';
     document.title = 'iSlopTrain ' + TABS[name];
     history.replaceState(null, '', name === 'sessions' ? location.pathname + location.search : '#' + name);
   }
@@ -569,6 +569,17 @@
   $('#btn-controls').addEventListener('click', openControls);
   $('#btn-data').addEventListener('click', openData);
   $('#btn-view').addEventListener('click', () => IST.ViewSettings.open());
+  // Review tab: the 3D lap viewer lives in js/review/ (IST.Review)
+  $('#btn-review-open').addEventListener('click', () => IST.Review.open({ pick: true }));
+  $('#btn-review-demo').addEventListener('click', () => IST.Review.open({ demo: true }));
+  const rc = $('#review-card');
+  rc.addEventListener('dragover', (e) => (e.preventDefault(), rc.classList.add('rv-over')));
+  rc.addEventListener('dragleave', () => rc.classList.remove('rv-over'));
+  rc.addEventListener('drop', (e) => {
+    e.preventDefault();
+    rc.classList.remove('rv-over');
+    if (e.dataTransfer.files.length) IST.Review.open({ files: e.dataTransfer.files });
+  });
   $('#ver').textContent = IST.version;
   renderMenu();
   show('screen-menu');

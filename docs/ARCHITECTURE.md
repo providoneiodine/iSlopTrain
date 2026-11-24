@@ -19,6 +19,7 @@ A guide for whoever maintains this next. It covers how the pieces fit together; 
 | drills | `js/drills/` | one file per small drill, one folder per large one |
 | sessions | `js/sessions.js` | guided playlists: drill + setting overrides per step |
 | app / ui | `js/app.js`, `js/ui/` | menu, settings, controls, data, results; Stats page; charts; View screen |
+| review | `js/review/` | the Review tab's 3D lap viewer (below). Not a drill: it saves nothing and has no results |
 
 ### Shared components
 
@@ -89,6 +90,27 @@ Reach for these before writing a loop over `ctx.history` or a new counter:
 - `IST.Analysis.lastN(results)`: the "Last N sessions" subtitle.
 - `Sym.hud(g, text, x, align)`: the session readout in a top corner (time left, trial count, speed).
 - `IST.Theme.hit` / `.miss` / `.gold`: right, wrong, and records or selection. Don't type the hex.
+
+## The Review tab (`js/review/`)
+
+A telemetry viewer, kept apart from the drills. Nothing outside the folder depends on it except three lines in `app.js` (screen, tab, card buttons) and `css/review.css`.
+
+| Path | Role |
+|---|---|
+| `telemetry/common.js` | `IST.Telemetry`: the factory registry, channel aliases, unit conversion, the common session record |
+| `telemetry/ibt.js`, `motec.js`, `csv.js` | one parser per format, each producing that session record |
+| `telemetry/laps.js` | positions (world, GPS, or dead-reckoned), lap boundaries, resampling every metre; `T.process(name, buf)` is the whole pipeline for one file |
+| `telemetry/loader.js` | `IST.Telemetry.load(files)`: runs the pipeline in a Web Worker |
+| `compare.js` | lines laps up on the reference's distance grid; delta, gear shifts, track estimate, corners and complexes (for the apex cameras) |
+| `demo.js` | a generated session as CSV text, for trying the viewer |
+| `gl/` | the WebGL layer: `math.js` (matrices), `renderer.js` (one shader, buffers, draw list), `camera.js` (orbit, and easing toward a follow rig), `rigs.js` (where each follow camera wants to be: chase, top, side, apex, complex), `scene.js` (track, lines, fences, gear posts from a comparison; the car marker) |
+| `traces.js` | the 2D trace strip under the 3D view |
+| `overlay.js` | the 2D labels over the 3D view: car chips with the gap, cursor posts, lap tags, gear numbers; labels fade rather than pop |
+| `page.js` | `IST.Review.open()`: the page, lap list, cursor readout, and the glue between them |
+
+**Telemetry files are factories.** Each file in `telemetry/` (except `loader.js`) registers `function (T) { … }` with `IST.Telemetry.def`, and may use nothing outside its own body: `loader.js` stringifies them into a Blob Worker so a 100 MB `.ibt` parses off the main thread and it still works from `file://`. The tests run the same source in a bare sandbox to keep that true. To add a format, add a factory that sets `T.formats.<name> = { label, exts, sniff, parse }` returning `T.session(...)`, and a `<script>` before `laps.js`.
+
+**The cursor is an index on the reference lap's grid.** The stage, the traces and the readout all take it; `page.js` owns it. The 3D view also keeps a fractional copy (`cursorF`) so playback and the follow cameras move smoothly between metres; cars are placed by time (where each lap was when the reference reached the cursor), posts and the readout by distance.
 
 ## Conventions
 

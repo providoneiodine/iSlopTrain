@@ -9,6 +9,7 @@
   <link rel="apple-touch-icon" href="apple-touch-icon.png">
   <link rel="preload" href="fonts/allo/AlloVariable.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/review.css">
 </head>
 <body>
   <div id="screen-menu" class="screen page">
@@ -29,6 +30,7 @@
       <button class="tab" role="tab" id="tab-vision" data-tab="vision" aria-controls="panel-vision">Vision</button>
       <button class="tab" role="tab" id="tab-mind" data-tab="mind" aria-controls="panel-mind">Mind</button>
       <button class="tab" role="tab" id="tab-reflex" data-tab="reflex" aria-controls="panel-reflex">Reflex</button>
+      <button class="tab" role="tab" id="tab-review" data-tab="review" aria-controls="panel-review">Review</button>
     </div>
 
     <main class="menu-main tab-panel" id="panel-sessions" role="tabpanel" aria-labelledby="tab-sessions">
@@ -61,6 +63,23 @@
       </section>
     </main>
 
+    <main class="menu-main tab-panel hidden" id="panel-review" role="tabpanel" aria-labelledby="tab-review">
+      <section class="menu-section" aria-labelledby="h-review">
+        <h2 class="section-title" id="h-review">Telemetry</h2>
+        <div class="cards">
+          <article class="card rv-card" id="review-card">
+            <div class="card-head"><span class="tag">3D</span><h3>Lap Viewer</h3></div>
+            <p class="tagline">Your laps on a 3D track map, with brake and throttle drawn up from each line, a gear post at every shift, and the traces underneath. Compare up to five laps by distance.</p>
+            <p class="rv-formats">iRacing <b>.ibt</b> · MoTeC <b>.ld</b> (+ <b>.ldx</b>) · <b>.csv</b>. Read in this browser, nothing is uploaded.</p>
+            <div class="card-actions">
+              <button class="btn primary" id="btn-review-open">Open files</button>
+              <button class="btn ghost" id="btn-review-demo">Try a demo session</button>
+            </div>
+          </article>
+        </div>
+      </section>
+    </main>
+
     <footer class="foot">v<span id="ver"></span></footer>
   </div>
 
@@ -82,6 +101,8 @@
   <div id="screen-stats" class="screen page page-wide hidden"></div>
 
   <div id="screen-view" class="screen page page-wide hidden"></div>
+
+  <div id="screen-review" class="screen page page-review hidden"></div>
 
   <div id="modal" class="modal hidden" role="dialog" aria-modal="true">
     <div class="modal-panel">
@@ -139,5 +160,22 @@
   <script src="js/ui/charts.js"></script>
   <script src="js/ui/stats.js"></script>
   <script src="js/ui/view-settings.js"></script>
+  <!-- review: telemetry import (factories, also run in a Worker), comparison, WebGL viewer -->
+  <script src="js/review/telemetry/common.js"></script>
+  <script src="js/review/telemetry/ibt.js"></script>
+  <script src="js/review/telemetry/motec.js"></script>
+  <script src="js/review/telemetry/csv.js"></script>
+  <script src="js/review/telemetry/laps.js"></script>
+  <script src="js/review/telemetry/loader.js"></script>
+  <script src="js/review/compare.js"></script>
+  <script src="js/review/demo.js"></script>
+  <script src="js/review/gl/math.js"></script>
+  <script src="js/review/gl/renderer.js"></script>
+  <script src="js/review/gl/camera.js"></script>
+  <script src="js/review/gl/rigs.js"></script>
+  <script src="js/review/gl/scene.js"></script>
+  <script src="js/review/traces.js"></script>
+  <script src="js/review/overlay.js"></script>
+  <script src="js/review/page.js"></script>
 </body>
 </html>
