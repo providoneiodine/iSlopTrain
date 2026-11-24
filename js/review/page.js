@@ -40,7 +40,7 @@
     sessions: [], laps: [], refId: null, sel: [], errors: [], warnings: [],
     opts: { inputs: 'all', lean: false, cars: true, exag: 1, map: true, paint: 'lap', fence: 'inputs', absTint: true, attScale: 1,
       markers: new Set(Ly.MARKERS.filter((m) => m.def).map((m) => m.key)) },
-    lanes: { on: new Set(Tr.DEFAULT.on), picks: Tr.DEFAULT.picks.slice(), tyreMode: 'temp', tyreBand: 'avg', abs: true, labels: {}, folded: false },
+    lanes: { on: new Set(Tr.DEFAULT.on), picks: Tr.DEFAULT.picks.slice(), tyreMode: 'temp', tyreBand: 'avg', abs: true, labels: {}, folded: true },
     drawer: false,
     condOpen: false,
     cursor: -1, cursorF: -1, camMode: 'orbit', playing: false, playT: 0, rate: 1, loading: null,
@@ -106,6 +106,7 @@
   // finishes, so it can't reappear (or ask about another track) on a page that moved on
   let loadGen = 0;
   async function loadFiles(files) {
+    state.undo = null;
     const gen = loadGen;
     state.loading = { p: 0, label: 'Starting' };
     render();
@@ -129,13 +130,25 @@
       state.errors.push({ file: s.file, message: 'No laps to show: the recording is too short, or has no lap or distance channel.' });
       return false;
     });
+    // the same file again (Try a demo twice, or re-opening one) would only double its laps
+    const seen = new Set(state.sessions.map(sessionKey));
+    const dups = [];
+    const fresh = usable.filter((s) => {
+      const k = sessionKey(s);
+      if (seen.has(k)) return dups.push(s.file), false;
+      seen.add(k);
+      return true;
+    });
     // one track per analysis: laps from another circuit can't share a distance grid or a map
-    const base = state.sessions[0] || usable[0];
-    const other = usable.filter((s) => !sameTrack(s, base));
-    usable.filter((s) => sameTrack(s, base)).forEach(addSession);
+    const base = state.sessions[0] || fresh[0];
+    const other = fresh.filter((s) => !sameTrack(s, base));
+    fresh.filter((s) => sameTrack(s, base)).forEach(addSession);
     render();
+    if (dups.length) flash('Already loaded: ' + dups.join(', '));
     if (other.length) askNewSession(other);
   }
+  /** What makes two loads the same recording: the file name and every lap time. */
+  const sessionKey = (s) => s.file + '|' + s.laps.map((l) => Math.round(l.time * 1000)).join(',');
 
   const trackName = (s) => String(s.meta.track || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
   /** Same circuit and layout: the same name, or (with no name to go on) the same lap length within 3 %. */
@@ -273,7 +286,6 @@
   function open(o) {
     o = o || {};
     IST.App.show('screen-review');
-    document.title = 'iSlopTrain Review';
     render();
     if (o.pick) picker();
     else if (o.demo) loadDemo();
@@ -285,6 +297,25 @@
     state.loading = null;
     teardown();
     IST.App.exitToMenu ? IST.App.exitToMenu() : IST.App.show('screen-menu');
+    syncCard();
+  }
+
+  /** The Review tab's card: with laps still in memory, its first action goes back to them. */
+  function syncCard() {
+    const card = document.getElementById('review-card');
+    if (!card) return;
+    const openBtn = card.querySelector('#btn-review-open');
+    let resume = card.querySelector('#btn-review-resume');
+    const n = state.laps.length;
+    if (n && !resume) {
+      resume = h('button', { class: 'btn primary', id: 'btn-review-resume', onclick: () => open() });
+      openBtn.before(resume);
+    }
+    if (resume) {
+      resume.classList.toggle('hidden', !n);
+      resume.textContent = 'Resume: ' + n + (n === 1 ? ' lap' : ' laps') + ' loaded';
+    }
+    openBtn.classList.toggle('primary', !n);
   }
 
   function teardown() {
@@ -296,6 +327,7 @@
     V.scene && V.scene.dispose();
     V.R && V.R.destroy();
     window.removeEventListener('keydown', V.onKey);
+    if (V.popAway) document.removeEventListener('pointerdown', V.popAway, true);
     V = null;
   }
 
@@ -304,7 +336,7 @@
     return h('div', { class: 'res-head' },
       h('div', null, h('span', { class: 'tag rv-tag' }, 'Telemetry'), h('h1', null, 'Lap Viewer')),
       h('div', { class: 'view-head-actions' },
-        has ? h('button', { class: 'btn ghost', onclick: clearAll, title: 'Forget every loaded file' }, 'Clear') : null,
+        has ? h('button', { class: 'btn ghost', onclick: clearWithUndo, title: 'Forget every loaded file (you can undo it)' }, 'Clear') : null,
         h('button', { class: 'btn', onclick: openGarage61, title: 'Import laps from your Garage 61 account' }, 'Garage 61'),
         h('button', { class: 'btn', onclick: picker }, has ? 'Add files' : 'Open files'),
         h('button', { class: 'btn primary', onclick: close }, 'Done')));
@@ -324,8 +356,24 @@
 
   function clearAll() {
     loadGen++;
-    Object.assign(state, { loading: null, sessions: [], laps: [], refId: null, sel: [], errors: [], warnings: [], cursor: -1, cursorF: -1, playing: false, partialsOpen: new Set() });
+    Object.assign(state, { loading: null, sessions: [], laps: [], refId: null, sel: [], errors: [], warnings: [], cursor: -1, cursorF: -1, playing: false, partialsOpen: new Set(), undo: null });
     originRef = null;
+    render();
+  }
+
+  /** The header's Clear: forget everything, but keep it until the next load so Undo can bring it back. */
+  function clearWithUndo() {
+    const keep = { sessions: state.sessions, laps: state.laps, refId: state.refId, sel: state.sel, errors: state.errors, warnings: state.warnings, partialsOpen: state.partialsOpen, originRef };
+    clearAll();
+    state.undo = keep;
+    render();
+  }
+  function undoClear() {
+    const u = state.undo;
+    if (!u) return;
+    loadGen++;
+    originRef = u.originRef;
+    Object.assign(state, { sessions: u.sessions, laps: u.laps, refId: u.refId, sel: u.sel, errors: u.errors, warnings: u.warnings, partialsOpen: u.partialsOpen, undo: null, loading: null });
     render();
   }
 
@@ -333,6 +381,8 @@
     teardown();
     const r = root();
     r.innerHTML = '';
+    // the viewer fills the window (stage over traces, side column beside); the other states scroll
+    r.classList.toggle('rv-fit', !state.loading && state.laps.length > 0);
     r.append(header());
     if (state.loading) return r.append(loadingBox());
     if (!state.laps.length) return r.append(emptyBox());
@@ -355,7 +405,11 @@
   }
 
   function emptyBox() {
+    const u = state.undo, files = u ? u.sessions.length : 0;
     return h('div', null,
+      u ? h('div', { class: 'rv-undo', role: 'status' },
+        h('span', null, 'Cleared ' + files + (files === 1 ? ' file' : ' files') + ' (' + u.laps.length + (u.laps.length === 1 ? ' lap' : ' laps') + ').'),
+        h('button', { class: 'btn small', onclick: undoClear }, 'Undo')) : null,
       state.errors.length ? errorList() : null,
       dropTarget(h('div', { class: 'rv-drop' },
         h('div', { class: 'rv-drop-title' }, 'Drop telemetry files here'),
@@ -474,18 +528,31 @@
     const lapsPanel = h('div', { class: 'view-panel rv-laps' });
     const readout = h('div', { class: 'view-panel rv-readout' });
     const condPanel = h('div', { class: 'view-panel rv-cond hidden' });
-    const lanesBox = h('div', { class: 'view-panel rv-lanes' });
-    V = { glEl: gl, overlay, tracesEl: traces, stage, play, camSeg, hint, inputs, lapsPanel, readout, condPanel, lanesBox, drawer, layersBtn, legend, dirty: true };
+    const lanesBox = h('div', { class: 'rv-lanebar', role: 'toolbar', 'aria-label': 'Trace lanes' });
+    const tracesWrap = h('div', { class: 'rv-traces-wrap' }, traces);
+    V = { glEl: gl, overlay, tracesEl: traces, tracesWrap, stage, play, camSeg, hint, inputs, lapsPanel, readout, condPanel, lanesBox, drawer, layersBtn, legend, dirty: true };
     return h('div', { class: 'rv-layout' },
-      h('div', { class: 'rv-main' }, stage, lanesBox, h('div', { class: 'rv-traces-wrap' }, traces),
-        h('p', { class: 'rv-traces-hint' }, 'Drag across the traces to zoom both views to that stretch · shift-drag to pan · wheel to zoom · double-click for the whole lap')),
+      h('div', { class: 'rv-main' }, stage,
+        h('div', { class: 'rv-traces-box' }, lanesBox, tracesWrap),
+        keyLegend()),
       h('div', { class: 'rv-side' },
         condPanel, lapsPanel, readout,
         state.errors.length || state.warnings.length
-          ? h('div', { class: 'view-panel rv-notes' }, h('h3', null, 'Notes'),
+          ? h('div', { class: 'view-panel rv-notes' }, h('h2', null, 'Notes'),
             state.errors.map((e) => h('p', { class: 'rv-msg rv-err' }, h('b', null, e.file), ' · ' + e.message)),
             state.warnings.map((w) => h('p', { class: 'rv-msg' }, w)))
           : null));
+  }
+
+  /** One line under the traces: the keyboard shortcuts, then how to zoom the traces. */
+  function keyLegend() {
+    const n = IST.Review.Rigs.MODES.length;
+    const key = (k, what) => h('span', { class: 'rv-key-item' }, k.map((x) => h('kbd', null, x)), ' ' + what);
+    const zoom = 'Drag across the traces to zoom both views to that stretch · shift-drag to pan · wheel to zoom · double-click for the whole lap';
+    return h('div', { class: 'rv-traces-hint rv-keys', 'aria-label': 'Keyboard shortcuts' },
+      key(['Space'], 'play'), key(['1–' + n], 'camera'), key(['C'], 'next camera'), key(['L'], 'layers'),
+      key(['←', '→'], '10 m, with Shift 100 m'), key(['Esc'], 'close'),
+      h('span', { class: 'rv-keys-zoom', title: zoom }, 'Traces: drag to zoom · double-click for the whole lap'));
   }
 
   /**
@@ -531,7 +598,10 @@
   function lapList() {
     const P = V.lapsPanel;
     P.innerHTML = '';
-    P.append(h('h3', null, 'Laps'), h('p', { class: 'hint' }, 'Tick up to ' + MAX_LAPS + ' to compare. Ref sets the lap the others are timed against.'));
+    P.append(h('h2', null, 'Laps'), h('p', { class: 'hint' }, 'Tick up to ' + MAX_LAPS + ' to compare. Ref sets the lap the others are timed against.'));
+    // the files and laps scroll under the fixed heading when the list is long
+    const body = h('div', { class: 'rv-laps-list' });
+    P.append(body);
     const best = bestFull();
     state.sessions.forEach((s) => {
       const entries = state.laps.filter((x) => x.s === s);
@@ -539,7 +609,7 @@
       // in-car settings at the start of the first timed lap
       const first = entries.map((x) => x.lap).find(complete) || (entries[0] && entries[0].lap);
       const set = first ? [['absSet', 'ABS ', 0], ['tcSet', 'TC ', 0], ['bb', 'BB ', 1]].filter(([k]) => first[k]).map(([k, n, d]) => n + first[k][0].toFixed(d) + (k === 'bb' ? ' %' : '')).join(' · ') : '';
-      P.append(h('div', { class: 'rv-file' },
+      body.append(h('div', { class: 'rv-file' },
         h('div', { class: 'rv-file-name', title: s.file }, s.file),
         h('div', { class: 'rv-file-meta muted' }, (meta ? meta + ' · ' : '') + s.format),
         set ? h('div', { class: 'rv-file-meta muted', title: 'In-car settings at the start of the first timed lap' }, set) : null));
@@ -566,13 +636,13 @@
             h('span', { class: 'rv-lap-d' + (d === 0 ? ' best' : '') }, isFinite(d) ? (d === 0 ? 'best' : '+' + d.toFixed(3)) : '')),
           h('button', { class: 'rv-ref' + (isRef ? ' on' : ''), title: 'Use as reference', onclick: () => setRef(x.id) }, 'Ref')));
       });
-      if (list.children.length) P.append(list);
+      if (list.children.length) body.append(list);
       if (partials) {
         const open = state.partialsOpen.has(s) || (!list.children.length);
         const box = h('details', { class: 'rv-partials', open: open || null },
           h('summary', null, partials + (partials === 1 ? ' partial' : ' partials')), rest);
         box.addEventListener('toggle', () => (box.open ? state.partialsOpen.add(s) : state.partialsOpen.delete(s)));
-        P.append(box);
+        body.append(box);
       }
     });
   }
@@ -590,11 +660,11 @@
     const P = V.readout, cmp = V.cmp;
     P.innerHTML = '';
     const i = state.cursor;
-    P.append(h('h3', null, 'At cursor' + (i >= 0 ? ' · ' + Math.round(i * cmp.step) + ' m' : '')));
+    P.append(h('h2', null, 'At cursor' + (i >= 0 ? ' · ' + Math.round(i * cmp.step) + ' m' : '')));
     if (i < 0) return P.append(h('p', { class: 'hint' }, 'Hover a line in the 3D view or the traces.'));
     const onMap = cmp.centre.source === 'map';
     const row = (L) => h('tr', null,
-      h('td', null, h('i', { class: 'rv-swatch', style: 'background:' + L.color }), 'Lap ' + L.lap.lapNo),
+      h('td', { title: 'Lap ' + L.lap.lapNo }, h('i', { class: 'rv-swatch', style: 'background:' + L.color }), 'L' + L.lap.lapNo),
       h('td', null, Math.round(L.speed[i] * 3.6)),
       h('td', null, L.throttle ? Math.round(L.throttle[i] * 100) : '–'),
       h('td', null, L.brake ? Math.round(L.brake[i] * 100) : '–'),
@@ -602,7 +672,9 @@
       onMap ? h('td', { title: 'From the track centre' }, Math.abs(L.off[i]) < 0.05 ? '0.0' : Math.abs(L.off[i]).toFixed(1) + (L.off[i] > 0 ? ' L' : ' R')) : null,
       h('td', { class: 'delta ' + (L === cmp.laps[0] ? 'flat' : L.delta[i] > 0.005 ? 'bad' : L.delta[i] < -0.005 ? 'good' : 'flat') }, L === cmp.laps[0] ? 'ref' : U.signedSec(L.delta[i]).replace(' s', '')));
     P.append(h('table', { class: 'grid rv-table' },
-      h('thead', null, h('tr', null, ['Lap', 'km/h', 'Thr', 'Brk', 'Gear'].concat(onMap ? ['Ctr m'] : [], ['Δ s']).map((x) => h('th', null, x)))),
+      h('thead', null, h('tr', null, [['Lap'], ['km/h', 'Speed'], ['Thr', 'Throttle pedal, %'], ['Brk', 'Brake pedal, %'], ['G', 'Gear']]
+        .concat(onMap ? [['Ctr m', 'Distance from the track centre, metres, to the left (L) or right (R)']] : [], [['Δ s', 'Time behind (+) or ahead (−) of the reference lap at this point, seconds']])
+        .map(([x, tip]) => h('th', null, U.term(x, tip))))),
       h('tbody', null, cmp.laps.map(row))));
     // the other lanes on screen, a column per lap
     const BASIC = new Set(['speed', 'delta', 'throttle', 'brake', 'gear']);
@@ -610,7 +682,11 @@
     if (more.length) {
       P.append(h('table', { class: 'grid rv-table rv-table-more' },
         h('thead', null, h('tr', null, h('th', null, 'Lane'), cmp.laps.map((L) => h('th', null, h('i', { class: 'rv-swatch', style: 'background:' + L.color }), 'L' + L.lap.lapNo)))),
-        h('tbody', null, more.map((r) => h('tr', null, h('td', null, r.label, r.unit && !r.label.endsWith(' ' + r.unit) ? h('span', { class: 'muted' }, ' ' + r.unit) : null), r.vals.map((v) => h('td', null, v)))))));
+        h('tbody', null, more.map((r) => {
+          const lane = Tr.LANES.find((l) => l.key === r.key);
+          const name = [r.label, r.unit && !r.label.endsWith(' ' + r.unit) ? h('span', { class: 'muted' }, ' ' + r.unit) : null];
+          return h('tr', null, h('td', null, U.term(name, lane && lane.title)), r.vals.map((v) => h('td', null, v)));
+        }))));
     }
     const tg = tyreGrid(cmp.laps[0], i);
     if (tg) P.append(tg);
@@ -641,7 +717,7 @@
         h('div', { class: 'rv-tyre-val' }, mean, L['p' + w] ? h('span', { class: 'muted' }, ' · ' + Math.round(L['p' + w][i]) + ' kPa') : null));
     };
     return h('div', { class: 'rv-tyres' },
-      h('h3', null, 'Tyres · ref lap'),
+      h('h2', null, 'Tyres · ref lap'),
       h('div', { class: 'rv-tyre-grid' }, ['LF', 'RF', 'LR', 'RR'].map(tyre)));
   }
 
@@ -667,50 +743,82 @@
     readout();
   }
 
+  /**
+   * Lanes: one line on top of the traces (a Lanes button with the count, what's on, and
+   * the presets) and a foldout that opens upward over the 3D view with the full set,
+   * a row per group. The traces stay in sight underneath, so each toggle shows at once;
+   * Esc, Done or a press outside folds it away.
+   */
   function lanesBox() {
     const P = V.lanesBox, cmp = V.cmp, L = state.lanes;
+    const focusKey = document.activeElement && P.contains(document.activeElement) ? document.activeElement.dataset.k : null;
     P.innerHTML = '';
     const avail = (k) => Tr.available(cmp, k);
-    const onCount = Tr.LANES.filter((l) => !l.virtual && L.on.has(l.key) && avail(l.key)).length + (avail('tyreTemp') || avail('tyrePress') ? L.picks.length : 0);
-    const fold = h('button', { class: 'rv-lanes-fold', 'aria-expanded': String(!L.folded), title: L.folded ? 'Show the lane toggles' : 'Fold the lane toggles away',
-      onclick: () => ((L.folded = !L.folded), lanesChanged()) }, h('span', null, 'Lanes'), h('span', { class: 'muted' }, ' · ' + onCount + ' on ' + (L.folded ? '▸' : '▾')));
-    const presets = h('div', { class: 'seg rv-presets', role: 'group', 'aria-label': 'Lane presets' },
-      PRESET_NAMES.map(([k, label, title]) => h('button', { class: 'seg-b', title, onclick: () => applyPreset(k) }, label)));
-    P.append(h('div', { class: 'rv-lanes-head' }, fold, L.folded ? null : presets));
-    if (L.folded) return;
+    const chip = (k, label, title, on, onclick, disabled) =>
+      h('button', { class: 'seg-b' + (on ? ' on' : ''), 'data-k': k, 'aria-pressed': String(!!on), disabled: disabled || null, title: disabled ? 'Not in this file' : title, onclick }, label);
+    const shown = Tr.LANES.filter((l) => !l.virtual && L.on.has(l.key) && avail(l.key));
+    const tyresOk = avail('tyreTemp') || avail('tyrePress');
+    const names = shown.map((l) => l.label).concat(tyresOk ? L.picks.map((k) => Tr.PICK_NAME[k] + (L.tyreMode === 'press' ? ' kPa' : ' °C')) : []);
+    const open = !!V.lanesOpen;
 
-    const chip = (key, label, title, on, onclick, disabled) =>
-      h('button', { class: 'seg-b' + (on ? ' on' : ''), 'aria-pressed': String(!!on), disabled: disabled || null, title: disabled ? 'Not in this file' : title, onclick }, label);
-    const laneChip = (l) => chip(l.key, l.label, l.title, L.on.has(l.key), () => {
-      L.on.has(l.key) ? L.on.delete(l.key) : L.on.add(l.key);
-      lanesChanged();
-    }, !avail(l.key));
+    // the line
+    P.append(
+      h('button', { class: 'rv-lanes-toggle' + (open ? ' on' : ''), 'data-k': 'toggle', 'aria-expanded': String(open), 'aria-controls': 'rv-lanes-panel', title: open ? 'Fold the lane picker away (Esc)' : 'Choose which traces to show',
+        onclick: () => setLanesOpen(!open) }, 'Lanes', h('span', { class: 'rv-lanes-n' }, String(names.length))),
+      h('span', { class: 'rv-lanes-sum', title: names.join(', ') }, names.join(' · ') || 'None'),
+      h('div', { class: 'seg rv-presets', role: 'group', 'aria-label': 'Lane presets' },
+        PRESET_NAMES.map(([k, label, title]) => h('button', { class: 'seg-b', 'data-k': 'p-' + k, title, onclick: () => applyPreset(k) }, label))));
+
+    // the foldout
     const rows = GROUPS.map(([g, name]) => {
-      const lanes = Tr.LANES.filter((l) => l.group === g && !l.virtual);
-      const parts = [];
-      lanes.forEach((l) => {
-        parts.push(laneChip(l));
-        if (l.key === 'brake' && avail('abs')) {
-          parts.push(chip('abs', 'ABS on brake', 'Shade the brake lane where ABS acts, with a dashed line for the force it removed', L.abs, () => ((L.abs = !L.abs), lanesChanged())));
-        }
+      const chips = [];
+      Tr.LANES.filter((l) => l.group === g && !l.virtual).forEach((l) => {
+        chips.push(chip(l.key, l.label, l.title, L.on.has(l.key), () => {
+          L.on.has(l.key) ? L.on.delete(l.key) : L.on.add(l.key);
+          lanesChanged();
+        }, !avail(l.key)));
+        if (l.key === 'brake' && avail('abs')) chips.push(chip('abs', 'ABS on brake', 'Shade the brake lane where ABS acts, with a dashed line for the force it removed', L.abs, () => ((L.abs = !L.abs), lanesChanged())));
       });
+      let extra = null;
       if (g === 'tyres') {
         const tOk = avail('tyreTemp'), pOk = avail('tyrePress');
-        const any = tOk || pOk;
         if (L.tyreMode === 'temp' && !tOk && pOk) L.tyreMode = 'press';
-        const tyreCtl = h('div', { class: 'rv-tyre-ctl' },
-          tyrePicker(any),
+        extra = h('div', { class: 'rv-tyre-ctl' },
+          tyrePicker(tyresOk),
           h('div', { class: 'seg', role: 'group', 'aria-label': 'Tyre value' },
             chip('temp', 'Temp', 'Surface temperature, °C', L.tyreMode === 'temp', () => ((L.tyreMode = 'temp'), lanesChanged()), !tOk),
             chip('press', 'Pressure', 'Hot pressure, kPa', L.tyreMode === 'press', () => ((L.tyreMode = 'press'), lanesChanged()), !pOk)),
           L.tyreMode === 'temp' ? h('div', { class: 'seg', role: 'group', 'aria-label': 'Tyre band' },
-            [['avg', 'Avg', 'Mean of inner, middle and outer'], ['i', 'I', 'Inner edge'], ['m', 'M', 'Middle'], ['o', 'O', 'Outer edge']].map(([k, lab, t]) =>
-              chip(k, lab, t, L.tyreBand === k, () => ((L.tyreBand = k), lanesChanged()), k !== 'avg' && !avail('tyreBands')))) : null);
-        parts.unshift(tyreCtl);
+            [['avg', 'Avg', 'Mean of inner, middle and outer'], ['i', 'Inner', 'Inner edge'], ['m', 'Mid', 'Middle'], ['o', 'Outer', 'Outer edge']].map(([k, lab, t]) =>
+              chip('b-' + k, lab, t, L.tyreBand === k, () => ((L.tyreBand = k), lanesChanged()), !tyresOk || (k !== 'avg' && !avail('tyreBands'))))) : null);
       }
-      return h('div', { class: 'rv-lanes-row' }, h('span', { class: 'rv-lanes-group' }, name), ...parts.filter((x) => !x.classList.contains('seg-b')), h('div', { class: 'seg rv-chips', role: 'group', 'aria-label': name + ' lanes' }, parts.filter((x) => x.classList.contains('seg-b'))));
+      return h('div', { class: 'rv-lanes-row' },
+        h('span', { class: 'rv-lanes-group' }, name),
+        h('div', { class: 'rv-lanes-cells' }, h('div', { class: 'seg rv-chips', role: 'group', 'aria-label': name + ' lanes' }, chips), extra));
     });
-    P.append(h('div', { class: 'rv-lanes-body' }, rows));
+    P.append(h('div', { class: 'rv-lanes-panel' + (open ? '' : ' hidden'), id: 'rv-lanes-panel', role: 'dialog', 'aria-label': 'Choose trace lanes' },
+      h('div', { class: 'rv-lanes-panel-head' },
+        h('span', { class: 'rv-lanes-panel-title' }, 'Trace lanes'),
+        h('span', { class: 'muted' }, 'Changes show on the traces as you pick'),
+        h('button', { class: 'btn small', 'data-k': 'done', onclick: () => setLanesOpen(false) }, 'Done')),
+      rows));
+    if (focusKey) {
+      const el = P.querySelector('[data-k="' + focusKey + '"]');
+      if (el) el.focus();
+    }
+  }
+  function setLanesOpen(open) {
+    if (!V) return;
+    V.lanesOpen = open;
+    lanesBox();
+    if (open && !V.popAway) {
+      // fold away on a press anywhere outside the bar and its panel
+      V.popAway = (e) => !e.target.closest('.rv-lanebar') && setLanesOpen(false);
+      document.addEventListener('pointerdown', V.popAway, true);
+    } else if (!open && V.popAway) {
+      document.removeEventListener('pointerdown', V.popAway, true);
+      V.popAway = null;
+    }
   }
 
   /** Top-down car: four wheels and the four edges between them. Click to add or remove a tyre lane. */
@@ -816,14 +924,14 @@
     };
     const cur = (list, k, ok) => (ok(k) ? k : list[0].key);
     // 1. line colour
-    D.append(h('h3', null, 'Line colour'),
+    D.append(h('h2', null, 'Line colour'),
       h('div', { class: 'rv-radios' }, Ly.PAINTS.map((d) => radio('rv-paint', d, cur(Ly.PAINTS, o.paint, paintOk), paintOk(d.key), (k) => ((o.paint = k), layersChanged()),
         d.legend ? d.legend.css : 'linear-gradient(90deg, ' + Th.butter + ' 33%, ' + Th.sky + ' 33% 66%, ' + Th.lilac + ' 66%)'))));
     // 2. fence
     const absOk = hasCh(cmp, 'absActive');
     const absBox = h('input', { type: 'checkbox', checked: o.absTint, disabled: absOk ? null : true });
     absBox.addEventListener('change', () => ((o.absTint = absBox.checked), layersChanged()));
-    D.append(h('h3', null, 'Fence'),
+    D.append(h('h2', null, 'Fence'),
       h('div', { class: 'rv-radios' }, Ly.FENCES.map((d) => radio('rv-fence', d, cur(Ly.FENCES, o.fence, fenceOk), fenceOk(d.key), (k) => ((o.fence = k), layersChanged())))),
       h('label', { class: 'rv-field', title: 'Whose fence, line colour and markers to draw: every lap or one' }, h('span', null, 'Whose'), V.inputs),
       check('Steering lean', 'lean', 'Lean the fences toward the steering input', restyle),
@@ -831,7 +939,7 @@
     // 3. markers
     const kindsIn = new Set();
     cmp.laps.forEach((L) => (L.events || []).forEach((e) => kindsIn.add(e.kind)));
-    D.append(h('h3', null, 'Markers'),
+    D.append(h('h2', null, 'Markers'),
       h('div', { class: 'rv-radios' }, Ly.MARKERS.map((m) => {
         const ok = m.kinds ? m.kinds.some((k) => kindsIn.has(k)) : (m.needs || []).every((c) => hasCh(cmp, c));
         const box = h('input', { type: 'checkbox', checked: markerOn(m.key), disabled: ok ? null : true });
@@ -854,11 +962,11 @@
       saveLayers();
       rebuild(true);
     });
-    D.append(h('h3', null, 'View'),
+    D.append(h('h2', null, 'View'),
       check('Cars', 'cars', 'A car for each lap where it was at the reference’s time, with the gap', dirty),
       mapCheck(),
       h('label', { class: 'rv-field' }, h('span', null, 'Elevation'), elev),
-      h('button', { class: 'btn ghost small rv-fit', onclick: () => { V.traces.zoom(); frameAll(); } }, 'Fit view'));
+      h('button', { class: 'btn ghost small rv-fit-btn', onclick: () => { V.traces.zoom(); frameAll(); } }, 'Fit view'));
   }
 
   /** Bottom-right key for what the line colour and the fence mean right now. */
@@ -906,7 +1014,7 @@
     V.texCache = new Map(); // map tile textures, kept across scene rebuilds (freed with the GL context)
     V.cam = IST.Review.Camera.create();
     V.ov = IST.Review.Overlay.create();
-    V.traces = IST.Review.Traces.create(V.tracesEl, { onCursor: setCursor, onRange: frameRange, onReset: frameAll });
+    V.traces = IST.Review.Traces.create(V.tracesEl, { onCursor: setCursor, onRange: frameRange, onReset: frameAll, fit: () => (V ? V.tracesWrap.clientHeight - 2 : 0) });
     if (!V.R) {
       V.stage.append(h('div', { class: 'rv-nogl' }, 'WebGL isn’t available in this browser, so the 3D view is off. The traces still work.'));
     } else {
@@ -923,6 +1031,7 @@
         dirty();
       });
       V.ro.observe(V.stage);
+      V.ro.observe(V.tracesWrap);
     }
     rebuild(false, true);
     if (state.camMode && state.camMode !== 'orbit') setCam(state.camMode);
@@ -1175,7 +1284,8 @@
       const d = Math.round((e.shiftKey ? 100 : 10) / V.cmp.step) * (e.code === 'ArrowLeft' ? -1 : 1);
       setCursor(Math.max(0, Math.min(V.cmp.n - 1, Math.max(0, state.cursor) + d)));
     } else if (e.code === 'Escape') {
-      if (state.drawer) setDrawer(false);
+      if (V.lanesOpen) setLanesOpen(false);
+      else if (state.drawer) setDrawer(false);
       else close();
     }
   }

@@ -61,7 +61,7 @@
       { key: 'seed', label: 'Track seed (0 = random)', type: 'number', default: 0, min: 0, max: 999999, step: 1 },
     ],
     metrics: [
-      { key: 'threshold', label: 'Flash threshold', unit: 'ms', digits: 0, better: 'lower', primary: true, hint: 'Shortest flash read ~71% of the time.' },
+      { key: 'threshold', label: 'Flash threshold', unit: 'ms', digits: 0, better: 'lower', primary: true, hint: 'The shortest flash you read right about 71% of the time. The drill moves it with every answer to find that point; lower means you need less time to see.' },
       { key: 'earlyAcc', label: 'Snap score', pct: true, digits: 0, better: 'higher', hint: 'Accuracy on flashes just after the previous apex.' },
       { key: 'midAcc', label: 'Mid accuracy', pct: true, digits: 0, better: 'higher' },
       { key: 'lateAcc', label: 'Late accuracy', pct: true, digits: 0, better: 'higher' },

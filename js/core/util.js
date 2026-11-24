@@ -44,7 +44,12 @@
       : 'rgba(' + (c[0] | 0) + ',' + (c[1] | 0) + ',' + (c[2] | 0) + ',' + alpha + ')';
 
   U.isNum = (v) => typeof v === 'number' && isFinite(v);
-  U.fmt = (v, digits) => (U.isNum(v) ? Number(v).toFixed(digits || 0) : '–');
+  /** A number for display: fixed digits, a true minus sign, and no "-0". */
+  U.fmt = (v, digits) => {
+    if (!U.isNum(v)) return '–';
+    const s = Number(v).toFixed(digits || 0);
+    return /^-0(\.0*)?$/.test(s) ? s.slice(1) : s.replace(/^-/, '−');
+  };
   U.fmtTime = (sec) => {
     sec = Math.max(0, Math.ceil(sec));
     return Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
@@ -52,6 +57,12 @@
 
   U.kmh = (v) => Math.round(v * 3.6); // m/s -> km/h, for display
   U.signedSec = (t) => (t >= 0 ? '+' : '−') + Math.abs(t).toFixed(2) + ' s';
+
+  /**
+   * A term with its explanation: dotted underline, focusable, and the explanation shown on
+   * hover or focus (and read out after the term). Plain text when there's nothing to explain.
+   */
+  U.term = (label, tip) => (tip ? U.h('span', { class: 'term', tabindex: 0 }, label, U.h('span', { class: 'term-tip', role: 'tooltip' }, tip)) : label);
 
   /** Tiny hyperscript DOM builder: h('div', {class:'x', onclick: fn}, 'text', child) */
   U.h = function (tag, attrs) {

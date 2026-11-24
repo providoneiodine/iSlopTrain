@@ -9,9 +9,14 @@
   const $ = (s) => document.querySelector(s);
   const SCREENS = ['screen-menu', 'screen-drill', 'screen-results', 'screen-stats', 'screen-view', 'screen-review'];
 
-  function show(id) {
+  // the tab title follows the visible screen; the menu's names its tab, a drill's names the drill
+  const TITLES = { 'screen-stats': 'Stats', 'screen-view': 'View', 'screen-review': 'Lap Viewer' };
+  let curTab = 'sessions';
+  function show(id, title) {
     SCREENS.forEach((s) => document.getElementById(s).classList.toggle('hidden', s !== id));
     window.scrollTo(0, 0);
+    const name = title || (id === 'screen-menu' ? TABS[curTab] : TITLES[id]);
+    document.title = name ? 'iSlopTrain ' + name : 'iSlopTrain';
   }
 
   // ---------------------------------------------------------------- helpers
@@ -350,7 +355,7 @@
         /* fall back to system font */
       }
     }
-    show('screen-drill');
+    show('screen-drill', def.name);
     IST.Input.capture = true;
     let result = null;
     try {
@@ -458,7 +463,7 @@
           frameMs ? h('p', { class: 'frame-note' }, result.refreshHz + ' Hz display: flashes rounded to ' + frameMs.toFixed(1) + ' ms frames.') : null)),
       h('div', { class: 'res-actions' }, actions)
     );
-    show('screen-results');
+    show('screen-results', def.name + ' results');
     const scoreV = root.querySelector('.res-score-v');
     if (scoreV) countUp(scoreV, Math.round(s.score));
     if ((grade && grade.pb) || records.length) celebrate(gradeEl || (scoreV && scoreV.parentNode));
@@ -549,7 +554,8 @@
     });
     Object.keys(TABS).forEach((t) => $('#panel-' + t).classList.toggle('hidden', t !== name));
     $('#brand-sub').textContent = name === 'sessions' ? 'Guided Sessions' : name === 'review' ? 'Lap Review' : TABS[name] + ' Trainer';
-    document.title = 'iSlopTrain ' + TABS[name];
+    curTab = name;
+    if (!$('#screen-menu').classList.contains('hidden')) document.title = 'iSlopTrain ' + TABS[name];
     history.replaceState(null, '', name === 'sessions' ? location.pathname + location.search : '#' + name);
   }
   tabBtns.forEach((b, i) => {

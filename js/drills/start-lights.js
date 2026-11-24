@@ -37,7 +37,7 @@
       { key: 'median', label: 'Median reaction', unit: 'ms', digits: 0, better: 'lower', primary: true },
       { key: 'best', label: 'Best reaction', unit: 'ms', digits: 0, better: 'lower' },
       { key: 'mean', label: 'Mean reaction', unit: 'ms', digits: 0, better: 'lower' },
-      { key: 'sd', label: 'Spread (SD)', unit: 'ms', digits: 0, better: 'lower' },
+      { key: 'sd', label: 'Spread (SD)', unit: 'ms', digits: 0, better: 'lower', hint: 'How much your reaction times vary from start to start (standard deviation). Lower means steadier starts.' },
       { key: 'jumps', label: 'Jump starts', digits: 0, better: 'lower' },
       ...IST.Juice.METRICS,
       { key: 'valid', label: 'Valid starts', digits: 0 },

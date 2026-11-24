@@ -115,7 +115,7 @@
     return out.filter((l) => (l.key === 'delta' ? cmp.laps.length > 1 : has(cmp, l.needs)));
   }
 
-  const AXIS = 22, PADL = 10, PADR = 10;
+  const AXIS = 22, PADL = 10, PADR = 10, MIN_LANE = 30;
 
   function create(canvas, o) {
     // The lanes are drawn once into an offscreen layer; a cursor move only copies that
@@ -124,7 +124,7 @@
     const out = canvas.getContext('2d');
     const layer = document.createElement('canvas');
     const g = layer.getContext('2d');
-    let cmp = null, cursor = -1, v0 = 0, v1 = 1, W = 0, H = 0, dpr = 1, panes = [], heads = [], axisY = 0;
+    let cmp = null, cursor = -1, v0 = 0, v1 = 1, W = 0, H = 0, dpr = 1, panes = [], heads = [], axisY = 0, k = 1;
     let cfg = Object.assign({}, DEFAULT, { on: new Set(DEFAULT.on) });
     const st = { drag: null };
     let cache = new WeakMap(); // lap -> Map(lane key -> [{ arr, dash }])
@@ -141,7 +141,21 @@
 
     function layout() {
       panes = cmp ? lanesFor(cmp, cfg) : [];
-      const h = panes.reduce((s, p) => s + p.h, 0) + AXIS;
+      // o.fit(): the height the page gives the traces. Lanes stretch or squeeze toward it
+      // (within readable limits); past that the strip scrolls in its box
+      const nat = panes.reduce((s, p) => s + p.h, 0), fit = o.fit ? o.fit() : 0;
+      k = 1;
+      if (fit > AXIS && nat) {
+        // lanes that would drop under MIN_LANE stay there; the rest share what is left
+        k = Math.min(1.6, (fit - AXIS) / nat);
+        const low = panes.filter((p) => p.h * k < MIN_LANE);
+        const rest = nat - low.reduce((s, p) => s + p.h, 0);
+        if (low.length && rest) k = (fit - AXIS - low.length * MIN_LANE) / rest;
+        k = Math.max(0.4, Math.min(1.6, k));
+        // whole pixels and the floor can still overshoot by a few: ease off until it fits
+        for (let t = 0; t < 12 && k > 0.4 && panes.reduce((s, p) => s + ph(p), 0) + AXIS > fit; t++) k -= 0.02;
+      }
+      const h = panes.reduce((s, p) => s + ph(p), 0) + AXIS;
       const d = Math.min(2, window.devicePixelRatio || 1), w = canvas.clientWidth || 800;
       // resizing a canvas reallocates and clears it: only when the size really changed
       if (h !== H || w !== W || d !== dpr) {
@@ -154,6 +168,7 @@
       }
       g.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
+    const ph = (p) => (k === 1 ? p.h : Math.max(MIN_LANE, Math.floor(p.h * k)));
     const xOf = (i) => PADL + ((i - v0) / (v1 - v0)) * (W - PADL - PADR);
     const iOf = (x) => v0 + ((x - PADL) / (W - PADL - PADR)) * (v1 - v0);
 
@@ -253,7 +268,7 @@
       let y = 0;
       panes.forEach((p, pi) => {
         const [lo, hi] = range(p);
-        const top = y + 18, bot = y + p.h - 6;
+        const top = y + 18, bot = y + ph(p) - 6;
         const yOf = (v) => bot - ((v - lo) / (hi - lo || 1)) * (bot - top);
         if (pi) {
           g.fillStyle = Th.line;
@@ -266,12 +281,12 @@
         }
         g.save();
         g.beginPath();
-        g.rect(PADL, y + 2, W - PADL - PADR, p.h - 4);
+        g.rect(PADL, y + 2, W - PADL - PADR, ph(p) - 4);
         g.clip();
         const ref = cmp.laps[0];
         // shading under the lines
         if (p.key === 'throttle') {
-          if (ref.coast) columns(a, b, every, (i) => ref.coast[i] > 0.5, y + 2, y + p.h - 2, 'rgba(161,169,183,0.14)');
+          if (ref.coast) columns(a, b, every, (i) => ref.coast[i] > 0.5, y + 2, y + ph(p) - 2, 'rgba(161,169,183,0.14)');
           cmp.laps.forEach((L) => L.tcActive && shade(a, b, every, seriesOf(p, L)[0].arr, (i) => L.tcActive[i] > 0.5, yOf, yOf(0), alpha(L.color, 0.25)));
         }
         if (p.key === 'brake' && cfg.abs) {
@@ -317,7 +332,7 @@
         g.textAlign = 'right';
         g.fillText(p.fmt(hi), W - PADR - 2, y + 13);
         heads.push({ p, y, x: W - PADR - 2 - g.measureText(p.fmt(hi)).width - 18 });
-        y += p.h;
+        y += ph(p);
       });
 
       // distance axis

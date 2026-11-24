@@ -75,7 +75,7 @@
       { key: 'hazardAcc', label: 'Apex, hazard corners', pct: true, digits: 0, better: 'higher' },
       { key: 'cleanAcc', label: 'Apex, clean corners', pct: true, digits: 0, better: 'higher' },
       { key: 'ironic', label: '"Don\'t look" effect', pct: true, digits: 0, better: 'lower', hint: 'Capture under "Don\'t look at the wall" minus under "Eyes: apex" (compare mode).' },
-      { key: 'threshold', label: 'Flash threshold', unit: 'ms', digits: 0, better: 'lower', hint: 'Shortest flash read ~71% of the time.' },
+      { key: 'threshold', label: 'Flash threshold', unit: 'ms', digits: 0, better: 'lower', hint: 'The shortest flash you read right about 71% of the time. The drill moves it with every answer to find that point; lower means you need less time to see.' },
       { key: 'earlyAcc', label: 'Snap score', pct: true, digits: 0, better: 'higher', hint: 'Accuracy on flashes just after the previous apex.' },
       { key: 'falseAlarms', label: 'False presses', digits: 0, better: 'lower' },
       { key: 'probes', label: 'Hazard probes', digits: 0 },

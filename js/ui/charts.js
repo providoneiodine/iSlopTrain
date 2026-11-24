@@ -32,7 +32,7 @@
     return e;
   }
   function txt(parent, x, y, str, attrs) {
-    const t = el('text', Object.assign({ x, y, fill: C.muted, 'font-size': 11, 'font-family': IST.Symbols.FONT }, attrs || {}), parent);
+    const t = el('text', Object.assign({ x, y, fill: C.muted, 'font-size': 12, 'font-family': IST.Symbols.FONT }, attrs || {}), parent);
     t.textContent = str;
     return t;
   }
@@ -151,8 +151,11 @@
       txt(svg, pad.l - 8, Y(t) + 4, fmtTick(t), { 'text-anchor': 'end' });
     }
     if (spec.dates && n) {
-      txt(svg, X(0), H - 6, IST.Analysis.shortDate(spec.dates[0]), { 'text-anchor': n === 1 ? 'middle' : 'start' });
-      if (n > 1) txt(svg, X(n - 1), H - 6, IST.Analysis.shortDate(spec.dates[n - 1]), { 'text-anchor': 'end' });
+      // all on one day: "Nov 23 … Nov 23" says nothing, so number the sessions instead
+      const oneDay = new Set(spec.dates.map(IST.Analysis.dayKey)).size === 1;
+      const lab = (i) => (oneDay ? 'Session ' + (i + 1) : IST.Analysis.shortDate(spec.dates[i]));
+      txt(svg, X(0), H - 6, lab(0), { 'text-anchor': n === 1 ? 'middle' : 'start' });
+      if (n > 1) txt(svg, X(n - 1), H - 6, lab(n - 1) + (oneDay && !spec.compact ? ' · ' + IST.Analysis.shortDate(spec.dates[0]) : ''), { 'text-anchor': 'end' });
     }
 
     // rolling average line
@@ -177,7 +180,9 @@
     const lastAvgIdx = avg.length - 1 - [...avg].reverse().findIndex(U.isNum);
     if (!spec.compact && U.isNum(avg[lastAvgIdx])) {
       el('circle', { cx: X(lastAvgIdx), cy: Y(avg[lastAvgIdx]), r: 4, fill: C.series, stroke: C.surface, 'stroke-width': 2 }, svg);
-      txt(svg, X(lastAvgIdx) + 9, Y(avg[lastAvgIdx]) + 4, spec.fmt(avg[lastAvgIdx]), { fill: C.text, 'font-weight': 700, 'font-size': 12 });
+      const endT = txt(svg, X(lastAvgIdx) + 9, Y(avg[lastAvgIdx]) + 4, 'avg ', { fill: C.muted, 'font-size': 12 });
+      const endV = el('tspan', { fill: C.text, 'font-weight': 700, 'font-size': 12 }, endT);
+      endV.textContent = spec.fmt(avg[lastAvgIdx]);
     }
 
     // hover / focus layer: crosshair snaps to the nearest session
@@ -239,7 +244,15 @@
     svg.setAttribute('role', 'img');
     svg.setAttribute('aria-label', spec.title || 'Breakdown');
     const labelW = Math.min(190, Math.round(W * 0.42));
-    const valW = 64;
+    // too-few bars are hatched, and their count is written beside the value
+    const thin = (it) => it.n != null && it.n < minN;
+    const valW = items.some(thin) ? 120 : 64;
+    const hatch = 'hatch-' + Math.random().toString(36).slice(2, 8);
+    if (items.some(thin)) {
+      const p = el('pattern', { id: hatch, width: 6, height: 6, patternUnits: 'userSpaceOnUse', patternTransform: 'rotate(45)' }, el('defs', {}, svg));
+      el('rect', { width: 6, height: 6, fill: C.series, 'fill-opacity': 0.22 }, p);
+      el('rect', { width: 2.5, height: 6, fill: C.series }, p);
+    }
     const bw = W - labelW - valW - 8;
     const max = spec.pct ? 1 : Math.max.apply(null, items.map((i) => i.value)) || 1;
     const fmt = spec.fmt || ((v) => (spec.pct ? Math.round(v * 100) + '%' : U.fmt(v, 0)));
@@ -253,17 +266,21 @@
       const y = k * rowH + (rowH - barH) / 2;
       const t = txt(svg, 0, y + barH - 2, it.label, { fill: it.tag ? C.text : C.text2, 'font-size': 12, 'font-weight': it.tag ? 720 : 420 });
       if (it.tag) {
-        const ts = el('tspan', { fill: C.muted, 'font-weight': 400, 'font-size': 11 }, t);
-        ts.textContent = '  ▼ ' + it.tag;
+        const ts = el('tspan', { fill: C.muted, 'font-weight': 400, 'font-size': 12 }, t);
+        ts.textContent = '  · ' + it.tag;
       }
       const w = Math.max(2, (it.value / max) * bw);
       const x0 = labelW, rr = Math.min(C.barR, w / 2);
       el('path', {
         d: 'M' + x0 + ' ' + y + 'h' + (w - rr) + 'a' + rr + ' ' + rr + ' 0 0 1 ' + rr + ' ' + rr + 'v' + (barH - 2 * rr) + 'a' + rr + ' ' + rr + ' 0 0 1 ' + -rr + ' ' + rr + 'h' + -(w - rr) + 'z',
-        fill: C.series,
-        'fill-opacity': it.n != null && it.n < minN ? 0.45 : 1,
+        fill: thin(it) ? 'url(#' + hatch + ')' : C.series,
       }, svg);
-      txt(svg, x0 + w + 6, y + barH - 2, fmt(it.value), { fill: C.text, 'font-size': 12, 'font-weight': 600 });
+      if (thin(it)) svg.lastChild.setAttribute('data-faded', '');
+      const vt = txt(svg, x0 + w + 6, y + barH - 2, fmt(it.value), { fill: C.text, 'font-size': 12, 'font-weight': 600 });
+      if (thin(it)) {
+        const nt = el('tspan', { class: 'bar-n', fill: C.muted, 'font-weight': 400 }, vt);
+        nt.textContent = '  only ' + it.n;
+      }
       const hit = el('rect', { x: 0, y: k * rowH, width: W, height: rowH, fill: 'transparent' }, svg);
       hit.addEventListener('pointermove', () => {
         tip.show(x0 + w, y, it.label, [{ value: fmt(it.value), label: it.n != null ? 'from ' + it.n + ' ' + nLabel + (it.n < minN ? ' (too few to judge)' : '') : '' }]);
@@ -357,7 +374,7 @@
     if (U.isNum(spec.baseline)) {
       const y = Y(spec.baseline);
       el('line', { x1: pad.l, x2: W - pad.r, y1: y, y2: y, stroke: C.text2, 'stroke-width': 1, 'stroke-dasharray': '4 4' }, svg);
-      txt(svg, W - pad.r + 6, y + 4, (spec.baselineLabel || 'baseline') + ' ' + fmt(spec.baseline), { fill: C.text2, 'font-size': 11 });
+      txt(svg, W - pad.r + 6, y + 4, (spec.baselineLabel || 'baseline') + ' ' + fmt(spec.baseline), { fill: C.text2, 'font-size': 12 });
     }
 
     // legend
@@ -430,7 +447,7 @@
     const dow = (today.getDay() + 6) % 7; // Monday = 0
     const startDay = new Date(today);
     startDay.setDate(today.getDate() - dow - (weeks - 1) * 7);
-    ['Mon', '', 'Wed', '', 'Fri', '', 'Sun'].forEach((l, i) => l && txt(svg, 0, top + i * (cell + gap) + cell - 2, l, { 'font-size': 10 }));
+    ['Mon', '', 'Wed', '', 'Fri', '', 'Sun'].forEach((l, i) => l && txt(svg, 0, top + i * (cell + gap) + cell - 2, l, { 'font-size': 11.5 }));
     const level = (c) => (c <= 0 ? 0 : Math.min(5, c));
     let lastMonth = -1;
     for (let w = 0; w < weeks; w++) {
@@ -443,7 +460,7 @@
         const x = left + w * (cell + gap), y = top + d * (cell + gap);
         if (d === 0 && day.getMonth() !== lastMonth) {
           lastMonth = day.getMonth();
-          txt(svg, x, 10, day.toLocaleDateString(undefined, { month: 'short' }), { 'font-size': 10 });
+          txt(svg, x, 10, day.toLocaleDateString(undefined, { month: 'short' }), { 'font-size': 11.5 });
         }
         const r = el('rect', { x, y, width: cell, height: cell, fill: C.seq[level(c)] }, svg);
         r.addEventListener('pointermove', () => tip.show(x + cell / 2, y, day.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' }), [{ value: String(c), label: c === 1 ? 'session' : 'sessions' }]));
@@ -451,9 +468,9 @@
       }
     }
     const ly = top + 7 * (cell + gap) + 8;
-    txt(svg, left, ly + 10, 'Less', { 'font-size': 10 });
+    txt(svg, left, ly + 10, 'Less', { 'font-size': 11.5 });
     C.seq.forEach((col, i) => el('rect', { x: left + 30 + i * (cell + gap), y: ly, width: cell, height: cell, fill: col }, svg));
-    txt(svg, left + 30 + C.seq.length * (cell + gap) + 4, ly + 10, 'More', { 'font-size': 10 });
+    txt(svg, left + 30 + C.seq.length * (cell + gap) + 4, ly + 10, 'More', { 'font-size': 11.5 });
   }
 
   IST.Charts = { line, bars, histogram, curve, calendar, COLORS: C };

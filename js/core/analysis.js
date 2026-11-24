@@ -209,13 +209,13 @@
     if (t.enough && !t.flat) {
       rep.notes.push({
         tone: t.good ? 'good' : 'bad', drill: def.id,
-        text: name + ': ' + pm.label.toLowerCase() + ' ' + A.pctTxt(t.pct) + (t.good ? ' better' : ' worse') + ' (' + A.fmt(pm, t.prior) + ' → ' + A.fmt(pm, t.recent) + ').',
+        text: name + ': ' + pm.label.toLowerCase() + ' ' + A.pctTxt(t.pct) + (t.good ? ' better' : ' worse') + ' (average ' + A.fmt(pm, t.prior) + ' over the ' + t.k + ' sessions before, ' + A.fmt(pm, t.recent) + ' over the last ' + t.k + ').',
       });
     } else if (t.enough && t.n >= 10) {
       rep.notes.push({ tone: 'info', drill: def.id, text: name + ': plateau. Raise the difficulty.' });
     }
     if (t.enough && t.n >= 8 && t.totalGood && Math.abs(t.total) >= 0.05) {
-      rep.notes.push({ tone: 'good', drill: def.id, text: name + ': ' + A.pctTxt(t.total) + ' better since you started (' + A.fmt(pm, t.first) + ' → ' + A.fmt(pm, t.last) + ').' });
+      rep.notes.push({ tone: 'good', drill: def.id, text: name + ': ' + A.pctTxt(t.total) + ' better since you started (average of your first 3 sessions ' + A.fmt(pm, t.first) + ', last 3 ' + A.fmt(pm, t.last) + ').' });
     }
     if (rep.pb.idx === values.length - 1 && values.filter(U.isNum).length >= 2) {
       rep.notes.push({ tone: 'good', drill: def.id, text: name + ': new PB (' + A.fmt(pm, rep.pb.value) + ').' });

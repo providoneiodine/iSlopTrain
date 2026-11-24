@@ -220,8 +220,10 @@
             const w = c.kind === 'tag' ? 24 : 17, hh = c.kind === 'tag' ? 15 : 16;
             r = c.kind === 'tag' ? [p.x - w / 2, p.y - hh / 2, w, hh] : [p.x - w / 2, p.y - hh, w, hh];
           }
-          // tags thin out with distance so the far track doesn't fill with them
-          want = !overlaps(r) && (c.kind !== 'tag' || p.w < S.size * 0.9);
+          // tags thin out with distance so the far track doesn't fill with them; gear
+          // numbers keep a clear gap round each, so a tight complex shows one or two, not a wall
+          const G = c.kind === 'gear' ? 9 : 0;
+          want = !overlaps([r[0] - G, r[1] - G, r[2] + 2 * G, r[3] + 2 * G]) && (c.kind !== 'tag' || p.w < S.size * 0.9);
           if (want) taken.push(r);
         }
         c.m.a += ((want ? 1 : 0) - c.m.a) * k;

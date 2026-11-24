@@ -45,7 +45,7 @@
       { key: 'minTargetPx', label: 'Min board size', type: 'number', unit: 'px', default: 26, min: 12, max: 80, step: 2 },
     ],
     metrics: [
-      { key: 'threshold', label: 'Exposure threshold', unit: 'ms', digits: 0, better: 'lower', primary: true, hint: 'Shortest flash with both right ~71% of the time.' },
+      { key: 'threshold', label: 'Exposure threshold', unit: 'ms', digits: 0, better: 'lower', primary: true, hint: 'The shortest flash at which you get both the far and the side target right about 71% of the time. The drill moves it with every answer; lower is better.' },
       { key: 'bothAcc', label: 'Both correct', pct: true, digits: 0, better: 'higher' },
       { key: 'centralAcc', label: 'Apex symbol correct', pct: true, digits: 0, better: 'higher' },
       { key: 'periphAcc', label: 'Flag side correct', pct: true, digits: 0, better: 'higher' },
