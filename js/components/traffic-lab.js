@@ -15,9 +15,11 @@
  * speed IST.LineLab's lap-time model gives for its own car on that path,
  * except that it can't drive through the car ahead: in the same lane it
  * follows with the Intelligent Driver Model's gap rule (2 m + 0.25 s, more
- * when closing) and brakes harder than 4 m/s^2 only if it must. Nothing else
- * reacts, so an option's outcome shows what happens if you commit to it while
- * the others do what they set out to do.
+ * when closing) and brakes harder than 4 m/s^2 only if it must. In the GT's
+ * questions the prototype also won't steer back into a third car it's still
+ * alongside (it waits out in the passing lane). Nothing else reacts, so an
+ * option's outcome shows what happens if you commit to it while the others do
+ * what they set out to do.
  *
  * Risk: bodies (4.8 x 2.0 m) less than 0.25 m apart while side by side is
  * contact; less than 0.9 m, a car moving into another's lane with less room
@@ -49,6 +51,7 @@
   const CARLEN = 4.8, CARW = 2.0;
   const DT = 1 / 60, T_MAX = 45;
   const CONTACT = 0.25, TIGHT = 0.9;
+  const YIELD_GAP = 1.0, SLIDE = 2.5; // a yielding car keeps >= 1 m off a car alongside; slides back at 2.5 m/s
   const LANE = CARW + 0.5; // centre-to-centre lateral distance below which cars share a lane
   const PASS = 3.3 / HW; // passing lane: 3.3 m inside the car being passed (1.3 m between bodies)
   // per-kg power (W/kg at the wheels), drag (1/m), grip and braking in m/s^2 plus downforce terms per (m/s)^2
@@ -202,7 +205,7 @@
 
   // ------------------------------------------------------------- the run
   /**
-   * F (faster car) and S (slower car): { plan, s0, lift?: {decel, maxT, fromS?} },
+   * F (faster car) and S (slower car): { plan, s0, lift?: {decel, maxT, fromS?}, yields? },
    * plus X.extra, third cars placed relative to the GT's start. o.light skips the
    * trajectory record (for searches); o.ref picks which car's pass the
    * prototype is measured against for `onset` (1 = the GT, 2 = the first extra).
@@ -210,7 +213,8 @@
   function run(X, F, S, o) {
     o = o || {};
     const geo = X.geo, sEnd = geo.sEnd, stopAt = sEnd + 25;
-    const mk = (x, id) => ({ id, p: x.plan, s0: x.s0, s: x.s0, v: vAt(x.plan, x.s0), lift: x.lift ? Object.assign({ on: true }, x.lift) : null, hard: null, finish: null, short: 0 });
+    // off: metres the car is held off its path (see yields below)
+    const mk = (x, id) => ({ id, p: x.plan, s0: x.s0, s: x.s0, v: vAt(x.plan, x.s0), lift: x.lift ? Object.assign({ on: true }, x.lift) : null, hard: null, finish: null, short: 0, off: 0, yields: !!x.yields });
     const cs = [mk(F, 'F'), mk(S, 'S')];
     X.extra.forEach((e, k) => cs.push(mk({ plan: e.plan, s0: S.s0 + e.ds }, 'X' + k)));
     const N = cs.length, ref = o.ref && o.ref < N ? o.ref : 1;
@@ -219,10 +223,10 @@
     const pairs = [];
     for (let i = 0; i < N; i++) for (let j = i + 1; j < N; j++) pairs.push({ i, j, prev: null, prevLat: null });
     // sharing a lane = the car in front is on the following car's path where it is now
-    const laneOf = (c, d) => Math.abs(latAt(c.p, d.s) - latAt(d.p, d.s)) < LANE;
+    const laneOf = (c, d) => Math.abs(latAt(c.p, d.s) + c.off - latAt(d.p, d.s) - d.off) < LANE;
     let t = 0;
     for (let step = 0; t < T_MAX; step++) {
-      const lat = cs.map((c) => latAt(c.p, c.s));
+      const lat = cs.map((c) => latAt(c.p, c.s) + c.off);
       if (rec) {
         rec.t.push(t);
         rec.sF.push(cs[0].s); rec.vF.push(cs[0].v); rec.lF.push(lat[0]);
@@ -288,6 +292,8 @@
           if (m === i || e.s <= c.s || e.s - c.s > 160) continue;
           if ((!d || e.s < cs[d].s) && laneOf(c, e)) d = m;
         }
+        // waiting to get back onto its path behind a car it's alongside: it drops back behind it
+        if (c.held != null && cs[c.held].s > c.s && (d == null || cs[c.held].s < cs[d].s)) d = c.held;
         if (d != null && c.s < sEnd) {
           const e = cs[d], dv = next[d];
           // brake lights: react to where the car in front's speed is heading over the next 0.4 s
@@ -309,6 +315,23 @@
         if (c.finish == null && s1 >= sEnd) c.finish = t + (DT * (sEnd - c.s)) / Math.max(1e-6, s1 - c.s);
         c.s = s1;
         c.v = next[i];
+      }
+      // a car that yields doesn't steer into a third car it's alongside: its path's move back to
+      // the line is scripted by position, so when it's held up in the passing lane it waits out
+      // there until it's clear, then slides back onto its path
+      for (let i = 0; i < N; i++) {
+        const c = cs[i];
+        if (!c.yields) continue;
+        const base = latAt(c.p, c.s), l0 = lat[i];
+        const block = (L) => cs.findIndex((e, m) => {
+          if (m < 2 || Math.abs(e.s - c.s) > CARLEN + 3) return false;
+          const le = latAt(e.p, e.s) + e.off, g1 = Math.abs(L - le);
+          return g1 < Math.abs(l0 - le) && g1 - CARW < YIELD_GAP;
+        });
+        const off = c.off - Math.sign(c.off) * Math.min(Math.abs(c.off), SLIDE * DT);
+        const b = block(base + off);
+        c.held = b < 0 ? null : b;
+        c.off = b < 0 ? off : l0 - base;
       }
       t += DT;
     }
@@ -429,7 +452,8 @@
    */
   const VARIANTS = ['normal', 'late', 'pair', 'traffic'];
   const LATE_CAUSES = ['radio', 'dash', 'fight', 'mind'];
-  const LATE_TIME = 6; // s to answer a late call
+  // s to answer a late call, by level: room to read three cars and get into the race at first, a snap call at the top
+  const LATE_TIME = [null, 16, 15, 13, 11, 9, 7];
 
   /**
    * Expensive part, shared by both roles: the complex and its line. The line
@@ -518,7 +542,7 @@
       let fp = fastPlan(X, base, sF0, before), plan = base;
       // covering the inside early is a signal it sees in time too: with the dive shut, it picks another way by
       const replan = id === 'letby' || type === 'traffic' || (id === 'defend' && type === 'marginal');
-      let r = run(X, { plan: fp, s0: sF0 }, S, { light: replan });
+      let r = run(X, { plan: fp, s0: sF0, yields: true }, S, { light: replan });
       if (replan) {
         // easing off on your line is a signal it can see: it takes the best safe pass that offers.
         // In traffic it's reading three cars anyway: it takes the best safe pass whatever you do,
@@ -528,7 +552,7 @@
         for (const pid of cands) {
           // tuck: fall in behind on the GT's own (defensive) line, then pass on the exit as 'follow' does
           const p2 = pid === 'tuck' ? tuckPlan(X, gtPlan) : pid === base ? fp : fastPlan(X, pid, sF0, before && (pid === 'straight' || pid === 'dive'));
-          const rr = pid === base ? r : run(X, { plan: p2, s0: sF0 }, S, { light: true });
+          const rr = pid === base ? r : run(X, { plan: p2, s0: sF0, yields: true }, S, { light: true });
           if (risk(rr).level === 'safe' && (!best || rr.loss[0] < best.r.loss[0])) best = { r: rr, pid, p2 };
           yield;
         }
@@ -536,7 +560,7 @@
           plan = best.pid === 'tuck' ? 'follow' : best.pid;
           fp = best.p2;
         }
-        r = run(X, { plan: fp, s0: sF0 }, S); // again with the record, for the replay
+        r = run(X, { plan: fp, s0: sF0, yields: true }, S); // again with the record, for the replay
       }
       if (id === 'hold' && type === 'traffic' && r.pass) {
         // where the GT could pull out behind the prototype: it's a car length clear and still has a straight to use
@@ -692,7 +716,7 @@
           side: X.dir > 0 ? 'right' : 'left',
           extra: X.extra.map((e) => Object.assign({ s0: sS0 + e.ds }, e)),
           cause: late ? LATE_CAUSES[Math.floor(rnd() * LATE_CAUSES.length)] : null,
-          timeLimit: late ? LATE_TIME : 0,
+          timeLimit: late ? LATE_TIME[U.clamp(level, 1, MAX_LEVEL)] : 0,
         };
         q.catch = catchAt(X, c.sF0, sS0);
         const why = plausible(q);

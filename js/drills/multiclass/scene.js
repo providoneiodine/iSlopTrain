@@ -16,7 +16,7 @@
   const U = IST.util, Sym = IST.Symbols, LL = IST.LineLab, TL = IST.TrafficLab, MC = IST.Multiclass;
   const DS = LL.DS, CARLEN = TL.CARLEN, CARW = TL.CARW;
   const { COL, LEADUP, kmh } = MC;
-  const { box, pane, caps } = MC.ui;
+  const { box, pane, caps, capsWidth } = MC.ui;
 
   MC.createScene = function (env) {
     const { S, VIEW, SEAT, cockpit } = env;
@@ -80,6 +80,18 @@
         g.fillRect(p.x - 2, p.y - 2, 4, 4);
       });
       if (opts.paths) opts.paths.forEach((pp) => LL.drawLine(g, geo, V, pp.plan.sim, { from: pp.from, color: pp.color, width: pp.width || 2.5, alpha: pp.alpha == null ? 0.9 : pp.alpha, dash: pp.dash }));
+      // the highlighted answer's lift / brake / turn-in points as short bars across its path
+      if (opts.gates) opts.gates.forEach((gt) => {
+        if (gt.dash || gt.label === 'Turn in') return; // the meeting point has its own ring; turn-in is plain on the map
+        const p = carAt(geo, V, gt.s, gt.l), c = Math.cos(p.a + Math.PI / 2), sn = Math.sin(p.a + Math.PI / 2), r = Math.max(6, 2.6 * V.scale);
+        g.strokeStyle = gt.color;
+        g.lineWidth = 2.5;
+        g.beginPath();
+        g.moveTo(p.x - c * r, p.y - sn * r);
+        g.lineTo(p.x + c * r, p.y + sn * r);
+        g.stroke();
+        if (w >= 420) caps(g, gt.label, p.x + c * (r + 4), p.y + sn * (r + 4) + 3, { size: 8.5, color: gt.color, align: c >= 0 ? 'left' : 'right' });
+      });
       if (opts.trails) opts.trails.forEach((tr) => LL.drawLine(g, geo, V, tr.plan.sim, { from: tr.from, to: tr.to, color: tr.color, width: 3.2 }));
       // where the prototype reaches the GT if both hold their pace
       if (opts.catchS != null) {
@@ -253,6 +265,11 @@
         g.fillRect(xx - 0.5, ly - 8, 1.5, 16);
         caps(g, label, xx, y + h - 6, { align: 'center', size: 9, color: col });
       };
+      // the highlighted answer's lift / brake zones as bars under the line
+      if (P.intent) P.intent.zones.forEach((z) => {
+        g.fillStyle = z.color;
+        g.fillRect(px(z.a), ly + 3, Math.max(2, px(z.b) - px(z.a)), 3);
+      });
       tick(X.bS, 'Board', COL.text2);
       tick(X.apS, 'T1', COL.dim);
       if (catchS != null) {
@@ -278,9 +295,111 @@
     }
 
     /**
+     * The highlighted answer's plan painted on the road: your line as a ribbon,
+     * tinted where you lift or brake, with gates across it where those start and
+     * where the prototype reaches the GT. It shows what you set out to do, not how
+     * it turns out. it = { plan, to, zones: [{ a, b, color, label }], gates: [{ s, l, color, label }] }.
+     */
+    function drawIntent(g, R, it, from) {
+      const zoneAt = (s) => it.zones.find((z) => s >= z.a && s < z.b);
+      const seen = (p) => p && p.y <= p.clip + 0.5;
+      g.save();
+      g.lineCap = 'round';
+      let prev = null;
+      for (let s = from + 2; s < it.to; s += 2) {
+        const p = R.project(s, TL.latAt(it.plan, s), 0.03);
+        if (!seen(p)) {
+          prev = null;
+          continue;
+        }
+        if (prev) {
+          const z = zoneAt(s);
+          // fades in over the first few metres so it doesn't smear across the bonnet
+          g.globalAlpha = (z ? 0.65 : 0.45) * U.clamp((p.dz - 4) / 10, 0, 1);
+          g.strokeStyle = z ? z.color : it.color;
+          g.lineWidth = U.clamp(1.0 * p.s, 1.5, 16);
+          g.beginPath();
+          g.moveTo(prev.x, prev.y);
+          g.lineTo(p.x, p.y);
+          g.stroke();
+          // chevrons down the middle: which way the line is heading
+          if (Math.round(s) % 14 === 0 && p.s > 2.2) {
+            const c = Math.max(2, 0.35 * p.s);
+            g.globalAlpha = 0.75;
+            g.strokeStyle = 'rgba(255,255,255,0.9)';
+            g.lineWidth = Math.max(1, 0.08 * p.s);
+            g.beginPath();
+            g.moveTo(p.x - c, p.y + c * 0.45);
+            g.lineTo(p.x + (p.x - prev.x) * 0.1, p.y - c * 0.1);
+            g.lineTo(p.x + c, p.y + c * 0.45);
+            g.stroke();
+          }
+        }
+        prev = p;
+      }
+      g.globalAlpha = 1;
+      // gates: labels go to the nearest first and skip any that would overlap one already placed
+      // (or are too far off to read: the approach strip has those); then drawn far to near
+      const placed = [];
+      // a gate you're already at (a lift that starts now) isn't painted ahead of you: it's returned for the HUD
+      const now = it.gates.filter((gt) => gt.s <= from + 10 && it.zones.some((z) => z.label === gt.label && z.b > from));
+      const gs = it.gates.filter((gt) => now.indexOf(gt) < 0 && gt.s > from + 2).map((gt) => {
+        const s = gt.s;
+        const a = R.project(s, gt.l - 2.2, 0.04), b = R.project(s, gt.l + 2.2, 0.04);
+        return s > it.to + 40 || !seen(a) || !seen(b) ? null : { gt, s, a, b };
+      }).filter(Boolean).sort((x, y) => x.s - y.s);
+      gs.forEach((e) => {
+        const a = e.a, fs = U.clamp(0.42 * a.s, 9, 15), ph = U.clamp(1.4 * a.s, 8, 60);
+        const tw = capsWidth(g, e.gt.label, fs) + fs * 1.2, th = fs * 1.6;
+        const mx = (a.x + e.b.x) / 2, my = (a.y + e.b.y) / 2 - ph;
+        const r = [mx - tw / 2 - 3, my - th - 3, mx + tw / 2 + 3, my + 3];
+        e.label = a.dz < 260 && !placed.some((q) => r[0] < q[2] && r[2] > q[0] && r[1] < q[3] && r[3] > q[1]);
+        if (e.label) placed.push(r);
+        Object.assign(e, { fs, ph, tw, th, mx, my });
+      });
+      gs.reverse().forEach((e) => {
+        const gt = e.gt, a = e.a, b = e.b;
+        const fade = U.clamp(1.15 - a.dz / 320, 0.35, 1);
+        g.globalAlpha = fade;
+        g.strokeStyle = gt.color;
+        g.lineWidth = U.clamp(0.28 * a.s, 2, 7);
+        if (gt.dash) g.setLineDash([Math.max(3, 0.5 * a.s), Math.max(3, 0.4 * a.s)]);
+        g.beginPath();
+        g.moveTo(a.x, a.y);
+        g.lineTo(b.x, b.y);
+        g.stroke();
+        g.setLineDash([]);
+        // a post at each end and the label on a tab above the middle, like a marker board
+        const { ph, mx, my, fs, tw, th } = e;
+        g.lineWidth = Math.max(1, 0.06 * a.s);
+        g.beginPath();
+        g.moveTo(a.x, a.y);
+        g.lineTo(a.x, a.y - ph);
+        g.moveTo(b.x, b.y);
+        g.lineTo(b.x, b.y - ph);
+        g.stroke();
+        if (!e.label) {
+          g.globalAlpha = 1;
+          return;
+        }
+        g.fillStyle = 'rgba(16,18,22,0.85)';
+        g.fillRect(mx - tw / 2, my - th, tw, th);
+        g.fillStyle = gt.color;
+        g.fillRect(mx - tw / 2, my - 2, tw, 2);
+        caps(g, gt.label, mx, my - th / 2, { align: 'center', baseline: 'middle', size: fs, color: gt.color });
+        g.globalAlpha = 1;
+      });
+      g.restore();
+      // the answer's own lift / early braking, still too far off for a label on the road: a distance for the HUD
+      const own = it.gates.find((gt) => gt.own && now.indexOf(gt) < 0 && gt.s > from && !gs.some((e) => e.gt === gt && e.label));
+      return now.map((gt) => ({ gt, text: gt.label + ' now' })).concat(own ? [{ gt: own, text: own.label + ' in ' + Math.round(own.s - from) + ' m' }] : []);
+    }
+
+    /**
      * In-car view from your car. The others are drawn ahead on the road, in the
      * mirror when behind, or as a nose at the screen edge when alongside.
      * P.strip: draw the approach strip (with P.catchS, the meeting point).
+     * P.intent: paint the highlighted answer's plan on the road (drawIntent).
      */
     function renderPOV(g, q, x, y, w, h, ts, P) {
       const geo = q.geo;
@@ -297,6 +416,7 @@
       IST.View.apply(R, w, h, VIEW);
       R.prepare(w, h, cam);
       R.draw(g, []);
+      const now = P.intent ? drawIntent(g, R, P.intent, mine.s) : [];
       // cars ahead, far ones first
       others.filter((c) => c.s - mine.s > 2).sort((a, b) => b.s - a.s).forEach((c) => {
         const pr = R.project(c.s, c.l, 0);
@@ -340,6 +460,16 @@
       Sym.text(g, kmh(mine.v) + '', w / 2, h - 34, { align: 'center', size: Math.max(26, Math.min(42, h * 0.08)), weight: 820 });
       Sym.text(g, 'km/h', w / 2, h - 14, { align: 'center', size: 12, weight: 720, alpha: 0.75 });
       if (P.hud) P.hud(g, w, h);
+      // what the highlighted answer has you doing already, over the cockpit
+      now.forEach(({ gt, text: t }, k) => {
+        const fs = 13;
+        const tw = capsWidth(g, t, fs) + 20, ty = h - 86 - k * 30;
+        g.fillStyle = 'rgba(16,18,22,0.85)';
+        g.fillRect(14, ty, tw, 24);
+        g.fillStyle = gt.color;
+        g.fillRect(14, ty, 4, 24);
+        caps(g, t, 24, ty + 12, { baseline: 'middle', size: fs, color: gt.color });
+      });
       const rel = drawRelative(g, q, w, h, P);
       // the approach strip sits on top of the relative, same width and style: one place to look for the numbers
       if (P.strip) drawStrip(g, q, rel[0], rel[1] - 8 - 76, rel[2], 76, P, P.catchS);

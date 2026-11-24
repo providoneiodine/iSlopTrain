@@ -224,8 +224,12 @@
     const me = q.me;
     let risk = '';
     if (rk.level === 'contact') {
-      const w = rk.who && rk.who.find((id) => id !== 'F' && id !== 'S');
-      risk = 'Contact ' + (w ? 'with ' + nameOf(q, w) + ' ' : '') + where(rk.s) + (rk.gap < 0.1 ? ': the cars touch.' : ': only ' + rk.gap.toFixed(1) + ' m between the cars.');
+      const who = rk.who || [], w = who.find((id) => id !== 'F' && id !== 'S');
+      const gapT = rk.gap < 0.1 ? ': the cars touch.' : ': only ' + rk.gap.toFixed(1) + ' m between the cars.';
+      // two other cars touching is still down to your move, but it isn't your car in the contact
+      risk = who.length && who.indexOf(me) < 0
+        ? cap(nameOf(q, who[0])) + ' and ' + nameOf(q, who[1]) + ' make contact ' + where(rk.s) + gapT
+        : 'Contact ' + (w ? 'with ' + nameOf(q, w) + ' ' : '') + where(rk.s) + gapT;
     } else if (rk.why === 'squeeze') risk = 'Squeezed ' + where(rk.s) + ': only ' + rk.gap.toFixed(1) + ' m between the cars.';
     else if (rk.why === 'cut') {
       const room = rk.clear < 1 ? 'with no room' : m1(rk.clear) + ' m in front';

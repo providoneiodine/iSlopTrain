@@ -70,6 +70,13 @@
     }
 
     /** The third cars of a question, positioned by pos(extra, k) -> { s, l, v }. */
+    /** Where to ring an incident on the map: between the two cars in it (the prototype and the GT unless a contact says otherwise). */
+    function markAt(o, p, kind) {
+      const pos = (id) => (id === 'F' ? { s: p.sF, l: p.lF } : id === 'S' ? { s: p.sS, l: p.lS } : p.xs[+id.slice(1)] || { s: p.sS, l: p.lS });
+      const who = kind === 'contact' && o.r.contact ? o.r.contact.who : ['F', 'S'];
+      const a = pos(who[0]), b = pos(who[1]);
+      return { s: (a.s + b.s) / 2, lat: (a.l + b.l) / 2, color: EV[kind].color };
+    }
     function extrasAt(q, pos) {
       return (q.extra || []).map((e, k) => Object.assign({ color: e.kind === 'limp' ? COL.limp : COL.gt2, name: e.kind === 'limp' ? 'Slow GT' : 'GT', num: e.kind === 'limp' ? '33' : '64' }, pos(e, k)));
     }
@@ -261,6 +268,31 @@
       button(g, x + w - nw - 8, by, rp.done ? 'Replay' : rp.hold > 0 ? 'Continue' : 'Next event', () => (rp.done ? startReplay(rp.oi) : skipPhase()), { right: true });
     }
 
+    /**
+     * What an answer sets out to do, for the in-car view: your path to just past T1,
+     * where you lift or brake on it (the answer's own lift, then the path's braking
+     * point to turn-in), and where the prototype reaches the GT at their present pace.
+     * Plans only, no outcome, so it doesn't give the answer away.
+     */
+    function intentOf(q, o) {
+      const X = q.X, mineF = q.me === 'F', plan = mineF ? o.fp : o.sp, s0 = mineF ? q.sF0 : q.sS0;
+      const DS = LL.DS, ti = plan.corners[0].ti * DS, bk = TL.brakeOf(plan, 0);
+      const zones = [], gates = [];
+      const lf = o.lift;
+      if (lf) {
+        const a = Math.max(s0, lf.fromS || s0), v = TL.vAt(plan, a);
+        const b = Math.min(ti, a + Math.max(15, v * lf.maxT - 0.5 * lf.decel * lf.maxT * lf.maxT));
+        const label = lf.decel >= 6 ? 'Brake early' : 'Lift';
+        zones.push({ a, b, color: COL.warn, label });
+        gates.push({ s: a, l: TL.latAt(plan, a), color: COL.warn, label, own: true });
+      }
+      zones.push({ a: bk, b: ti, color: COL.bad, label: 'Brake' });
+      gates.push({ s: bk, l: TL.latAt(plan, bk), color: COL.bad, label: 'Brake' });
+      gates.push({ s: ti, l: TL.latAt(plan, ti), color: COL.text2, label: 'Turn in' });
+      if (q.catch) gates.push({ s: q.catch.s, l: TL.latAt(X.freeS, q.catch.s), color: COL.quiz, label: mineF ? 'You reach it' : 'It reaches you', dash: true });
+      return { plan, to: X.apS + 50, color: mineF ? COL.fast : COL.slow, zones, gates };
+    }
+
     /** The last couple of seconds before the decision, looped with a hold on the decision frame. */
     function renderLoop(g, q, L, ts) {
       const fast = q.role === 'fast';
@@ -275,7 +307,11 @@
       const P = {
         sF: cf.s, lF: cf.l, vF: cf.v, sS: cs.s, lS: cs.l, vS: cs.v, xs,
         fp: sel.fp, sp: sel.sp, braking: false, strip: true, catchS: q.catch ? q.catch.s : null,
-        hud: (g2, w) => {
+        intent: sel.intent || (sel.intent = intentOf(q, sel)),
+        hud: (g2, w, h) => {
+          // which answer the painted line belongs to
+          Sym.text(g2, sel.label, 14, h - 40, { size: 15, weight: 820, color: fast ? COL.fast : COL.slow });
+          caps(g2, 'Painted: your plan for this answer', 14, h - 22, { size: 9.5, color: COL.dim });
           if (live) {
             g2.fillStyle = COL.bad;
             g2.globalAlpha = 0.6 + 0.4 * Math.sin(ts / 140);
@@ -291,6 +327,7 @@
         sF: P.sF, lF: P.lF, sS: P.sS, lS: P.lS, xs,
         catchS: q.catch ? q.catch.s : null, catchL: q.catch ? TL.latAt(q.X.freeS, q.catch.s) : 0,
         paths: [{ plan: fast ? sel.fp : sel.sp, from: fast ? q.sF0 : q.sS0, color: fast ? COL.fast : COL.slow, dash: [7, 5], alpha: 0.85 }],
+        gates: P.intent.gates,
       });
       if (L.map[2] >= 560) Sym.text(g, 'Dashed: your path for the highlighted answer', L.map[0] + L.map[2] - 12, L.map[1] + L.map[3] - 12, { align: 'right', size: 11, weight: 620, color: COL.dim });
     }
@@ -403,7 +440,7 @@
           { plan: o.fp, from: q.sF0, to: p.sF, color: COL.fast },
           { plan: o.sp, from: q.sS0, to: p.sS, color: COL.slow },
         ],
-        mark: rp.cur && rp.hold > 0 && (rp.cur.kind === 'contact' || rp.cur.kind === 'squeeze' || rp.cur.kind === 'cut' || rp.cur.kind === 'hard') ? { s: (p.sF + p.sS) / 2, lat: (p.lF + p.lS) / 2, color: EV[rp.cur.kind].color } : null,
+        mark: rp.cur && rp.hold > 0 && (rp.cur.kind === 'contact' || rp.cur.kind === 'squeeze' || rp.cur.kind === 'cut' || rp.cur.kind === 'hard') ? markAt(o, p, rp.cur.kind) : null,
       });
       if (best !== o && map[2] >= 420) Sym.text(g, 'Dotted green: your line for the best call', map[0] + map[2] - 12, map[1] + map[3] - 12, { align: 'right', size: 11, weight: 620, color: COL.dim });
       const i1 = Math.min(R.n - 1, p.i + 8);

@@ -47,6 +47,23 @@ test('cars on the same line never drive through each other', () => {
   assert.ok(r.loss[0] > 0, 'the car stuck behind lost no time');
 });
 
+test('a prototype held up in the passing lane waits for the slow car instead of steering into it', () => {
+  // the GT's pick can slow the prototype, but its move back to the line must not be blamed on you as contact
+  const r2 = U.rng(11);
+  let n = 0;
+  for (let i = 0; i < 16 && n < 8; i++) {
+    const q = LL.run(TL.questionGen(cx, 2, 'slow', 'hold', r2, { variant: 'traffic' }));
+    if (!q) continue;
+    n++;
+    for (const o of q.opts) {
+      const c = o.r.contact;
+      const straight = c && TL.where(q.X, c.s) === 'on the straight';
+      assert.ok(!(straight && c.who.indexOf('S') < 0), `"${o.id}": the prototype ran into the slow car on the straight`);
+    }
+  }
+  assert.ok(n >= 4, 'too few traffic questions built');
+});
+
 // ------------------------------------------------ calibration (see traffic-lab.js header)
 /** Asymptotic top speed (km/h) and peak deceleration from it (g). */
 function limits(car) {
