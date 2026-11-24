@@ -38,7 +38,7 @@
 
   const state = {
     sessions: [], laps: [], refId: null, sel: [], errors: [], warnings: [],
-    opts: { inputs: 'all', lean: false, cars: true, exag: 1, map: true, paint: 'lap', fence: 'inputs', absTint: true,
+    opts: { inputs: 'all', lean: false, cars: true, exag: 1, map: true, paint: 'lap', fence: 'inputs', absTint: true, attScale: 1,
       markers: new Set(Ly.MARKERS.filter((m) => m.def).map((m) => m.key)) },
     lanes: { on: new Set(Tr.DEFAULT.on), picks: Tr.DEFAULT.picks.slice(), tyreMode: 'temp', tyreBand: 'avg', abs: true, labels: {}, folded: false },
     drawer: false,
@@ -57,7 +57,7 @@
       }
       const o = JSON.parse(localStorage.getItem(LAYERS_KEY) || 'null');
       if (o) {
-        ['lean', 'cars', 'exag', 'map', 'paint', 'fence', 'absTint'].forEach((k) => o[k] != null && (state.opts[k] = o[k]));
+        ['lean', 'cars', 'exag', 'map', 'paint', 'fence', 'absTint', 'attScale'].forEach((k) => o[k] != null && (state.opts[k] = o[k]));
         if (Array.isArray(o.markers)) state.opts.markers = new Set(o.markers);
       }
     } catch (e) {
@@ -75,7 +75,7 @@
   function saveLayers() {
     try {
       const o = state.opts;
-      localStorage.setItem(LAYERS_KEY, JSON.stringify({ lean: o.lean, cars: o.cars, exag: o.exag, map: o.map, paint: o.paint, fence: o.fence, absTint: o.absTint, markers: [...o.markers] }));
+      localStorage.setItem(LAYERS_KEY, JSON.stringify({ lean: o.lean, cars: o.cars, exag: o.exag, map: o.map, paint: o.paint, fence: o.fence, absTint: o.absTint, attScale: o.attScale, markers: [...o.markers] }));
     } catch (e) {
       /* not kept */
     }
@@ -85,6 +85,8 @@
   /** Event kinds the 3D view marks, from the marker toggles. */
   const markerKinds = () => new Set([].concat(...Ly.MARKERS.filter((m) => m.kinds && markerOn(m.key)).map((m) => m.kinds)));
   const hasCh = (cmp, k) => cmp.laps.some((L) => L[k]);
+  /** Attitude arrows asked for and drawable (needs body velocities). */
+  const attitudeOn = () => markerOn('attitude') && !!(V && V.cmp) && hasCh(V.cmp, 'vx') && hasCh(V.cmp, 'vy');
 
   let V = null; // live view (GL, camera, traces, DOM refs) while the page is open
   let originRef = null;
@@ -708,6 +710,7 @@
     return {
       fences: V.fences, lean: o.lean, fenceH: V.closeUp ? 3.5 : 0, closeUp: V.closeUp,
       paint: paintOk(o.paint) ? o.paint : 'lap', fence: fenceOk(o.fence) ? o.fence : 'inputs', absTint: o.absTint, markers: markerKinds(), gears: markerOn('gears'),
+      attitude: attitudeOn(), attScale: o.attScale,
     };
   }
 
@@ -755,15 +758,20 @@
     cmp.laps.forEach((L) => (L.events || []).forEach((e) => kindsIn.add(e.kind)));
     D.append(h('h3', null, 'Markers'),
       h('div', { class: 'rv-radios' }, Ly.MARKERS.map((m) => {
-        const ok = !m.kinds || m.kinds.some((k) => kindsIn.has(k));
+        const ok = m.kinds ? m.kinds.some((k) => kindsIn.has(k)) : (m.needs || []).every((c) => hasCh(cmp, c));
         const box = h('input', { type: 'checkbox', checked: markerOn(m.key), disabled: ok ? null : true });
         box.addEventListener('change', () => {
           box.checked ? o.markers.add(m.key) : o.markers.delete(m.key);
           layersChanged();
         });
-        return h('label', { class: 'view-check' + (ok ? '' : ' off'), title: ok ? m.title : m.kinds ? 'None on these laps' : m.title }, box,
+        return h('label', { class: 'view-check' + (ok ? '' : ' off'), title: ok ? m.title : m.kinds ? 'None on these laps' : 'Not in this file' }, box,
           h('i', { class: 'rv-glyph' + (m.kinds && !m.pip ? ' bar' : ''), style: 'background:' + (m.color || Th.butter) }), m.label);
       })));
+    if (hasCh(cmp, 'vx') && hasCh(cmp, 'vy')) {
+      const att = h('select', { 'aria-label': 'Attitude angle scale' }, [[1, '×1 (true)'], [2, '×2'], [4, '×4']].map(([v, l]) => h('option', { value: v, selected: v === o.attScale }, l)));
+      att.addEventListener('input', () => ((o.attScale = +att.value), layersChanged()));
+      D.append(h('label', { class: 'rv-field', title: 'Exaggerate the drawn slip angle (arrows and the yawed cars). Real slip is a few degrees' }, h('span', null, 'Attitude angle'), att));
+    }
     // 4. view
     const elev = h('select', { 'aria-label': 'Elevation scale' }, [[1, '×1'], [2, '×2'], [4, '×4'], [8, '×8']].map(([v, l]) => h('option', { value: v, selected: v === o.exag }, l)));
     elev.addEventListener('input', () => {
@@ -795,6 +803,10 @@
     else if (fence === 'grip') E.append(item('', 'Grip used', 'background:' + Th.butter), item('', 'Over 100 %', 'background:' + Th.rose));
     if (fence !== 'none' || paint) E.append(item('rv-key-cap', 'Lap colour', null, paint ? 'Painted lines keep an edge in their lap’s colour' : 'Each fence is edged in its lap’s colour'));
     if (markerOn('gears')) E.append(item('rv-key-gear', 'Gear change'));
+    if (attitudeOn()) {
+      E.append(h('span', { class: 'rv-legend-grad', title: 'Attitude wedges: slip angle against this session’s usual at that lateral g' + (o.attScale > 1 ? ' (drawn ×' + o.attScale + ')' : '') },
+        h('b', null, 'Less rotation'), h('i', { class: 'rv-grad wide', style: 'background:linear-gradient(90deg, ' + Th.sky + ', #a1a9b7 35% 50%, ' + Th.peach + ' 75%, ' + Th.rose + ')' }), h('b', null, 'More')));
+    }
   }
 
   // ---------------------------------------------------------------- 3D life
@@ -974,10 +986,20 @@
 
   /** Each lap's car where it was when the reference reached the cursor. */
   function cars() {
-    const cmp = V.cmp, f = Math.max(0, state.cursorF), T = timeAt(cmp.laps[0].t, f);
+    const cmp = V.cmp, f = Math.max(0, state.cursorF), T = timeAt(cmp.laps[0].t, f), attitude = attitudeOn();
     return cmp.laps.map((L, k) => {
       const j = k ? indexAt(L.t, T) : f;
-      return { k, j, pose: IST.Review.Rigs.pose(V.scene, k, j), gapM: (f - j) * cmp.step };
+      let pose = IST.Review.Rigs.pose(V.scene, k, j), slip = NaN;
+      if (attitude) {
+        // yaw the car by its slip angle so it points where its nose did, not down its path
+        slip = Ly.nose(L, Math.round(j));
+        if (isFinite(slip)) {
+          const a = Math.max(-80, Math.min(80, (slip * 180) / Math.PI * state.opts.attScale)) * (Math.PI / 180), c = Math.cos(a), s2 = Math.sin(a);
+          const F = pose.fwd, Lf = pose.left;
+          pose = { p: pose.p, fwd: [F[0] * c + Lf[0] * s2, 0, F[2] * c + Lf[2] * s2], left: [Lf[0] * c - F[0] * s2, 0, Lf[2] * c - F[2] * s2] };
+        }
+      }
+      return { k, j, pose, gapM: (f - j) * cmp.step, slip };
     });
   }
 
@@ -1020,7 +1042,7 @@
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
     V.ov.draw(g, W, H, {
       vp: m.vp, scene: V.scene, cmp: V.cmp, cursorF: state.cursorF, cars: state.opts.cars ? C : [], gaps: C.map((c) => c.gapM), range: V.range,
-      gears: markerOn('gears'), tags: markerOn('tags'), fences: V.fences, markers: V.markerKinds, chipsBeside: V.cam.mode === 'top', dt,
+      gears: markerOn('gears'), tags: markerOn('tags'), attitude: attitudeOn(), fences: V.fences, markers: V.markerKinds, chipsBeside: V.cam.mode === 'top', dt,
     });
   }
 

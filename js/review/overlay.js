@@ -8,7 +8,8 @@
  *     markers: Set of event kinds (derive.js) to mark: a pip at each event's peak, and a
  *           label chip ("Entry US 14°") within LABEL_DIST of the camera or near the cursor
  *           gaps[k]: lap k's distance behind the reference (m), for the cursor posts
- *     cars: [{ k, pose, gapM }] one per lap, at where that lap was at the
+ *     attitude: add slip angle and yaw rate to the car chips (cars carry slip, j)
+ *     cars: [{ k, j, pose, gapM, slip }] one per lap, at where that lap was at the
  *           reference's time (k = 0 is the reference, at the cursor)
  *
  * Labels never pop: each has an opacity that eases toward shown or hidden,
@@ -109,6 +110,11 @@
           const d = L.delta[i];
           main = (d >= 0 ? '+' : '−') + Math.abs(d).toFixed(3) + 's';
           sub = Math.abs(c.gapM) < 0.5 ? 'level' : Math.abs(c.gapM).toFixed(1) + ' m ' + (c.gapM > 0 ? 'behind' : 'ahead');
+        }
+        if (f.attitude && isFinite(c.slip)) {
+          // slip signed by the turn (+ = nose into the corner) and the yaw rate
+          const j = Math.round(c.j), b = L.beta && isFinite(L.beta[j]) ? L.beta[j] : Math.abs(c.slip);
+          sub += ' · β ' + ((b * 180) / Math.PI).toFixed(1) + '°' + (L.yawRate ? ' · ' + Math.round(Math.abs(L.yawRate[j]) * 180 / Math.PI) + '°/s' : '');
         }
         g.font = '800 11px ' + FONT;
         const tw = g.measureText(tag).width + 10;

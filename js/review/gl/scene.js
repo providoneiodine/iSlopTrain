@@ -5,7 +5,8 @@
  *     opt: { exag (elevation x), fences ([bool] per lap, "whose": its fence, paint and markers), lean (bool),
  *            fenceH (m), closeUp (bool), map (bool: satellite ground coming, so no road surface, edges or centre line),
  *            paint ('lap' or a Layers.PAINTS key), fence ('inputs' | 'balance' | 'grip' | 'none'), absTint (bool),
- *            markers (Set of event kinds to underline), gears (bool: gear posts) }
+ *            markers (Set of event kinds to underline), gears (bool: gear posts),
+ *            attitude (bool: body-slip arrows and wedges), attScale (drawn angle x) }
  *   S.items       the static draw list for R.draw (maplayer.js adds the ground tiles to it)
  *   S.layerItems  the current layers' draw list (lap ribbons, fences, halos, gear posts): draw both
  *   S.setLayers(opt)  swap the layer fields of opt without rebuilding the rest (recent sets cached)
@@ -32,6 +33,9 @@
  *     green spikes inside the red.
  *     With lean, the fence tops lean toward the steering input.
  *   - a post at every gear change (the number is drawn by the page's overlay)
+ *   - attitude: every 12 m (5 m close up) an arrow along the car's body axis, the
+ *     travel direction as a faint tick, and the slip angle between them shaded
+ *     by how far it is past this session's usual at that lateral g (Layers)
  */
 (function () {
   'use strict';
@@ -332,11 +336,54 @@
         });
         add('lines', V, { lit: false, blend: true });
       }
+      // -------------------------------------------------------- attitude
+      // where the nose points against where the car is going: an arrow along the body
+      // axis, the travel direction as a faint tick down the line, and the angle between
+      // them shaded by how much more (peach, rose) or less (sky) the car rotated than
+      // usual at that lateral g. attScale exaggerates the drawn angle.
+      if (opt.attitude) {
+        const every = Math.max(1, Math.round((opt.closeUp ? 5 : 12) / cmp.step));
+        const R0 = opt.closeUp ? 4.5 : 7, sc = opt.attScale || 1, SEG = 6;
+        const W = GL.Verts(), A = GL.Verts();
+        const seg = (x0, y0, z0, x1, y1, z1, c, al) => (A.push(x0, y0, z0, 0, 1, 0, c, al), A.push(x1, y1, z1, 0, 1, 0, c, al));
+        cmp.laps.forEach((L, k) => {
+          if (!show[k] || !L.vx || !L.vy) return;
+          const P = base[k], Lt = lateral[k], lc = [1, 1, 1];
+          for (let i = every >> 1; i < n; i += every) {
+            const a0 = Ly.nose(L, i);
+            if (!isFinite(a0)) continue;
+            const a = Math.max(-80 * DEG, Math.min(80 * DEG, a0 * sc));
+            const lx = Lt[i * 2], lz = Lt[i * 2 + 1], tx = -lz, tz = lx; // travel = left rotated back 90°
+            const dir = (q) => [tx * Math.cos(q) + lx * Math.sin(q), tz * Math.cos(q) + lz * Math.sin(q)];
+            const x = P[i * 3], y = P[i * 3 + 1] + 0.06, z = P[i * 3 + 2];
+            const col = Ly.attitudeColor(L, i);
+            // shaded wedge from travel to heading
+            for (let s2 = 0; s2 < SEG; s2++) {
+              const p = dir((a * s2) / SEG), q = dir((a * (s2 + 1)) / SEG);
+              W.push(x, y, z, 0, 1, 0, col, 0.35);
+              W.push(x + p[0] * R0, y, z + p[1] * R0, 0, 1, 0, col, 0.9);
+              W.push(x + q[0] * R0, y, z + q[1] * R0, 0, 1, 0, col, 0.9);
+            }
+            // travel tick
+            seg(x, y + 0.01, z, x + tx * R0, y + 0.01, z + tz * R0, OUTLINE, 0.9);
+            // heading arrow (white, so it reads over any line colour): tail behind the point, head at the rim
+            const h2 = dir(a), tail = R0 * 0.35, hd = R0 * 0.22;
+            const tip = [x + h2[0] * R0, z + h2[1] * R0];
+            seg(x - h2[0] * tail, y + 0.02, z - h2[1] * tail, tip[0], y + 0.02, tip[1], lc, 1);
+            [0.45, -0.45].forEach((s3) => {
+              const b = dir(a + Math.PI - s3);
+              seg(tip[0], y + 0.02, tip[1], tip[0] + b[0] * hd, y + 0.02, tip[1] + b[1] * hd, lc, 1);
+            });
+          }
+        });
+        add('tris', W, { lit: false, blend: true, lift: 3 });
+        add('lines', A, { lit: false, blend: true, lift: 3.5 });
+      }
     }
 
     const cache = new Map(); // layer key -> { items, meshes, fenceH }
     const MAX_CACHED = 6;
-    const keyOf = (o) => JSON.stringify([o.paint, o.fence, o.fences, o.lean, o.absTint !== false, o.markers ? [...o.markers].sort() : [], o.gears !== false, o.fenceH || 0, !!o.closeUp]);
+    const keyOf = (o) => JSON.stringify([o.paint, o.fence, o.fences, o.lean, o.absTint !== false, o.markers ? [...o.markers].sort() : [], o.gears !== false, o.fenceH || 0, !!o.closeUp, !!o.attitude, o.attScale || 1]);
     const S = {
       items, layerItems: [], base, lateral, toGL, exag, size, fenceH: autoFenceH, groundY, centre: cGL, centreLat: lat2, pad: size * 0.25,
       /** Show these layers (scene opt fields: paint, fence, fences, lean, absTint, markers, gears, fenceH, closeUp). */

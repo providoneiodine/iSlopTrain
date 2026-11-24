@@ -8,6 +8,8 @@
  *   Layers.paint(key, L, i, ctx) -> [r, g, b] (0..1) for lap L at index i
  *   Layers.eventLabel(e)         -> "Entry US 14°", or '' for events shown without a label
  *   Layers.markerFor(kind)       -> the MARKERS entry an event kind belongs to
+ *   Layers.nose(L, i)            -> body slip, rad, + = nose left of travel (NaN when unknown)
+ *   Layers.attitudeColor(L, i)   -> wedge colour from the excess sideslip (betaX)
  *   Layers.rgb('#rrggbb')        -> [r, g, b]
  *
  * Colours come from IST.Theme so the paint matches the page. "No data" (low
@@ -54,6 +56,8 @@
     { key: 'off', label: 'Off track', kinds: ['off'], color: Th.rose, pip: true, def: true, title: 'All four wheels off the track' },
     { key: 'coast', label: 'Coasting', kinds: ['coast'], color: Th.dim, pip: false, def: false, title: 'Neither pedal for 0.25 s or more at speed: time lost' },
     { key: 'settings', label: 'Setting changes', kinds: ['bbChange'], color: Th.butter, pip: true, def: false, title: 'Brake bias, ABS or TC changed in the car' },
+    { key: 'attitude', label: 'Attitude', needs: ['vx', 'vy'], color: Th.peach, pip: true, def: false,
+      title: 'Arrows where the nose points, with the angle to the direction of travel shaded: sky = less rotation than usual at that lateral g, grey = usual, peach / rose = more (a slide). The cars yaw by it too' },
     { key: 'gears', label: 'Gear numbers', def: true, title: 'A post and the new gear at every shift' },
     { key: 'tags', label: 'Lap tags', def: true, title: 'Lap labels along each line' },
   ];
@@ -87,6 +91,24 @@
     return null;
   }
 
+  /**
+   * Body slip at lap index i, rad: how far the nose points left (+) or right (-) of
+   * where the car is travelling, from the body velocities. NaN at low speed or without them.
+   */
+  function nose(L, i) {
+    if (!L.vx || !L.vy || !(L.speed[i] > 12)) return NaN;
+    const a = -Math.atan2(L.vy[i], Math.max(1, L.vx[i]));
+    return isFinite(a) ? Math.max(-35 * DEG, Math.min(35 * DEG, a)) : NaN;
+  }
+  /** Wedge colour for lap L at i: excess sideslip against this session's usual at that lateral g. */
+  function attitudeColor(L, i) {
+    const x = L.betaX ? L.betaX[i] / DEG : NaN;
+    if (!isFinite(x)) return NEUTRAL;
+    if (x < -1) return mix(NEUTRAL, SKY, clamp01((-x - 1) / 2));
+    if (x <= 1.5) return NEUTRAL;
+    return x < 4 ? mix(NEUTRAL, PEACH, clamp01((x - 1.5) / 1.5)) : mix(PEACH, ROSE, clamp01((x - 4) / 3));
+  }
+
   const cap = (s) => (s ? s[0].toUpperCase() + s.slice(1) + ' ' : '');
   function eventLabel(e) {
     switch (e.kind) {
@@ -102,5 +124,5 @@
     }
   }
 
-  IST.Review.Layers = { PAINTS, FENCES, MARKERS, paint, eventLabel, markerFor: (k) => byKind[k], rgb, mix, NODATA };
+  IST.Review.Layers = { PAINTS, FENCES, MARKERS, paint, eventLabel, markerFor: (k) => byKind[k], nose, attitudeColor, rgb, mix, NODATA };
 })();
