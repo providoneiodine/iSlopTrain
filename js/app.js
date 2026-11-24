@@ -438,7 +438,8 @@
           h('div', { class: 'res-score-v' }, Math.round(s.score).toLocaleString()),
           h('div', { class: 'res-label' }, 'Score' + (U.isNum(s.bestChain) ? ' · best chain ' + s.bestChain : '')))
       : null;
-    root.append(
+    // Native append prints null as text, so drop optional sections that are absent.
+    root.append(...[
       h('div', { class: 'res-head' },
         h('div', null,
           h('span', { class: 'tag' }, sess ? sess.session.name + ' · step ' + (sess.step + 1) + '/' + sess.session.steps.length + (sess.step === sess.session.steps.length - 1 ? ' · complete' : '') : def.category || 'Drill'),
@@ -462,7 +463,7 @@
           tips.length ? h('ul', { class: 'coach' }, tips.map((t) => h('li', null, t))) : null,
           frameMs ? h('p', { class: 'frame-note' }, result.refreshHz + ' Hz display: flashes rounded to ' + frameMs.toFixed(1) + ' ms frames.') : null)),
       h('div', { class: 'res-actions' }, actions)
-    );
+    ].filter(Boolean));
     show('screen-results', def.name + ' results');
     const scoreV = root.querySelector('.res-score-v');
     if (scoreV) countUp(scoreV, Math.round(s.score));
