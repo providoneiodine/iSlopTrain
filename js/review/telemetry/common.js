@@ -92,7 +92,29 @@
       bb: ['dcbrakebias', 'brakebias'],
       absSet: ['dcabs', 'abssetting', 'abslevel'],
       tcSet: ['dctractioncontrol', 'tcsetting', 'tclevel'],
+      // track conditions sampled through the run (never cut per metre: laps.js averages them per lap)
+      cTrack: ['tracktempcrew', 'tracktemp', 'tracksurfacetemp', 'roadtemp', 'roadtemperature'],
+      cAir: ['airtemp', 'ambienttemp', 'ambienttemperature', 'airtemperature'],
+      cWet: ['trackwetness'],
+      cPrecip: ['precipitation'],
+      cWind: ['windvel', 'windspeed'],
+      cHum: ['relativehumidity', 'humidity'],
+      cSkies: ['skies'],
     };
+
+    /**
+     * Track conditions: channel -> the key in a lap's `cond` record. Every lap carries
+     * lap.cond = { trackTemp, airTemp (degC), wetness, precip, humidity, rubber (0..1),
+     * wind (m/s), skies (label); rubber may be a label instead (iRacing's "moderate usage") }.
+     * Fields a file doesn't have are left out. Session-wide values (the file's header)
+     * sit in meta.cond; a lap's own average from the channels wins over them.
+     */
+    T.COND_CHANNELS = { cTrack: 'trackTemp', cAir: 'airTemp', cWet: 'wetness', cPrecip: 'precip', cWind: 'wind', cHum: 'humidity', cSkies: 'skies' };
+    /** iRacing's sky and wetness enums. */
+    T.SKIES = ['Clear', 'Partly cloudy', 'Mostly cloudy', 'Overcast'];
+    T.WETNESS = [NaN, 0, 0.1, 0.2, 0.35, 0.5, 0.75, 1]; // irsdk_TrackWetness 0..7: unknown, dry .. extremely wet
+    /** A share given as 0..1 or as a percentage. */
+    T.share = (v) => (isFinite(v) ? (Math.abs(v) > 1.0001 ? v / 100 : v) : NaN);
 
     /**
      * Channels every lap carries (resampled by distance in laps.js, sent back from the
@@ -183,6 +205,16 @@
         if (u === 'km') k = 1000;
         else if (u === 'ft') k = 0.3048;
         else if (u === 'mi') k = 1609.344;
+      } else if (key === 'cTrack' || key === 'cAir') {
+        if (/^°?f$|degf|fahrenheit/.test(u)) {
+          for (let i = 0; i < a.length; i++) a[i] = ((a[i] - 32) * 5) / 9;
+          return a;
+        }
+      } else if (key === 'cWind') {
+        if (/km\/?h|kph|kmh/.test(u)) k = 1 / 3.6;
+        else if (/mph/.test(u)) k = 0.44704;
+      } else if (key === 'cPrecip' || key === 'cHum') {
+        if (maxAbs(a) > 1.0001) k = 0.01;
       } else if (key === 'lapPct') {
         if (u === '%' || maxAbs(a) > 1.5) k = 0.01;
       }

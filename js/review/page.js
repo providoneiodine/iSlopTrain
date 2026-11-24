@@ -42,6 +42,7 @@
       markers: new Set(Ly.MARKERS.filter((m) => m.def).map((m) => m.key)) },
     lanes: { on: new Set(Tr.DEFAULT.on), picks: Tr.DEFAULT.picks.slice(), tyreMode: 'temp', tyreBand: 'avg', abs: true, labels: {}, folded: false },
     drawer: false,
+    condOpen: false,
     cursor: -1, cursorF: -1, camMode: 'orbit', playing: false, playT: 0, rate: 1, loading: null,
     partialsOpen: new Set(), // sessions whose partials footer is unfolded
   };
@@ -304,8 +305,21 @@
       h('div', null, h('span', { class: 'tag rv-tag' }, 'Telemetry'), h('h1', null, 'Lap Viewer')),
       h('div', { class: 'view-head-actions' },
         has ? h('button', { class: 'btn ghost', onclick: clearAll, title: 'Forget every loaded file' }, 'Clear') : null,
+        h('button', { class: 'btn', onclick: openGarage61, title: 'Import laps from your Garage 61 account' }, 'Garage 61'),
         h('button', { class: 'btn', onclick: picker }, has ? 'Add files' : 'Open files'),
         h('button', { class: 'btn primary', onclick: close }, 'Done')));
+  }
+
+  /** The Garage 61 import panel; laps it brings back load like dropped files. */
+  function openGarage61() {
+    const s = state.sessions[0];
+    const ctx = s ? { track: s.meta.track || '', car: s.meta.car || '' } : {};
+    const p = IST.Review.Garage61.panel(ctx, (files) => {
+      IST.App.closeModal();
+      if (root().classList.contains('hidden')) return; // left the page meanwhile
+      loadFiles(files);
+    });
+    IST.App.openModal(p.el, p.dispose);
   }
 
   function clearAll() {
@@ -349,6 +363,7 @@
         h('p', { class: 'muted small' }, 'With Map on, the track’s location is sent to OpenStreetMap and Esri for its outline and satellite imagery.'),
         h('div', { class: 'card-actions rv-drop-actions' },
           h('button', { class: 'btn primary', onclick: picker }, 'Open files'),
+          h('button', { class: 'btn', onclick: openGarage61 }, 'Import from Garage 61'),
           h('button', { class: 'btn ghost', onclick: loadDemo }, 'Try a demo session')),
         h('ul', { class: 'rv-formats-list' },
           h('li', null, h('b', null, 'iRacing .ibt'), h('span', { class: 'muted' }, ' · from Documents\\iRacing\\telemetry (Alt+L in the car to record)')),
@@ -458,18 +473,44 @@
 
     const lapsPanel = h('div', { class: 'view-panel rv-laps' });
     const readout = h('div', { class: 'view-panel rv-readout' });
+    const condPanel = h('div', { class: 'view-panel rv-cond hidden' });
     const lanesBox = h('div', { class: 'view-panel rv-lanes' });
-    V = { glEl: gl, overlay, tracesEl: traces, stage, play, camSeg, hint, inputs, lapsPanel, readout, lanesBox, drawer, layersBtn, legend, dirty: true };
+    V = { glEl: gl, overlay, tracesEl: traces, stage, play, camSeg, hint, inputs, lapsPanel, readout, condPanel, lanesBox, drawer, layersBtn, legend, dirty: true };
     return h('div', { class: 'rv-layout' },
       h('div', { class: 'rv-main' }, stage, lanesBox, h('div', { class: 'rv-traces-wrap' }, traces),
         h('p', { class: 'rv-traces-hint' }, 'Drag across the traces to zoom both views to that stretch · shift-drag to pan · wheel to zoom · double-click for the whole lap')),
       h('div', { class: 'rv-side' },
-        lapsPanel, readout,
+        condPanel, lapsPanel, readout,
         state.errors.length || state.warnings.length
           ? h('div', { class: 'view-panel rv-notes' }, h('h3', null, 'Notes'),
             state.errors.map((e) => h('p', { class: 'rv-msg rv-err' }, h('b', null, e.file), ' · ' + e.message)),
             state.warnings.map((w) => h('p', { class: 'rv-msg' }, w)))
           : null));
+  }
+
+  /**
+   * The Conditions panel: the compared laps' track conditions, folded to one line that
+   * says whether they differ. Hidden when no lap has any. Never touches the analysis.
+   */
+  function conditions() {
+    const P = V.condPanel, cmp = V.cmp;
+    const C = IST.Review.Conditions.compare(cmp.laps.map((L) => L.lap.cond));
+    P.innerHTML = '';
+    P.classList.toggle('hidden', !C.rows.length);
+    if (!C.rows.length) return;
+    const many = cmp.laps.length > 1;
+    const verdict = !many ? '' : C.differs ? C.differs + (C.differs === 1 ? ' difference' : ' differences') : 'Same for these laps';
+    const det = h('details', { class: 'rv-cond-box', open: state.condOpen },
+      h('summary', null, h('span', { class: 'rv-cond-title' }, 'Conditions'),
+        verdict ? h('span', { class: 'rv-cond-verdict' + (C.differs ? ' warn' : '') }, verdict) : null));
+    det.addEventListener('toggle', () => (state.condOpen = det.open));
+    const tb = h('table', { class: 'rv-cond-table' },
+      many ? h('tr', null, h('th', null, ''), cmp.laps.map((L, k) => h('th', null, h('i', { class: 'rv-swatch', style: 'background:' + COLORS[k] }), (k ? '' : 'Ref ') + L.lap.lapNo))) : null,
+      C.rows.map((r) => h('tr', { class: r.differs ? 'differs' : '', title: r.differs && r.apart ? r.apart + ' apart' : '' },
+        h('td', null, r.label), r.values.map((v) => h('td', null, v)))));
+    det.append(tb);
+    if (C.differs) det.append(h('p', { class: 'hint' }, 'Grip and balance change with conditions, so part of the gap between these laps may be the track, not the driving.'));
+    P.append(det);
   }
 
   /** Options for the Inputs select: all laps, off, or one lap; keeps the choice if it still exists. */
@@ -913,6 +954,7 @@
     V.traces.set(V.cmp, state.lanes);
     V.traces.setCursor(state.cursor);
     readout();
+    conditions();
     mapStatus();
     if (V.R) {
       if (V.scene) V.scene.dispose();

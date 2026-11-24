@@ -210,12 +210,37 @@
           lap.pit = pit;
         }
         if (kind === 'full' && P.source === 'reckoned') closeLoop(lap);
+        lap.cond = lapConditions(S, s);
         lap.events = T.events ? T.events(lap) : [];
         laps.push(lap);
       });
       if (B.how === 'none' && laps.length === 1 && laps[0].kind !== 'full') warnings.push('No lap markers found: showing the whole run as one segment.');
       return { laps, posSource: P.source, origin: P.origin || null, trackLen: refLen, warnings, split: B.how, calib: D.calib };
     };
+
+    /** A lap's conditions: the session's, overridden by the lap's own mean (or, for skies, its middle sample). */
+    function lapConditions(S, s) {
+      const c = Object.assign({}, S.meta.cond || {});
+      const a = Math.max(0, Math.ceil(s.a)), b = Math.min(S.n - 1, Math.floor(s.b));
+      for (const k in T.COND_CHANNELS) {
+        const ch = S.ch[k];
+        if (!ch || b < a) continue;
+        if (k === 'cSkies') {
+          const v = T.SKIES[Math.round(ch[(a + b) >> 1])];
+          if (v) c.skies = v;
+          continue;
+        }
+        let sum = 0, cnt = 0;
+        for (let i = a; i <= b; i++) {
+          if (isFinite(ch[i])) {
+            sum += ch[i];
+            cnt++;
+          }
+        }
+        if (cnt) c[T.COND_CHANNELS[k]] = sum / cnt;
+      }
+      return c;
+    }
 
     /** Resample one segment [s.a, s.b] (fractional sample indices) every `step` metres. */
     function cut(S, P, t, v, cum, s, step) {

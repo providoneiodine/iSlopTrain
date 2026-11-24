@@ -30,12 +30,33 @@
       steerTq: 'SteeringWheelTorque', surface: 'PlayerTrackSurface', material: 'PlayerTrackSurfaceMaterial',
       bb: 'dcBrakeBias', absSet: 'dcABS', tcSet: 'dcTractionControl',
       rhLF: 'LFrideHeight', rhRF: 'RFrideHeight', rhLR: 'LRrideHeight', rhRR: 'RRrideHeight',
+      cTrack: 'TrackTempCrew', cAir: 'AirTemp', cWet: 'TrackWetness', cPrecip: 'Precipitation', cWind: 'WindVel', cHum: 'RelativeHumidity', cSkies: 'Skies',
     };
     // Surface temps, columns car-left to car-right on every tyre (the session YAML says
     // LastTempsOMI for left tyres, IMO for right): left tyres L = outer, right tyres L = inner.
     ['LF', 'LR'].forEach((w) => Object.assign(WANT, { ['t' + w + '_o']: w + 'tempL', ['t' + w + '_m']: w + 'tempM', ['t' + w + '_i']: w + 'tempR' }));
     ['RF', 'RR'].forEach((w) => Object.assign(WANT, { ['t' + w + '_i']: w + 'tempL', ['t' + w + '_m']: w + 'tempM', ['t' + w + '_o']: w + 'tempR' }));
-    const FALLBACK = { yaw: 'Yaw' };
+    const FALLBACK = { yaw: 'Yaw', cTrack: 'TrackTemp' };
+
+    /** The weekend's conditions from the session YAML (WeekendInfo, and the last session's rubber). */
+    function conditions(info) {
+      const num = (re) => parseFloat(yaml(info, re));
+      const c = {
+        trackTemp: num(/TrackSurfaceTemp:\s*(-?[\d.]+)\s*C/),
+        airTemp: num(/TrackAirTemp:\s*(-?[\d.]+)\s*C/),
+        wind: num(/TrackWindVel:\s*([\d.]+)\s*m\/s/),
+        humidity: num(/TrackRelativeHumidity:\s*([\d.]+)\s*%/) / 100,
+        precip: num(/TrackPrecipitation:\s*([\d.]+)\s*%/) / 100,
+        skies: yaml(info, /TrackSkies:\s*(.+)/),
+      };
+      // one SessionTrackRubberState per session in the weekend; the recording is the last one listed
+      const rub = info.match(/SessionTrackRubberState:[^\n]*/g);
+      if (rub) c.rubber = rub[rub.length - 1].replace(/SessionTrackRubberState:\s*/, '').trim();
+      Object.keys(c).forEach((k) => {
+        if (c[k] === '' || (typeof c[k] === 'number' && !isFinite(c[k]))) delete c[k];
+      });
+      return c;
+    }
 
     /** A YAML value; an empty one ("TrackConfigName: ") stays empty instead of taking the next line. */
     function yaml(info, re) {
@@ -90,6 +111,7 @@
         meta.car = yaml(own, /CarScreenName:\s*(.+)/) || yaml(info, /CarScreenName:\s*(.+)/);
         meta.carPath = yaml(own, /CarPath:\s*(.+)/) || yaml(info, /CarPath:\s*(.+)/);
         if (meta.config && meta.track && meta.config !== meta.track) meta.track += ' · ' + meta.config;
+        meta.cond = conditions(info);
 
         const ch = {}, units = {};
         for (const key in WANT) {
@@ -115,6 +137,14 @@
         if (rhR) ch.rhR = rhR;
         // a car without ABS logs zeros: no ABS channels at all, so its lanes read "Not in this file"
         if (ch.absActive && !ch.absActive.some((v) => v > 0)) delete ch.absActive, delete ch.absCut;
+        // wetness from iRacing's 0..7 scale to a share (0 = unknown: dropped)
+        if (ch.cWet) {
+          for (let i = 0; i < n; i++) {
+            const w = T.WETNESS[Math.round(ch.cWet[i])];
+            ch.cWet[i] = w != null ? w : NaN;
+          }
+          if (!ch.cWet.some(isFinite)) delete ch.cWet;
+        }
         return T.session({ format: 'ibt', name, meta, n, rate: i32(8) || 60, ch, units });
       },
     };

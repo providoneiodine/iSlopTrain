@@ -47,6 +47,8 @@ function writeIbt(rate) {
     ['BrakeABSactive', 2, '', () => 1], ['BrakeABScutPct', 4, '%', () => 0.7],
     ['LFtempL', 4, 'C', () => 80], ['LFtempM', 4, 'C', () => 85], ['LFtempR', 4, 'C', () => 90],
     ['RFtempL', 4, 'C', () => 81], ['RFtempM', 4, 'C', () => 86], ['RFtempR', 4, 'C', () => 91],
+    // the track warms 4 degC a lap; wetness on iRacing's 0..7 scale (1 = dry)
+    ['TrackTempCrew', 4, 'C', (p) => 30 + 4 * p.lap], ['TrackWetness', 2, '', () => 1],
   ];
   const SIZE = [1, 1, 4, 4, 4, 8];
   let off = 0;
@@ -56,7 +58,7 @@ function writeIbt(rate) {
     return v;
   });
   const bufLen = off;
-  const yaml = '---\nWeekendInfo:\n TrackDisplayName: Test Circle\n TrackLength: ' + (L / 1000).toFixed(4) + ' km\nDriverInfo:\n DriverCarIdx: 1\n Drivers:\n - CarIdx: 0\n   UserName: Someone Else\n   CarScreenName: Other Car\n - CarIdx: 1\n   UserName: Test Driver\n   CarScreenName: Test Car\n...\n'; // a multi-car session: the player's car isn't listed first
+  const yaml = '---\nWeekendInfo:\n TrackDisplayName: Test Circle\n TrackLength: ' + (L / 1000).toFixed(4) + ' km\n TrackSkies: Partly Cloudy\n TrackSurfaceTemp: 31.00 C\n TrackAirTemp: 22.50 C\n TrackWindVel: 1.20 m/s\n TrackRelativeHumidity: 55 %\nSessionInfo:\n Sessions:\n - SessionNum: 0\n   SessionTrackRubberState: moderate usage\nDriverInfo:\n DriverCarIdx: 1\n Drivers:\n - CarIdx: 0\n   UserName: Someone Else\n   CarScreenName: Other Car\n - CarIdx: 1\n   UserName: Test Driver\n   CarScreenName: Test Car\n...\n'; // a multi-car session: the player's car isn't listed first
   const varOff = 144, infoOff = varOff + vars.length * 144, dataOff = infoOff + yaml.length;
   const buf = new ArrayBuffer(dataOff + bufLen * S.length);
   const dv = new DataView(buf), u8 = new Uint8Array(buf);
@@ -248,6 +250,28 @@ test('the delta to the reference adds up to the lap-time gap, corner for corner'
     // constant speed per lap: halfway round, half the gap
     assert.ok(Math.abs(c.delta[(cmp.n - 1) >> 1] - gap / 2) < 0.01, 'delta halfway is half the gap');
   });
+});
+
+test('each lap carries the conditions it was driven in, and laps far enough apart are flagged', () => {
+  const IST = load();
+  const r = IST.Telemetry.lib().process('cond.ibt', writeIbt(60));
+  const [a, , c] = r.laps.filter((l) => l.kind === 'full');
+  // the weekend's values from the header, the track temperature from the lap's own samples
+  assert.equal(a.cond.airTemp, 22.5);
+  assert.equal(a.cond.skies, 'Partly Cloudy');
+  assert.equal(a.cond.rubber, 'moderate usage');
+  assert.equal(a.cond.wetness, 0);
+  assert.ok(Math.abs(a.cond.humidity - 0.55) < 1e-9);
+  assert.ok(Math.abs(a.cond.trackTemp - 34) < 0.5);
+  assert.ok(Math.abs(c.cond.trackTemp - 42) < 0.5);
+  const K = IST.Review.Conditions;
+  assert.deepEqual(K.compare([a.cond, c.cond]).rows.filter((x) => x.differs).map((x) => x.key).join(), 'trackTemp');
+  // the same lap twice: nothing to flag
+  assert.equal(K.compare([a.cond, a.cond]).differs, 0);
+  // the same sky named by two tools still matches; a number and a label aren't compared
+  assert.equal(K.compare([{ skies: 'Partly Cloudy', rubber: 'moderate usage' }, { skies: 'partly cloudy', rubber: 0.4 }]).differs, 0);
+  // a file without conditions shows no panel
+  assert.equal(K.compare([{}, {}]).rows.length, 0);
 });
 
 test('the import code runs in a Worker: factories use nothing from outside their own body', () => {

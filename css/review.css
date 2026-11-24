@@ -162,3 +162,35 @@
 .rv-tyre-val { font-size: 13px; font-variant-numeric: tabular-nums; font-weight: var(--w-semi); }
 
 @media (max-width: 1060px) { .rv-layout { grid-template-columns: 1fr; } }
+
+/* ----------------------------------------------------------- Garage 61 import */
+.g61 h2 { margin-bottom: 8px; }
+.g61-steps { margin: 0; padding-left: 20px; color: var(--text2); }
+.g61-steps li { margin: 0 0 12px; line-height: 1.6; }
+.g61-steps code { background: var(--bg-deep); padding: 1px 5px; font-size: 12px; }
+.g61-mark { cursor: grab; border-color: var(--butter); color: var(--butter); margin-left: 4px; }
+.g61-status { min-height: 1.4em; margin: 4px 0 10px; color: var(--text); }
+.g61-drop { display: flex; flex-direction: column; align-items: center; gap: 6px; margin: 4px 0 18px; padding: 22px 16px; text-align: center; background: var(--bg-deep); border: 2px dashed var(--line-strong); }
+.g61-drop b { font-size: 16px; }
+.g61-drop .btn { margin-top: 8px; }
+.g61-extra { border-top: 1px solid var(--line); padding-top: 12px; }
+.g61-extra summary { cursor: pointer; color: var(--text2); font-weight: var(--w-semi); }
+.g61-extra[open] summary { margin-bottom: 8px; }
+
+/* --------------------------------------------------------------- conditions */
+.rv-cond { padding-top: 10px; }
+.rv-cond-box summary { cursor: pointer; display: flex; align-items: baseline; gap: 10px; list-style: none; }
+.rv-cond-box summary::-webkit-details-marker { display: none; }
+.rv-cond-box summary::before { content: '▸'; color: var(--muted); font-size: 11px; }
+.rv-cond-box[open] summary::before { content: '▾'; }
+.rv-cond-title { font-size: 12px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); font-weight: var(--w-semi); }
+.rv-cond-verdict { margin-left: auto; font-size: 12px; color: var(--muted); }
+.rv-cond-verdict.warn { color: var(--peach); font-weight: var(--w-semi); }
+.rv-cond-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; font-variant-numeric: tabular-nums; }
+.rv-cond-table th { text-align: left; font-weight: var(--w-semi); color: var(--text2); padding: 2px 4px 6px; white-space: nowrap; }
+.rv-cond-table th .rv-swatch { margin-right: 4px; }
+.rv-cond-table td { padding: 4px; border-top: 1px solid var(--line); color: var(--text2); }
+.rv-cond-table td:first-child { color: var(--muted); }
+.rv-cond-table tr.differs td { color: var(--text); }
+.rv-cond-table tr.differs td:first-child { color: var(--peach); box-shadow: inset 2px 0 0 var(--peach); padding-left: 8px; }
+.rv-cond .hint { font-size: 12px; color: var(--muted); margin: 10px 0 0; line-height: 1.45; }

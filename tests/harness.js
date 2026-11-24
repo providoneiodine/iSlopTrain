@@ -93,6 +93,8 @@ function load(o) {
     setTimeout,
     clearTimeout,
     devicePixelRatio: 1,
+    TextDecoder,
+    TextEncoder,
   };
   sandbox.window = sandbox;
   vm.createContext(sandbox);

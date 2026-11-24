@@ -350,7 +350,13 @@ The slip ratio per wheel; the yaw correction for inside and outside wheels is ab
 - **Track centre and width.** With a map match, the centre is OpenStreetMap's track line. Without one, it's the average of the loaded laps: an estimate that follows the drivers' lines, since telemetry has no track edges. The half width covers every lap's distance from the centre over ±30 m plus 2.5 m (1 m on a map), and at least 5 m. **[heuristic]**
 - **Position without world coordinates.** Files with neither world x/y nor GPS get a line dead-reckoned from speed and heading (yaw, else integrated yaw rate, else lateral g / speed). Each lap's closing error is spread back along it so the lap meets itself. The line drifts and the view says so.
 
-### 8.8 Limits
+### 8.8 Track conditions
+
+- **Sources.** iRacing `.ibt`: the weekend's sky, air temperature, wind, humidity and rain from the session header, the rubber state of the last session listed, and the track temperature, wetness and sky from the live channels, averaged over each lap (so a track that warms through a stint shows it lap by lap). Garage 61: the conditions it stores for each lap. CSV: key/value rows above the header ("Track temp", "Air temp", "Track usage", "Track wetness", "Wind", "Humidity", "Precipitation", "Clouds") or condition columns. MoTeC `.ld` files carry none.
+- **Flagged as different** when the compared laps spread by more than: track or air temperature 3 °C, wetness or rain 10 points, rubber 15 points, wind 3 m/s, humidity 15 points, or a different sky. **[heuristic]**: chosen as "enough to plausibly move grip or balance", not taken from a study. Rubber given as a label by one tool and a percentage by another is shown but not compared.
+- The panel only reports. Nothing in the delta, the balance calibration or the events is corrected for conditions.
+
+### 8.9 Limits
 
 - Everything in 8.2–8.4 is **relative to the session itself**. A whole session driven with understeer calibrates that understeer in as "normal", and the balance channel shows only what's beyond it. Compare laps of the same car and setup; each session keeps its own calibration.
 - The balance model is steady-state. In fast transients (quick direction changes, kerb hops), US swings ±5° of wheel without meaning anything. That's why events need a duration and understeer needs half the peak lateral g.

@@ -72,11 +72,25 @@
       for (let i = 0; i < best.i; i++) {
         const f = best.sp(lines[i]).map((s) => s.trim()).filter(Boolean);
         if (f.length < 2) continue;
-        const k = T.norm(f[0]);
-        if (/venue|track/.test(k)) meta.track = f[1];
+        const k = T.norm(f[0]), x = parseFloat(f[1]);
+        const cond = (meta.cond = meta.cond || {});
+        if (/^(track|road)(surface)?temp/.test(k)) cond.trackTemp = x;
+        else if (/^(air|ambient)temp/.test(k)) cond.airTemp = x;
+        else if (/^track(usage|rubber)|^rubber/.test(k)) cond.rubber = isFinite(x) ? T.share(x) : f[1];
+        else if (/^(track)?wetness/.test(k)) cond.wetness = T.share(x);
+        else if (/^precip/.test(k)) cond.precip = T.share(x);
+        else if (/^(relative)?humidity/.test(k)) cond.humidity = T.share(x);
+        else if (/^wind(vel|speed)?$/.test(k)) cond.wind = x;
+        else if (/^(clouds|skies|sky)$/.test(k)) cond.skies = f[1];
+        else if (/venue|track/.test(k)) meta.track = f[1];
         else if (/vehicle|car/.test(k)) meta.car = f[1];
         else if (/driver/.test(k)) meta.driver = f[1];
         else if (/date/.test(k)) meta.date = f[1];
+      }
+      if (meta.cond) {
+        Object.keys(meta.cond).forEach((k) => {
+          if (typeof meta.cond[k] === 'number' && !isFinite(meta.cond[k])) delete meta.cond[k];
+        });
       }
       const idx = T.match(names);
       if (idx.speed == null && (idx.x == null || idx.y == null) && (idx.lat == null || idx.lon == null)) {
