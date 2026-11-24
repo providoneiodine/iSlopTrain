@@ -101,19 +101,37 @@
     setTimeout(() => input.remove(), 60000);
   };
 
+  // bumped by Clear and Done: a load still reading when either happens is dropped when it
+  // finishes, so it can't reappear (or ask about another track) on a page that moved on
+  let loadGen = 0;
   async function loadFiles(files) {
+    const gen = loadGen;
     state.loading = { p: 0, label: 'Starting' };
     render();
-    const res = await IST.Telemetry.load(files, (p, label) => {
-      state.loading = { p, label };
-      updateProgress();
-    });
+    let res;
+    try {
+      res = await IST.Telemetry.load(files, (p, label) => {
+        if (gen !== loadGen) return;
+        state.loading = { p, label };
+        updateProgress();
+      });
+    } catch (e) {
+      res = { sessions: [], errors: [{ file: 'Telemetry', message: (e && e.message) || String(e) }] };
+    }
+    if (gen !== loadGen) return;
     state.loading = null;
     res.errors.forEach((e) => state.errors.push(e));
+    // a file with no usable lap is reported, not kept: an empty session would otherwise
+    // set the track for the analysis and turn every later file into a "different track"
+    const usable = res.sessions.filter((s) => {
+      if (s.laps.length) return true;
+      state.errors.push({ file: s.file, message: 'No laps to show: the recording is too short, or has no lap or distance channel.' });
+      return false;
+    });
     // one track per analysis: laps from another circuit can't share a distance grid or a map
-    const base = state.sessions[0] || res.sessions[0];
-    const other = res.sessions.filter((s) => !sameTrack(s, base));
-    res.sessions.filter((s) => sameTrack(s, base)).forEach(addSession);
+    const base = state.sessions[0] || usable[0];
+    const other = usable.filter((s) => !sameTrack(s, base));
+    usable.filter((s) => sameTrack(s, base)).forEach(addSession);
     render();
     if (other.length) askNewSession(other);
   }
@@ -262,6 +280,8 @@
   }
 
   function close() {
+    loadGen++;
+    state.loading = null;
     teardown();
     IST.App.exitToMenu ? IST.App.exitToMenu() : IST.App.show('screen-menu');
   }
@@ -289,7 +309,8 @@
   }
 
   function clearAll() {
-    Object.assign(state, { sessions: [], laps: [], refId: null, sel: [], errors: [], warnings: [], cursor: -1, cursorF: -1, playing: false, partialsOpen: new Set() });
+    loadGen++;
+    Object.assign(state, { loading: null, sessions: [], laps: [], refId: null, sel: [], errors: [], warnings: [], cursor: -1, cursorF: -1, playing: false, partialsOpen: new Set() });
     originRef = null;
     render();
   }
