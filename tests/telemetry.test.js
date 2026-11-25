@@ -17,8 +17,8 @@ const R = 200, L = 2 * Math.PI * R;
 const SPEEDS = [30, 40, 38, 41, 25]; // out, laps 1-3, in (m/s)
 const LAP_TIMES = SPEEDS.slice(1, 4).map((v) => L / v);
 
-/** Samples of the drive at `rate` Hz. */
-function drive(rate) {
+/** Samples of the drive at `rate` Hz. reset: on lap 2 the car is moved from 93 % round to 99 %, as iRacing's active reset does. */
+function drive(rate, reset) {
   const out = [];
   let s = L * 0.7, lap = 0, t = 0;
   while (true) {
@@ -27,6 +27,7 @@ function drive(rate) {
     out.push({ t, lap, s, v, a, thr: lap % 2 ? 1 : 0.6, brk: 0.2 * (lap % 2), gear: 3 + (lap % 2) });
     t += 1 / rate;
     s += v / rate;
+    if (reset && lap === 2 && s >= L * 0.93 && s < L * 0.99) s = L * 0.99;
     if (s >= L) {
       s -= L;
       lap++;
@@ -38,10 +39,12 @@ function drive(rate) {
 // ------------------------------------------------------------------ writers
 /**
  * noFix: that many samples at the start with Lat, Lon and Alt all 0, as iRacing writes before the car is placed.
- * alt: (p) -> the Alt channel, m (100 when left out).
+ * alt: (p) -> the Alt channel, m (100 when left out). reset: see drive.
+ * tweak: (samples) -> edits them before writing. A sample marked blank is written with no place on the track (position, lap, distance, speed 0).
  */
-function writeIbt(rate, noFix, alt) {
-  const S = drive(rate);
+function writeIbt(rate, noFix, alt, reset, tweak) {
+  const S = drive(rate, reset);
+  if (tweak) tweak(S);
   const lat0 = 50.43, lon0 = 5.97, ky = 6371008.8 * (Math.PI / 180), kx = ky * Math.cos((lat0 * Math.PI) / 180);
   const VARS = [
     ['SessionTime', 5, 's', (p) => p.t], ['Lap', 2, '', (p) => p.lap], ['LapDist', 4, 'm', (p) => p.s], ['LapDistPct', 4, '%', (p) => p.s / L],
@@ -88,7 +91,7 @@ function writeIbt(rate, noFix, alt) {
   str(infoOff, yaml);
   S.forEach((p, r) => {
     vars.forEach((v) => {
-      const o = dataOff + r * bufLen + v.offset, x = r < (noFix || 0) && /^(Lat|Lon|Alt)$/.test(v.name) ? 0 : v.get(p);
+      const o = dataOff + r * bufLen + v.offset, x = (r < (noFix || 0) && /^(Lat|Lon|Alt)$/.test(v.name)) || (p.blank && /^(Lat|Lon|Alt|Lap|LapDist|LapDistPct|Speed)$/.test(v.name)) ? 0 : v.get(p);
       if (v.type === 5) dv.setFloat64(o, x, true);
       else if (v.type === 4) dv.setFloat32(o, x, true);
       else dv.setInt32(o, x, true);
@@ -210,14 +213,61 @@ test('iRacing .ibt: altitude logged in 0.1 m steps comes out as the slope it was
   const hill = (s) => 100 + 3 * Math.sin((2 * Math.PI * s) / L);
   const r = T.process('session.ibt', writeIbt(60, 0, (p) => Math.round(hill(p.s) * 10) / 10));
   const l = r.laps.filter((x) => x.kind === 'full')[0];
-  let off = 0, jump = 0;
+  let off = 0, jump = 0, kink = 0;
   for (let i = 1; i < l.n; i++) {
     off = Math.max(off, Math.abs(l.z[i] - hill(i * l.step)));
     jump = Math.max(jump, Math.abs(l.z[i] - l.z[i - 1]));
+    if (i > 1) kink = Math.max(kink, Math.abs(l.z[i] - 2 * l.z[i - 1] + l.z[i - 2]));
   }
   assert.ok(off < 0.06, 'within 6 cm of the real hill (worst ' + off.toFixed(3) + ' m)');
   // the hill's steepest metre climbs under 2 cm; a leftover step would be 10 cm in one
   assert.ok(jump < 0.03, 'no step from one metre to the next (worst ' + jump.toFixed(3) + ' m)');
+  // nor does the slope tick: the climb changes by well under a millimetre from one metre to the next
+  assert.ok(kink < 0.0007, 'the slope doesn’t jitter (worst ' + (kink * 1000).toFixed(2) + ' mm)');
+});
+
+test('iRacing .ibt: a lap the car was reset during isn’t a timed lap, and nothing is drawn across the reset', () => {
+  const T = load().Telemetry.lib();
+  const hill = (s) => 100 + 3 * Math.sin((2 * Math.PI * s) / L);
+  const r = T.process('session.ibt', writeIbt(60, 0, (p) => Math.round(hill(p.s) * 10) / 10, true));
+  // lap 2 skipped 6 % of the track: its "time" is short of a lap and must not be offered as one
+  assert.equal(r.laps.filter((l) => l.kind === 'full').map((l) => l.lapNo).join(), '1,3', 'only the laps driven whole are timed');
+  // every point of every lap is on the circle, at the height the hill has there
+  const whole = r.laps.find((l) => l.kind === 'full');
+  let cx = 0, cy = 0;
+  for (let i = 0; i < whole.n; i++) (cx += whole.x[i] / whole.n), (cy += whole.y[i] / whole.n);
+  r.laps.forEach((l) => {
+    for (let i = 0; i < l.n; i++) {
+      const dx = l.x[i] - cx, dy = l.y[i] - cy, s = ((Math.atan2(dy, dx) / (2 * Math.PI) + 1) % 1) * L;
+      const where = 'lap ' + l.lapNo + ' (' + l.kind + ') at ' + i + ' m';
+      assert.ok(Math.abs(Math.hypot(dx, dy) - R) < 1, where + ' is ' + (Math.hypot(dx, dy) - R).toFixed(1) + ' m off the track');
+      assert.ok(Math.abs(l.z[i] - hill(s)) < 0.08, where + ' is ' + (l.z[i] - hill(s)).toFixed(2) + ' m off the hill');
+    }
+  });
+});
+
+test('iRacing .ibt: a blank record or a clock that steps back mid-lap doesn’t split or retime the lap', () => {
+  const T = load().Telemetry.lib();
+  const r = T.process('session.ibt', writeIbt(60, 0, null, false, (S) => {
+    // iRacing's record for a car not in the world: the first sample, and one half way round lap 1
+    S[0].blank = S[S.findIndex((p) => p.lap === 1 && p.s > L / 2)].blank = true;
+    // and its clock dropping back half a second half way round lap 3, the car carrying on
+    const k = S.findIndex((p) => p.lap === 3 && p.s > L / 2);
+    for (let i = k; i < S.length; i++) S[i].t -= 0.55;
+  }));
+  const full = checkLaps(r, 'ibt', 0.03);
+  assert.equal(full.map((l) => l.lapNo).join(), '1,2,3', 'the laps keep their numbers');
+  r.laps.forEach((l) => {
+    for (let i = 1; i < l.n; i++) assert.ok(l.t[i] >= l.t[i - 1], 'lap ' + l.lapNo + ': time runs forwards at ' + i + ' m');
+  });
+});
+
+test('iRacing .ibt: a lap counter that falls back to 0 after each crossing still gives every lap its own number', () => {
+  const T = load().Telemetry.lib();
+  // as iRacing writes it in some test sessions: 1 for five seconds after the line, then 0 again
+  const r = T.process('session.ibt', writeIbt(60, 0, null, false, (S) => S.forEach((p) => (p.lap = p.lap && p.s < 5 * p.v ? 1 : 0))));
+  const full = checkLaps(r, 'ibt', 0.005);
+  assert.equal(new Set(full.map((l) => l.lapNo)).size, 3, 'three laps, three numbers: ' + full.map((l) => l.lapNo).join());
 });
 
 test('iRacing .ibt: laps, times, units and the GPS line come out as recorded', () => {
@@ -295,6 +345,24 @@ test('CSV with a units row and metadata: laps, km/h and % converted', () => {
   const r = T.parseCSV ? T.laps(T.parseCSV(writeCsv(), 'session.csv')) : null;
   assert.equal(r.posSource, 'world');
   checkLaps(r, 'csv', 0.03);
+});
+
+test('a part lap is compared with the reference at the same spot on the track, up to where it stops', () => {
+  const IST = load();
+  const hill = (s) => 100 + 3 * Math.sin((2 * Math.PI * s) / L);
+  const r = IST.Telemetry.lib().process('session.ibt', writeIbt(60, 0, (p) => Math.round(hill(p.s) * 10) / 10, true));
+  // lap 2 ran from the line to a reset 93 % of the way round, at 38 m/s against lap 1's 40
+  const ref = r.laps.find((l) => l.kind === 'full'), part = r.laps.find((l) => l.lapNo === 2);
+  const cmp = IST.Review.Compare.build(ref, [part]), c = cmp.laps[1], end = Math.floor(part.len / cmp.step) - 1;
+  for (let i = 0; i < cmp.n; i += 10) {
+    const where = 'at ' + Math.round(i * cmp.step) + ' m';
+    if (i <= end) {
+      assert.ok(Math.hypot(c.x[i] - ref.x[i], c.y[i] - ref.y[i]) < 3, where + ' the part lap is ' + Math.hypot(c.x[i] - ref.x[i], c.y[i] - ref.y[i]).toFixed(0) + ' m from the reference');
+      assert.ok(Math.abs(c.delta[i] - (i * cmp.step) * (1 / 38 - 1 / 40)) < 0.05, where + ' the delta is the time lost to there');
+    }
+    // the height drawn under both is the hill's there, to the end of the reference
+    assert.ok(Math.abs(cmp.centre.z[i] - hill(i * cmp.step)) < 0.1, where + ' the centre is ' + (cmp.centre.z[i] - hill(i * cmp.step)).toFixed(2) + ' m off the hill');
+  }
 });
 
 test('the delta to the reference adds up to the lap-time gap, corner for corner', () => {

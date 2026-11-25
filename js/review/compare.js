@@ -33,7 +33,8 @@
   const TL = IST.Telemetry.lib();
   const KEYS = TL.LAP_CHANNELS, STEP = new Set(TL.STEP_CHANNELS);
 
-  function sampleOn(lap, n) {
+  /** m: how a part lap sits on the grid (see place), else the lap is spread over it by fraction of lap. */
+  function sampleOn(lap, n, m) {
     const out = {};
     const last = lap.n - 1;
     KEYS.forEach((k) => {
@@ -41,7 +42,7 @@
       if (!a) return (out[k] = null);
       const o = new Float32Array(n);
       for (let i = 0; i < n; i++) {
-        const f = (i / (n - 1)) * last;
+        const f = m ? m.at[i] : (i / (n - 1)) * last;
         const j = Math.min(last - 1, Math.floor(f));
         const r = f - j;
         o[i] = STEP.has(k) ? (r < 0.5 ? a[j] : a[j + 1]) : a[j] + (a[j + 1] - a[j]) * r;
@@ -49,8 +50,49 @@
       out[k] = o;
     });
     // the end of the lap is the lap time, exactly
-    out.t[n - 1] = lap.time;
+    if (!m) out.t[n - 1] = lap.time;
     return out;
+  }
+  /**
+   * Part laps (runs at one section after a reset, an out lap) start and stop at different
+   * places, so a fraction of each isn't the same spot on the track. Each grid point takes the
+   * part of the lap nearest it on the ground, working forwards from where one joins the other:
+   * -> { at (lap index per grid point), start, end }. Outside start..end the lap isn't there.
+   */
+  function place(ref, lap, n) {
+    const part = (l) => !!l.kind && l.kind !== 'full';
+    if (!part(ref) && !part(lap)) return null;
+    const d2 = (A, i, B, j) => (A.x[i] - B.x[j]) * (A.x[i] - B.x[j]) + (A.y[i] - B.y[j]) * (A.y[i] - B.y[j]);
+    const nearest = (L, P) => {
+      let best = Infinity, at = 0;
+      for (let i = 0; i < L.n; i++) if (d2(L, i, P, 0) < best) (best = d2(L, i, P, 0)), (at = i);
+      return { at, d: Math.sqrt(best) };
+    };
+    const onRef = nearest(ref, lap), onLap = nearest(lap, ref);
+    if (Math.min(onRef.d, onLap.d) > 30) return null;
+    const start = onRef.d <= onLap.d ? onRef.at : 0, last = lap.n - 1, at = new Float32Array(n);
+    // (the search only looks a little ahead, so a lap that crosses its own path can't skip round)
+    const reach = Math.ceil(25 / lap.step);
+    let j = onRef.d <= onLap.d ? 0 : onLap.at, end = n - 1;
+    for (let i = start; i < n; i++) {
+      let best = Infinity, bj = j;
+      for (let q = j; q <= Math.min(last, j + reach); q++) if (d2(ref, i, lap, q) < best) (best = d2(ref, i, lap, q)), (bj = q);
+      j = bj;
+      // between samples: the foot of the grid point on the stretch to the next one
+      let f = j;
+      if (j < last) {
+        const ax = lap.x[j + 1] - lap.x[j], ay = lap.y[j + 1] - lap.y[j], l2 = ax * ax + ay * ay;
+        if (l2 > 0) f = j + Math.max(0, Math.min(1, ((ref.x[i] - lap.x[j]) * ax + (ref.y[i] - lap.y[j]) * ay) / l2));
+      }
+      at[i] = f;
+      if (j >= last) {
+        end = i;
+        break;
+      }
+    }
+    at.fill(at[start], 0, start);
+    at.fill(at[end], end);
+    return { at, start, end };
   }
 
   // the map centre under a reference lap only changes with the lap or the map: keep it
@@ -67,7 +109,12 @@
     const all = [ref].concat(laps.filter((l) => l !== ref));
     const n = ref.n, step = ref.len / (n - 1);
     const out = all.map((lap, i) => {
-      const s = lap === ref ? Object.assign({}, ...KEYS.map((k) => ({ [k]: lap[k] }))) : sampleOn(lap, n);
+      const m = lap === ref ? null : place(ref, lap, n);
+      const s = lap === ref ? Object.assign({}, ...KEYS.map((k) => ({ [k]: lap[k] }))) : sampleOn(lap, n, m);
+      s.start = m ? m.start : 0;
+      s.end = m ? m.end : n - 1;
+      // (its clock set to the reference's where it joins, so the two cars are there together)
+      if (m) for (let i = 0, t0 = s.t[m.start] - ref.t[m.start]; i < n; i++) s.t[i] -= t0;
       if (lap === ref) {
         s.t = Float32Array.from(lap.t);
         s.t[n - 1] = lap.time;
@@ -76,13 +123,21 @@
       s.color = colors ? colors[i % colors.length] : null;
       // events onto the reference grid, by the same fraction-of-lap mapping
       const f = lap === ref ? 1 : (n - 1) / Math.max(1, lap.n - 1);
-      const at = (j) => Math.max(0, Math.min(n - 1, Math.round(j * f)));
+      const at = (j) => {
+        if (!m) return Math.max(0, Math.min(n - 1, Math.round(j * f)));
+        let i = m.start;
+        while (i < m.end && m.at[i] < j) i++;
+        return i;
+      };
       s.events = (lap.events || []).map((e) => Object.assign({}, e, { i0: at(e.i0), i1: at(e.i1), iPeak: at(e.iPeak) }));
       return s;
     });
     out.forEach((s) => {
       s.delta = new Float32Array(n);
-      for (let i = 0; i < n; i++) s.delta[i] = s.t[i] - out[0].t[i];
+      for (let i = 0; i < n; i++) {
+        const k = Math.max(s.start, Math.min(s.end, i));
+        s.delta[i] = s.t[k] - out[0].t[k];
+      }
       // time gained (-) or lost (+) on the reference, s per 100 m, smoothed over ~20 m
       s.gain = new Float32Array(n);
       if (s !== out[0]) {
@@ -103,11 +158,12 @@
     // centre: the map's, else the laps' average path
     const cx = new Float32Array(n), cy = new Float32Array(n), cz = new Float32Array(n), w = new Float32Array(n);
     for (let i = 0; i < n; i++) {
-      let sx = 0, sy = 0, sz = 0;
-      out.forEach((s) => ((sx += s.x[i]), (sy += s.y[i]), (sz += s.z[i])));
-      cx[i] = sx / out.length;
-      cy[i] = sy / out.length;
-      cz[i] = sz / out.length;
+      let sx = 0, sy = 0, sz = 0, m = 0;
+      // (a lap that isn't there yet, or has stopped short, isn't averaged in)
+      out.forEach((s) => i >= s.start && i <= s.end && ((sx += s.x[i]), (sy += s.y[i]), (sz += s.z[i]), m++));
+      cx[i] = sx / m;
+      cy[i] = sy / m;
+      cz[i] = sz / m;
     }
     const onMap = track && track.lines && track.lines.length ? centreFor(ref, track.lines, step) : null;
     if (onMap) {

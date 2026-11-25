@@ -43,9 +43,12 @@
     /**
      * A channel logged in coarse steps (iRacing's Alt comes in 0.1 m steps, so a gentle
      * slope reads as a staircase). The true value is known where the level changes: half
-     * way between the two. Straight lines join those points along the distance travelled.
+     * way between the two, somewhere between those two samples. Straight lines join those
+     * points along the distance travelled, then a 0.1 s blur takes out the slope jitter
+     * left by only knowing each crossing to the nearest sample.
+     * breaks: samples where the car was moved (see teleports); nothing is joined across one.
      */
-    function unstep(a, t, v) {
+    function unstep(a, t, v, breaks) {
       const n = a.length;
       let q = Infinity, changes = 0;
       for (let i = 1; i < n; i++) {
@@ -54,21 +57,52 @@
       }
       // a channel that changes on most samples isn't stepped: left as it is
       if (!changes || changes > n * 0.5) return Float64Array.from(a);
-      const dist = new Float64Array(n), out = new Float64Array(n);
+      const dist = new Float64Array(n), out = Float64Array.from(a), cut = new Uint8Array(n + 1);
       for (let i = 1; i < n; i++) dist[i] = dist[i - 1] + Math.abs(v[i]) * Math.max(0, t[i] - t[i - 1]);
-      let i0 = -1, v0 = 0;
-      for (let i = 1; i < n; i++) {
-        // (a jump of several steps at once is a glitch or a reset, not a slope)
-        if (a[i] === a[i - 1] || Math.abs(a[i] - a[i - 1]) > q * 3) continue;
-        const v1 = (a[i] + a[i - 1]) / 2, span = dist[i] - (i0 < 0 ? 0 : dist[i0]);
-        for (let j = Math.max(0, i0); j <= i; j++) {
-          const f = i0 < 0 ? 1 : span > 0 ? (dist[j] - dist[i0]) / span : (j - i0) / (i - i0);
-          out[j] = i0 < 0 ? v1 : v0 + (v1 - v0) * f;
+      // a jump of several steps at once is the car being moved too, not a slope
+      for (let i = 1; i < n; i++) if (Math.abs(a[i] - a[i - 1]) > q * 3) cut[i] = 1;
+      (breaks || []).forEach((i) => (cut[i] = 1));
+      cut[n] = 1;
+      const sigma = 0.1 * (n - 1) / Math.max(1e-6, t[n - 1] - t[0]);
+      for (let s = 0, e = 1; e <= n; e++) {
+        if (!cut[e]) continue;
+        // each end of a run starts from the level recorded there: the best guess with no crossing beyond it
+        let v0 = a[s], d0 = dist[s], from = s;
+        for (let i = s + 1; i <= e; i++) {
+          if (i < e && a[i] === a[i - 1]) continue;
+          const v1 = i < e ? (a[i] + a[i - 1]) / 2 : a[e - 1], d1 = i < e ? (dist[i] + dist[i - 1]) / 2 : dist[e - 1], span = d1 - d0;
+          for (let j = from; j < i; j++) out[j] = span > 0 ? v0 + (v1 - v0) * Math.min(1, Math.max(0, (dist[j] - d0) / span)) : v1;
+          (v0 = v1), (d0 = d1), (from = i);
         }
-        (i0 = i), (v0 = v1);
+        out.set(blur(out.subarray(s, e), sigma), s);
+        s = e;
       }
-      if (i0 < 0) return Float64Array.from(a);
-      for (let j = i0; j < n; j++) out[j] = v0;
+      return out;
+    }
+    /**
+     * Samples where the car is suddenly somewhere else (a reset, a tow, a session change):
+     * it moved over 8 m in one sample, and several times what it moved in the one before.
+     */
+    function teleports(x, y) {
+      const out = [], move = (i) => Math.hypot(x[i] - x[i - 1], y[i] - y[i - 1]);
+      for (let i = 2; i < x.length; i++) {
+        const d = move(i);
+        if (d > 8 && d > 5 * move(i - 1) + 5) out.push(i);
+      }
+      return out;
+    }
+    /** Gaussian blur, sigma in samples, ends held. */
+    function blur(a, sigma) {
+      const r = Math.ceil(sigma * 3), n = a.length, out = new Float64Array(n);
+      if (r < 1) return a;
+      const w = Float64Array.from({ length: r + 1 }, (_, k) => Math.exp((-k * k) / (2 * sigma * sigma)));
+      let sum = w[0];
+      for (let k = 1; k <= r; k++) sum += 2 * w[k];
+      for (let i = 0; i < n; i++) {
+        let s = a[i] * w[0];
+        for (let k = 1; k <= r; k++) s += (a[Math.max(0, i - k)] + a[Math.min(n - 1, i + k)]) * w[k];
+        out[i] = s / sum;
+      }
       return out;
     }
 
@@ -87,7 +121,7 @@
         // y-up sims are left-handed (x right, z forward): mirror so the map isn't flipped
         const mirror = up === 1 ? -1 : 1;
         const X = Float64Array.from(ax[flat[0]]), Y = Float64Array.from(ax[flat[1]]).map((q) => q * mirror);
-        return { x: X, y: Y, z: up >= 0 ? Float64Array.from(ax[up]) : new Float64Array(n), source: 'world' };
+        return { x: X, y: Y, z: up >= 0 ? Float64Array.from(ax[up]) : new Float64Array(n), source: 'world', breaks: teleports(X, Y) };
       }
       if (C.lat && C.lon && range(C.lat) + range(C.lon) > 1e-4) {
         let lat0 = 0, lon0 = 0, k = 0;
@@ -110,7 +144,8 @@
             last = i;
           } else if (last >= 0) (x[i] = x[last]), (y[i] = y[last]), (z[i] = z[last]);
         }
-        return { x, y, z: C.alt ? unstep(z, t, v) : z, source: 'gps', origin: { lat: lat0 * deg * 180 / Math.PI, lon: lon0 * deg * 180 / Math.PI } };
+        const breaks = teleports(x, y);
+        return { x, y, z: C.alt ? unstep(z, t, v, breaks) : z, source: 'gps', breaks, origin: { lat: lat0 * deg * 180 / Math.PI, lon: lon0 * deg * 180 / Math.PI } };
       }
       // dead reckoning
       const x = new Float64Array(n), y = new Float64Array(n);
@@ -178,11 +213,43 @@
       return a[i] + (a[j] - a[i]) * (f - i);
     };
 
+    /**
+     * iRacing writes a record with no place on the track (position, lap, lap distance and
+     * speed all 0) while the car isn't in the world: often the first, sometimes one mid-run.
+     * Left in, it reads as a line crossing, so it takes the values of the sample beside it.
+     */
+    function blanks(S) {
+      const C = S.ch, n = S.n, keys = Object.keys(C).filter((k) => k !== 't' && C[k] && C[k].length === n);
+      if (!C.lat || !C.lon || !(range(C.lat) + range(C.lon) > 1e-4)) return;
+      // (a lost fix alone still has the car's speed)
+      const core = ['speed', 'lap', 'lapPct', 'lapDist', 'alt'].filter((k) => C[k]);
+      const blank = (i) => !C.lat[i] && !C.lon[i] && core.every((k) => !C[k][i]);
+      let last = -1;
+      for (let i = 0; i < n; i++) {
+        if (!blank(i)) {
+          for (let j = last < 0 ? 0 : i; j < i; j++) keys.forEach((k) => (C[k][j] = C[k][i]));
+          last = i;
+        } else if (last >= 0) keys.forEach((k) => (C[k][i] = C[k][last]));
+      }
+    }
+    /** Time per sample, never running backwards: a step back in the file's clock counts as one sample. */
+    function clock(S) {
+      const n = S.n, raw = S.ch.t;
+      if (!raw) return Float64Array.from({ length: n }, (_, i) => i / S.rate);
+      let back = false;
+      for (let i = 1; i < n && !back; i++) back = raw[i] < raw[i - 1];
+      if (!back) return raw;
+      const t = Float64Array.from(raw);
+      for (let i = 1; i < n; i++) t[i] = t[i - 1] + (raw[i] > raw[i - 1] ? raw[i] - raw[i - 1] : 1 / (S.rate || 60));
+      return t;
+    }
+
     T.laps = function (S, opt) {
       opt = opt || {};
       const step = opt.step || 1;
       const C = S.ch, n = S.n;
-      const t = C.t ? C.t : Float64Array.from({ length: n }, (_, i) => i / S.rate);
+      blanks(S);
+      const t = clock(S);
       const warnings = (S.warnings || []).slice();
 
       // speed and distance travelled
@@ -220,30 +287,41 @@
         if (C.lapPct) B = boundaries(S, t, L);
       }
 
-      // segments between boundaries
-      const cuts = [0].concat(B.at, [n - 1]);
+      // segments between lap boundaries; a teleport ends one and starts the next, and neither is a whole lap
+      const edges = B.at.map((f) => ({ a: f, b: f, line: true })).concat((P.breaks || []).map((i) => ({ a: i - 1, b: i, line: false })));
+      edges.sort((p, q) => p.a - q.a);
+      edges.push({ a: n - 1, b: n - 1, line: false, end: true });
       const segs = [];
-      for (let k = 0; k < cuts.length - 1; k++) {
-        const a = cuts[k], b = cuts[k + 1];
-        if (b - a < 2) continue;
-        segs.push({ a, b, bounded: k > 0 && k < cuts.length - 2, first: k === 0, last: k === cuts.length - 2, covered: lerpAt(cum, b) - lerpAt(cum, a) });
-      }
+      let from = { b: 0, line: false, start: true };
+      edges.forEach((e) => {
+        const a = from.b, b = e.a;
+        const covered = lerpAt(cum, b) - lerpAt(cum, a), moved = (!from.line && !from.start) || (!e.line && !e.end);
+        // (under 100 m either side of a teleport is the run-up to the line after a reset: not worth a row)
+        if (b - a >= 2 && !(moved && covered < 100)) segs.push({ a, b, bounded: from.line && e.line, first: !!from.start, last: !!e.end, covered });
+        if (e.b >= from.b) from = e;
+      });
       const full = segs.filter((s) => s.bounded).map((s) => s.covered);
       const refLen = L || median(full) || Math.max.apply(null, segs.map((s) => s.covered));
       const lapBase = C.lap ? Math.round(lerpAt(C.lap, Math.min(n - 1, (segs[0] ? segs[0].a : 0) + 1))) : 1;
+
+      // a lap counter that drops back (iRacing's does in some test sessions) can't number the laps: count them instead
+      let lapCounts = !!C.lap;
+      for (let i = 1; i < n && lapCounts; i++) lapCounts = C.lap[i] >= C.lap[i - 1];
 
       const laps = [];
       segs.forEach((s, k) => {
         // a single segment that ends where it starts is a lap (a one-lap export)
         const closes = B.how === 'none' && segs.length === 1 && Math.hypot(lerpAt(P.x, s.b) - lerpAt(P.x, s.a), lerpAt(P.y, s.b) - lerpAt(P.y, s.a)) < 40;
         let kind = 'partial';
-        if ((s.bounded || closes) && s.covered > refLen * 0.9) kind = 'full';
+        // (a lap on a recorded line also ends where it began: a net for a moved car that wasn't spotted)
+        const apart = P.source === 'gps' || P.source === 'world' ? Math.hypot(lerpAt(P.x, s.b) - lerpAt(P.x, s.a), lerpAt(P.y, s.b) - lerpAt(P.y, s.a)) : 0;
+        if ((s.bounded || closes) && s.covered > refLen * 0.9 && apart < 80) kind = 'full';
         else if (s.first && !s.last) kind = 'out';
         else if (s.last && !s.first) kind = 'in';
         const lap = cut(S, P, t, v, cum, s, step);
         if (!lap) return;
         lap.kind = kind;
-        lap.lapNo = C.lap ? Math.round(lerpAt(C.lap, Math.min(n - 1, s.a + 1))) : lapBase + k;
+        lap.lapNo = lapCounts ? Math.round(lerpAt(C.lap, Math.min(n - 1, s.a + 1))) : lapBase + k;
         if (C.onPit) {
           let pit = false;
           for (let i = Math.ceil(s.a); i <= Math.floor(s.b); i++) if (C.onPit[i] > 0.5) (pit = true), (i = n);
