@@ -7,6 +7,10 @@
  *   node scripts/bundle-tracks.js spa monza       just these (the rest of the index is kept)
  *   node scripts/bundle-tracks.js --resume        skip circuits that already have a file (after an interrupted run)
  *   node scripts/bundle-tracks.js --corners       also mirror Lovely Track Data's iRacing files
+ *   node scripts/bundle-tracks.js --js            only rewrite bundle.js from the files already there
+ *
+ * Every run also writes data/tracks/bundle.js, the same index and outlines as one script: a page
+ * opened from file:// can't fetch the JSON, but it can load a script.
  *
  * --corners is off by default: Lovely Track Data has no licence yet, so only mirror it with the
  * maintainers' permission. Node 18+, nothing to install.
@@ -17,7 +21,7 @@ const path = require('node:path');
 
 const ROOT = path.join(__dirname, '..');
 const OUT = path.join(ROOT, 'data', 'tracks');
-const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter', 'https://maps.mail.ru/osm/tools/overpass/api/interpreter'];
+const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter'];
 const LTD = 'https://raw.githubusercontent.com/Lovely-Sim-Racing/lovely-track-data/main/data/';
 const UA = { 'User-Agent': 'isloptrain-track-bundler/1 (static site build script)' };
 const R_DEFAULT = 3500;
@@ -106,6 +110,7 @@ async function raceways(lat, lon, r, roads) {
 
 async function main() {
   const args = process.argv.slice(2);
+  if (args.includes('--js')) return writeScript();
   const corners = args.includes('--corners'), resume = args.includes('--resume');
   const only = new Set(args.filter((a) => !a.startsWith('--')));
   const list = JSON.parse(fs.readFileSync(path.join(__dirname, 'tracks.json'), 'utf8')).circuits;
@@ -179,7 +184,21 @@ async function main() {
     fs.writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify({ tracks: { iracing: ir } }) + '\n');
     console.log('Lovely Track Data: ' + ir.length + ' iRacing files');
   }
+  writeScript();
   console.log('wrote ' + path.relative(ROOT, OUT));
+}
+
+/** data/tracks/bundle.js: index.json and every osm/<id>.json, for pages opened from file://. */
+function writeScript() {
+  const index = JSON.parse(fs.readFileSync(path.join(OUT, 'index.json'), 'utf8'));
+  const osm = {};
+  index.circuits.forEach((c) => {
+    const f = path.join(OUT, 'osm', c.id + '.json');
+    if (c.osm && fs.existsSync(f)) osm[c.id] = JSON.parse(fs.readFileSync(f, 'utf8'));
+  });
+  fs.writeFileSync(path.join(OUT, 'bundle.js'), '/* Built by scripts/bundle-tracks.js from index.json and osm/. Track (c) OpenStreetMap contributors, ODbL. */\n' +
+    'window.IST = window.IST || {};\nIST.TrackBundle = ' + JSON.stringify({ index, osm }) + ';\n');
+  console.log('wrote ' + path.relative(ROOT, path.join(OUT, 'bundle.js')));
 }
 
 main().catch((e) => {

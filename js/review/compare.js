@@ -2,7 +2,8 @@
  * Lines laps up for comparison. Pure functions, no DOM.
  *
  *   IST.Review.Compare.build(ref, laps, colors, track?)  -> comparison (below)
- *     track: { lines: [[[x, y], ...], ...], halfWidth? }, from the map
+ *     track: { lines: [[[x, y], ...], ...], halfWidth?, edgesOn? }, from the map;
+ *     edgesOn(cx, cy, n, step) -> { l, r, q } | null: stored edges on the centre (edges.js)
  *   IST.Review.Compare.fmtLap(s)         1:42.315
  *
  * Every lap is sampled on the reference lap's distance grid by fraction of
@@ -15,7 +16,7 @@
  *   { n, step, len, laps: [{ lap, color, t, x, y, z, speed, throttle, brake,
  *     steer, gear, ... (every T.LAP_CHANNELS channel), delta, gain (s / 100 m), off,
  *     events (derive.js, on this grid), shifts: [{ i, from, to }] }],
- *     centre: { x, y, z, w (half width), source }, bounds: { x0, x1, y0, y1, z0, z1 },
+ *     centre: { x, y, z, w (half width, the wider side), wl, wr (each side's), edges, source }, bounds: { x0, x1, y0, y1, z0, z1 },
  *     corners, complexes (findCorners, below) }
  * laps[0] is the reference.
  *
@@ -23,8 +24,12 @@
  * the laps' frame: see track.js), so a line that clips an apex is drawn off
  * centre. Without a map it's the laps' average path, which follows the
  * drivers' lines: an estimate, since telemetry has no track edges.
- * centre.source says which ('map' | 'laps'). The half width covers every
- * lap plus a margin (at least 5 m each side), or the map's width if wider.
+ * centre.source says which ('map' | 'laps'). Without a map the half width
+ * covers every lap plus a margin (at least 5 m each side). With one, each
+ * edge is where it really is when known (centre.edges: 'kerbs' or 'laps-ibt',
+ * learned from an .ibt, edges.js), else the map's width ('osm') or a typical
+ * one widened to hold the laps ('typical'); so a lap that clips a kerb is drawn
+ * at the edge, and one that runs wide is drawn off the road.
  * Each lap's off[i] is its signed distance from the centre (m, + left).
  * With a map, laps that all leave the road on the same side are moved back
  * onto it together (local GPS error: see onRoad), so x / y can differ a few
@@ -113,7 +118,7 @@
    * grass. Where every lap is past the map's road edge on the same side, that shared excess
    * is taken as local GPS error, spread smoothly over ~120 m and taken off all laps alike.
    */
-  function onRoad(out, cx, cy, n, step, hw) {
+  function onRoad(out, cx, cy, n, step, E) {
     const nx = new Float32Array(n), ny = new Float32Array(n);
     for (let i = 0; i < n; i++) {
       const a = Math.max(0, i - 3), b = Math.min(n - 1, i + 3);
@@ -126,7 +131,11 @@
       for (let i = 0; i < n; i++) off[i] = (s.x[i] - cx[i]) * nx[i] + (s.y[i] - cy[i]) * ny[i];
       return { off, start: s.start, end: s.end };
     });
-    const b = IST.Review.Track.keepOn(offs, n, step, null, hw);
+    // the road's middle and half width from its edges; a car's centre sits up to slack m inside
+    // an asphalt edge, just inside a kerb's outer one
+    const at = new Float32Array(n), half = new Float32Array(n);
+    for (let i = 0; i < n; i++) (at[i] = (E.left[i] - E.right[i]) / 2), (half[i] = Math.max(2, (E.left[i] + E.right[i]) / 2 - E.slack));
+    const b = IST.Review.Track.keepOn(offs, n, step, { at, half });
     if (!b.some((v) => Math.abs(v) >= 0.2)) return;
     // new arrays: the reference's x / y are the lap's own
     out.forEach((s) => {
@@ -202,8 +211,34 @@
       cx.set(onMap.x);
       cy.set(onMap.y);
     }
-    if (onMap) onRoad(out, cx, cy, n, step, track.halfWidth || 6.5);
+    // the road's edges either side of a map centre: stored ones (edges.js, from an .ibt's
+    // kerb strikes), else the map's width, else a typical one
+    const wl = new Float32Array(n), wr = new Float32Array(n);
+    let edgeSource = 'laps';
+    if (onMap) {
+      const E = track.edgesOn ? track.edgesOn(cx, cy, n, step) : null, hw = track.halfWidth || IST.Review.Edges.TYPICAL;
+      let have = 0, kerbs = 0;
+      for (let i = 0; i < n; i++) {
+        const ok = E && E.l[i] === E.l[i];
+        wl[i] = ok ? E.l[i] : hw;
+        wr[i] = ok ? E.r[i] : hw;
+        if (ok) (have++, E.q[i] === 2 && kerbs++);
+      }
+      edgeSource = have > n * 0.5 ? (kerbs > n * 0.05 ? 'kerbs' : 'laps-ibt') : track.halfWidth ? 'osm' : 'typical';
+      // blend where stored stretches start and stop
+      const sw = Math.max(1, Math.round(15 / step));
+      [wl, wr].forEach((a) => {
+        const c = Float32Array.from(a);
+        for (let i = 0; i < n; i++) {
+          let t = 0, m = 0;
+          for (let k = Math.max(0, i - sw); k <= Math.min(n - 1, i + sw); k++) (t += c[k]), m++;
+          a[i] = t / m;
+        }
+      });
+      onRoad(out, cx, cy, n, step, { left: wl, right: wr, slack: edgeSource === 'kerbs' ? 0.3 : 1 });
+    }
     // each lap's signed distance from the centre (+ left of travel)
+    const reach = [new Float32Array(n), new Float32Array(n)];
     out.forEach((s) => {
       s.off = new Float32Array(n);
       for (let i = 0; i < n; i++) {
@@ -211,16 +246,31 @@
         const tx = cx[b] - cx[a], ty = cy[b] - cy[a], l = Math.hypot(tx, ty) || 1;
         s.off[i] = ((s.x[i] - cx[i]) * -ty + (s.y[i] - cy[i]) * tx) / l;
         w[i] = Math.max(w[i], Math.abs(s.off[i]));
+        const side = s.off[i] >= 0 ? 0 : 1;
+        reach[side][i] = Math.max(reach[side][i], Math.abs(s.off[i]));
       }
     });
     // smooth the width over ~60 m so the edges don't wobble with the lines
     const win = Math.max(2, Math.round(30 / step));
     const ws = new Float32Array(n);
-    const minW = Math.max(5, (onMap && track.halfWidth) || 0);
-    for (let i = 0; i < n; i++) {
+    const spanMax = (a, i) => {
       let m = 0;
-      for (let k = -win; k <= win; k++) m = Math.max(m, w[Math.min(n - 1, Math.max(0, i + k))]);
-      ws[i] = Math.max(minW, m + (onMap ? 1 : 2.5));
+      for (let k = -win; k <= win; k++) m = Math.max(m, a[Math.min(n - 1, Math.max(0, i + k))]);
+      return m;
+    };
+    for (let i = 0; i < n; i++) {
+      if (!onMap) {
+        // no map: the laps' own spread, the same both sides
+        ws[i] = Math.max(5, spanMax(w, i) + 2.5);
+        wl[i] = wr[i] = ws[i];
+        continue;
+      }
+      // a guessed width still has to hold the laps; a measured one shows where they leave it
+      if (edgeSource === 'typical') {
+        wl[i] = Math.max(wl[i], spanMax(reach[0], i) + 1);
+        wr[i] = Math.max(wr[i], spanMax(reach[1], i) + 1);
+      }
+      ws[i] = Math.max(wl[i], wr[i]);
     }
     let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity, z0 = Infinity, z1 = -Infinity;
     for (let i = 0; i < n; i++) {
@@ -232,7 +282,7 @@
       z1 = Math.max(z1, cz[i]);
     }
     const corners = findCorners(out[0], n, step);
-    return { n, step, len: ref.len, laps: out, centre: { x: cx, y: cy, z: cz, w: ws, source: onMap ? 'map' : 'laps' }, bounds: { x0, x1, y0, y1, z0, z1 }, corners: corners.list, complexes: corners.complexes };
+    return { n, step, len: ref.len, laps: out, centre: { x: cx, y: cy, z: cz, w: ws, wl, wr, edges: edgeSource, source: onMap ? 'map' : 'laps' }, bounds: { x0, x1, y0, y1, z0, z1 }, corners: corners.list, complexes: corners.complexes };
   }
 
   /*

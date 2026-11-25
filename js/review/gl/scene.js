@@ -100,7 +100,7 @@
     };
     for (let i = 0; i < n; i++) lateralOf(cGL, i, lat2, i * 2);
     const edge = (i, side, extra) => {
-      const w = ce.w[i] + (extra || 0);
+      const w = (side > 0 ? ce.wl || ce.w : ce.wr || ce.w)[i] + (extra || 0);
       return [cGL[i * 3] + lat2[i * 2] * w * side, cGL[i * 3 + 1], cGL[i * 3 + 2] + lat2[i * 2 + 1] * w * side];
     };
     const surfN = (i) => {

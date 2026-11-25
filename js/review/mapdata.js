@@ -1,13 +1,16 @@
 /*
  * Map data for the Review viewer: the track's outline from OpenStreetMap and
  * satellite tiles from Esri World Imagery. The only part of the viewer that
- * touches the network, and only when the Map option is on. What's sent is
+ * touches outside servers, and only when the Map option is on (the bundled
+ * circuits below come with the site, and are read with it off too). What's sent is
  * where the track is (a point and radius, or the track's name); telemetry
  * never leaves the browser.
  *
  *   IST.Review.MapData.lookup(q) -> Promise<{ geo, lines, halfWidth, how } | null>
  *     q: { origin ({ lat, lon } of the session frame, GPS laps), track (name),
- *          x, y (the reference lap, session metres) }
+ *          x, y (the reference lap, session metres), local (bundled circuits only:
+ *          nothing asked of any server, so it runs with the Map option off) }
+ *     key: names the circuit for per-track caches (edges.js).
  *     GPS laps: raceways around the lap, the lap nudged onto them (Track.align)
  *     to undo the sim's GPS offset; null if the lap doesn't follow any raceway
  *     (the spot isn't a circuit on the map). Laps in a sim's own coordinates: the
@@ -33,7 +36,7 @@
   IST.Review = IST.Review || {};
   const Tk = IST.Review.Track;
   // servers that answer browser requests from any origin (a static GitHub Pages site)
-  const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter', 'https://maps.mail.ru/osm/tools/overpass/api/interpreter'];
+  const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter'];
   const NOMINATIM = 'https://nominatim.openstreetmap.org/search';
   // two hosts for the same tiles, so twice as many load at once
   const TILE = (z, x, y) => 'https://' + ((x + y) % 2 ? 'server' : 'services') + '.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/' + z + '/' + y + '/' + x;
@@ -103,10 +106,33 @@
     while (i < s.length) (a += num()), (b += num()), pts.push([a / 1e6, b / 1e6]);
     return pts;
   }
+  /**
+   * The same data as one script (bundle.js), for a page opened from file://, where fetch can't
+   * read files but a script tag can. -> Promise<{ index, osm } | null>
+   */
+  let script$ = null;
+  function scriptBundle() {
+    if (!script$) {
+      script$ = new Promise((ok) => {
+        if (IST.TrackBundle) return ok(IST.TrackBundle);
+        if (typeof document === 'undefined' || !document.createElement || !document.head) return ok(null);
+        const el = document.createElement('script');
+        el.src = BUNDLE + 'bundle.js';
+        el.onload = () => ok(IST.TrackBundle || null);
+        el.onerror = () => ok(null);
+        document.head.appendChild(el);
+      });
+    }
+    return script$;
+  }
+  const fromFile = () => typeof location !== 'undefined' && location.protocol === 'file:';
   let index$ = null;
-  /** The bundled circuits ([] when the site has none, or opened from file://). */
+  /** The bundled circuits ([] when the site has none). */
   function circuits() {
-    if (!index$) index$ = fetchJSON(BUNDLE + 'index.json', {}, 10000).then((d) => (d && d.circuits) || [], () => []);
+    if (!index$) {
+      const viaScript = () => scriptBundle().then((b) => (b && b.index.circuits) || []);
+      index$ = fromFile() ? viaScript() : fetchJSON(BUNDLE + 'index.json', {}, 10000).then((d) => (d && d.circuits) || [], viaScript);
+    }
     return index$;
   }
   const ways$ = new Map();
@@ -114,7 +140,9 @@
   function circuitWays(c) {
     if (!c.osm) return Promise.resolve([]);
     if (!ways$.has(c.id)) {
-      ways$.set(c.id, fetchJSON(BUNDLE + 'osm/' + c.id + '.json', {}, 15000).then((d) => d.ways.map((w) => ({ pts: decode6(w.p), width: w.w || 0 })), () => (ways$.delete(c.id), null)));
+      const ways = (d) => d.ways.map((w) => ({ pts: decode6(w.p), width: w.w || 0 }));
+      const viaScript = () => scriptBundle().then((b) => (b && b.osm[c.id] ? ways(b.osm[c.id]) : (ways$.delete(c.id), null)));
+      ways$.set(c.id, fromFile() ? viaScript() : fetchJSON(BUNDLE + 'osm/' + c.id + '.json', {}, 15000).then(ways, viaScript));
     }
     return ways$.get(c.id);
   }
@@ -133,12 +161,15 @@
     return best && best.c;
   }
 
-  /** Raceway ways within r metres of a point: [{ pts: [[lat, lon]...], width }] (cached). */
-  async function raceways(lat, lon, r) {
+  /** The bundled circuit whose area holds the whole circle, if any. */
+  const bundledAt = async (lat, lon, r) => (await circuits()).find((x) => metres([x.lat, x.lon], [lat, lon]) + r <= x.r) || null;
+  /** Raceway ways within r metres of a point: [{ pts: [[lat, lon]...], width }] (cached). local: bundled only, else null. */
+  async function raceways(lat, lon, r, local) {
     // a bundled circuit whose area holds the whole circle answers it
-    const c = (await circuits()).find((x) => metres([x.lat, x.lon], [lat, lon]) + r <= x.r);
+    const c = await bundledAt(lat, lon, r);
     const own = c && (await circuitWays(c));
     if (own) return own.filter((w) => w.pts.some((p) => metres(p, [lat, lon]) <= r));
+    if (local) return null;
     const key = 'p' + lat.toFixed(3) + ',' + lon.toFixed(3) + ',' + Math.round(r / 100);
     const hit = cached(key);
     if (hit) return hit;
@@ -209,14 +240,16 @@
       let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
       for (let i = 0; i < n; i += 5) (x0 = Math.min(x0, q.x[i])), (x1 = Math.max(x1, q.x[i])), (y0 = Math.min(y0, q.y[i])), (y1 = Math.max(y1, q.y[i]));
       const c = g.toLL((x0 + x1) / 2, (y0 + y1) / 2);
-      const ways = await raceways(c[0], c[1], Math.hypot(x1 - x0, y1 - y0) / 2 + 300);
+      const rad = Math.hypot(x1 - x0, y1 - y0) / 2 + 300, ways = await raceways(c[0], c[1], rad, q.local);
+      if (!ways) return null;
+      const own = await bundledAt(c[0], c[1], rad);
       // no raceway under the lap (a closed circuit since built over, or a sim's fantasy
       // track) means the imagery would show the wrong place, so there's no map
       const a = Tk.align(q.x, q.y, ways.map((w) => w.pts.map((p) => g.toXY(p[0], p[1]))));
       if (!a || a.cover < 0.6) return null;
       // session -> map metres is a.m; nudge the geo frame so laps sit on the raceway
       const gf = a.fitted ? Tk.geo(q.origin.lat, q.origin.lon, Tk.invert(a.m)) : g;
-      return { geo: gf, lines: ways.map((w) => w.pts.map((p) => gf.toXY(p[0], p[1]))), halfWidth: halfWidthOf(ways), how: 'gps', shift: a.shift };
+      return { geo: gf, lines: ways.map((w) => w.pts.map((p) => gf.toXY(p[0], p[1]))), halfWidth: halfWidthOf(ways), how: 'gps', shift: a.shift, key: own ? own.id : q.track ? 'n:' + cleanName(q.track).toLowerCase() : null };
     }
     const name = cleanName(q.track);
     if (!name && !q.id) return null;
@@ -225,7 +258,8 @@
     const ownWays = own && (await circuitWays(own));
     if (own && !own.osm) return null;
     const places = ownWays ? [{ lat: own.lat, lon: own.lon, ways: ownWays }] : [];
-    let looked = false;
+    // local: the bundle or nothing, so nothing leaves the site
+    let looked = !!q.local;
     for (let k = 0; ; k++) {
       if (k === places.length) {
         // not bundled, or the bundle didn't fit the lap: ask the live servers
@@ -243,7 +277,7 @@
       if (!f) continue;
       // session -> local metres is f.m; the geo frame wants local -> session
       const g = Tk.geo(place.lat, place.lon, Tk.invert(f.m));
-      return { geo: g, lines: ways.map((w) => w.pts.map((p) => g.toXY(p[0], p[1]))), halfWidth: halfWidthOf(ways), how: 'fit' };
+      return { geo: g, lines: ways.map((w) => w.pts.map((p) => g.toXY(p[0], p[1]))), halfWidth: halfWidthOf(ways), how: 'fit', key: place.ways ? own.id : 'n:' + name.toLowerCase() };
     }
     return null;
   }

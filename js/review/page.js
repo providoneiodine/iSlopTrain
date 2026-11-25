@@ -148,7 +148,9 @@
     const base = state.sessions[0] || fresh[0];
     const other = fresh.filter((s) => !sameTrack(s, base));
     const before = drivers().length;
+    fresh.forEach(keepHeights);
     fresh.filter((s) => sameTrack(s, base)).forEach(addSession);
+    findHeights();
     if (before < 2 && drivers().length > 1 && !state.mode) pickRival();
     render();
     if (dups.length) flash('Already loaded: ' + dups.join(', '));
@@ -178,6 +180,7 @@
       App.closeModal();
       clearAll();
       group.forEach(addSession);
+      findHeights();
       render();
     };
     App.openModal(h('div', null,
@@ -209,7 +212,8 @@
     state.sessions.push(s);
     s.warnings.forEach((w) => state.warnings.push(s.file + ': ' + w));
     s.laps.forEach((l, k) => state.laps.push({ id: si + ':' + k, s, lap: l }));
-    if (state.opts.map) findMap(s), findCorners(s);
+    findMap(s);
+    if (state.opts.map) findCorners(s);
     // pick the fastest full lap as the reference, and the next fastest to compare
     // (and swap a partial reference for a complete lap once one arrives)
     const cur = state.refId && byId(state.refId);
@@ -224,26 +228,67 @@
     }
   }
 
-  /** Look the session's track up on the map (once), then redraw if it's on screen. */
+  /** A file with real heights saves its track's profile in this browser (in its own frame, so before addSession). */
+  function keepHeights(s) {
+    const E = IST.Review.Elevation;
+    if (s.posSource !== 'gps' || !E.has(s)) return;
+    s.elev = 'file';
+    E.save(E.profile(s, s.origin));
+  }
+  /** GPS laps with no heights: a saved .ibt profile of the track, else (Map on) approximate terrain. */
+  function findHeights() {
+    const E = IST.Review.Elevation, o = originRef;
+    let changed = false;
+    state.sessions.forEach((s) => {
+      if (s.posSource !== 'gps' || !o || s.elev === 'file' || s.elev === 'saved') return;
+      if (E.saved(s, o).some((p) => E.fill(s, p, o))) return (s.elev = 'saved'), (changed = true);
+      if (!state.opts.map || s.elev === 'approx' || s.elev === 'loading') return void (s.elev = s.elev || 'none');
+      s.elev = 'loading';
+      E.terrain(s, o).then((p) => {
+        if (s.elev !== 'loading' || !state.sessions.includes(s)) return;
+        s.elev = E.fill(s, p, o) ? 'approx' : 'none';
+      }, () => s.elev === 'loading' && (s.elev = 'none')).then(() => V && V.cmp && rebuild(true));
+    });
+    if (changed && V && V.cmp) rebuild(true);
+  }
+
+  /**
+   * Look the session's track up on the map (once), then redraw if it's on screen. With the
+   * Map option off only the circuits bundled with the site are tried ('local' when that
+   * finds nothing, so turning Map on asks the servers).
+   */
   function findMap(s) {
-    if (s.mapState) return;
+    const local = !state.opts.map;
+    if (s.mapState && !(s.mapState === 'local' && !local)) return;
     const lap = s.laps.filter((l) => l.kind === 'full').sort((a, b) => a.time - b.time)[0] || s.laps.slice().sort((a, b) => b.len - a.len)[0];
     const gps = s.posSource === 'gps' && originRef;
     if (!lap || (!gps && s.posSource !== 'world')) return (s.mapState = 'none');
     s.mapState = 'loading';
     // imagery waits for the lookup to confirm the spot is a circuit (and line the laps up with it)
-    IST.Review.MapData.lookup({ origin: gps ? originRef : null, id: s.meta.trackId, track: s.meta.track, x: lap.x, y: lap.y }).then((m) => {
+    IST.Review.MapData.lookup({ origin: gps ? originRef : null, id: s.meta.trackId, track: s.meta.track, x: lap.x, y: lap.y, local }).then((m) => {
       s.map = m;
-      s.mapState = m ? 'ok' : 'none';
+      s.mapState = m ? 'ok' : local ? 'local' : 'none';
+      if (m) learnEdges(s, m);
     }, (e) => {
       // servers down: GPS laps still show imagery where GPS puts them, unchecked
       if (gps) s.map = { geo: IST.Review.Track.geo(originRef.lat, originRef.lon), lines: [], halfWidth: 0, how: 'gps' };
       s.mapState = 'error';
       s.mapError = e && e.message;
     }).then(() => {
-      if (V && V.cmp && V.cmp.laps[0].entry.s === s) rebuild(true);
+      // (new edges reach any session of the track on screen, a GPS one too)
+      if (V && V.cmp && (V.cmp.laps[0].entry.s === s || s.edgesLearned)) rebuild(true);
       else mapStatus();
     });
+  }
+  /**
+   * A sim's own file (an .ibt: exact positions, even as lat / lon, and the surface under the
+   * car) teaches this browser where the track's edges are; GPS loggers and Garage 61 don't.
+   */
+  function learnEdges(s, m) {
+    if (!m.key || !m.lines.length) return;
+    const laps = s.laps.filter((l) => l.kind === 'full' && l.material).sort((a, b) => a.time - b.time).slice(0, 12);
+    const P = laps.length ? IST.Review.Edges.learn(laps, m.lines, m.halfWidth) : null;
+    if (P) IST.Review.Edges.save(m.key, P, m.geo), (s.edgesLearned = true);
   }
   /** The circuit's corner numbers (Map option only), then a rebuild if that track is on screen. */
   function findCorners(s) {
@@ -344,9 +389,11 @@
     const ref = one || byId(state.refId);
     if (!ref) return null;
     const others = one ? [] : state.sel.filter((id) => id !== state.refId).map(byId).filter(Boolean);
-    const m = state.opts.map && ref.s.map;
+    // the map's centre and edges with Map off too: they're only there when they cost no server anything
+    const m = ref.s.map;
     const colors = [lapColor(ref.id)].concat(others.map((o) => lapColor(o.id)));
-    const cmp = Cmp.build(ref.lap, others.map((o) => o.lap), colors, m && m.lines.length ? { lines: m.lines, halfWidth: m.halfWidth } : null);
+    const edgesOn = m && m.key ? (cx, cy, n) => IST.Review.Edges.onGrid(m.key, m.geo, cx, cy, n) : null;
+    const cmp = Cmp.build(ref.lap, others.map((o) => o.lap), colors, m && m.lines.length ? { lines: m.lines, halfWidth: m.halfWidth, edgesOn } : null);
     cmp.laps.forEach((L, k) => (L.entry = k === 0 ? ref : others[k - 1]));
     // only on a full lap: the data's corners are shares of one
     if (state.opts.map && ref.s.turns && ref.lap.kind === 'full') cmp.turns = IST.Review.Corners.place(cmp, ref.s.turns);
@@ -490,7 +537,7 @@
       state.errors.length ? errorList() : null,
       dropTarget(h('div', { class: 'rv-drop' },
         h('div', { class: 'rv-drop-title' }, 'Drop telemetry files here'),
-        h('p', { class: 'muted' }, 'Read in this browser. Telemetry is never uploaded or saved.'),
+        h('p', { class: 'muted' }, 'Read in this browser. Telemetry is never uploaded; only each track’s heights are kept here, for laps without them.'),
         h('p', { class: 'muted small' }, 'With Map on, the track’s location is sent to OpenStreetMap and Esri for its outline and satellite imagery.'),
         h('div', { class: 'card-actions rv-drop-actions' },
           h('button', { class: 'btn primary', onclick: picker }, 'Open files'),
@@ -548,39 +595,80 @@
     input.addEventListener('change', () => {
       state.opts.map = input.checked;
       saveLayers();
-      if (input.checked) state.sessions.forEach((s) => (findMap(s), findCorners(s)));
+      if (input.checked) state.sessions.forEach((s) => (findMap(s), findCorners(s))), findHeights();
       rebuild(true);
     });
-    return h('label', { class: 'view-check', title: 'Satellite ground and the true track centre, looked up by the track’s location (OpenStreetMap, Esri)' }, input, 'Map');
+    return h('label', { class: 'view-check', title: 'Satellite ground, the true track centre and (for files without them) approximate heights, looked up by the track’s location (OpenStreetMap, Esri, AWS Terrain Tiles)' }, input, 'Map');
   }
 
-  /** The line under the 3D view saying where the track and ground came from. */
+  /**
+   * Where the track, ground, turn numbers and heights came from: one short row in the 3D
+   * view (the Sources button, notes only for what's degraded, and the credit the imagery
+   * terms ask to keep visible), with the detail and full attributions in a pop-out.
+   */
   function mapStatus() {
-    const el = V && V.stage.querySelector('.rv-map-status');
-    if (!el || !V.cmp) return;
-    const s = refSession(), src = V.cmp.centre.source;
-    let text = '';
-    if (!state.opts.map) text = 'Map off · track edges estimated from the laps';
-    else if (!s || (s.mapState === 'loading' && !s.map)) text = 'Looking the track up…';
-    else if (s.mapState === 'loading') text = 'Looking up the track centre…' + (V.noImagery ? ' · imagery unavailable' : '') + ' · ' + IST.Review.MapData.ATTRIB;
-    else if (s.mapState === 'error' && s.map) text = 'Track centre lookup failed' + (s.mapError ? ' (' + s.mapError + ')' : '') + ' · centre estimated from the laps · ' + IST.Review.MapData.ATTRIB;
-    else if (s.mapState === 'error') text = 'Map lookup failed' + (s.mapError ? ' (' + s.mapError + ')' : '') + ' · track estimated from the laps';
-    else if (s.mapState !== 'ok') text = s.posSource === 'reckoned' || s.posSource === 'none' ? 'No position in this file to place it on a map · track estimated from the laps' : s.posSource === 'gps' ? 'No race track on the map where this lap was driven · track estimated from the laps' : 'Track not found on the map · edges estimated from the laps';
-    else text = (src === 'map' ? 'Centre: OpenStreetMap' + (s.map.shift >= 1 ? ' · GPS lined up with it (' + Math.round(s.map.shift) + ' m)' : '') : 'No track outline on the map · centre estimated from the laps') + (V.noImagery ? ' · imagery unavailable' : '') + ' · ' + IST.Review.MapData.ATTRIB;
-    el.textContent = text;
-    cornerStatus();
-  }
-  /** Above the attribution: whether the map's turn numbers (and names) are the circuit's or estimated. */
-  function cornerStatus() {
-    const el = V && V.stage.querySelector('.rv-corner-status');
-    if (!el || !V.cmp) return;
-    const T = V.cmp.turns, s = refSession();
-    let text = 'Turn numbers: estimated';
+    const bar = V && V.stage.querySelector('.rv-sources');
+    if (!bar || !V.cmp) return;
+    const s = refSession(), src = V.cmp.centre.source, on = state.opts.map, rows = [], notes = [];
+    const edges = { kerbs: 'from kerb strikes', 'laps-ibt': 'from .ibt laps', osm: 'map width', typical: 'typical width' }[V.cmp.centre.edges];
+    // track centre
+    let centre;
+    if (src === 'map') centre = 'OpenStreetMap' + (on && s && s.map && s.map.shift >= 1 ? ', GPS lined up with it (' + Math.round(s.map.shift) + ' m)' : '');
+    else if (!on) centre = 'estimated from the laps (Map off)';
+    else if (!s || s.mapState === 'loading') centre = 'looking up…';
+    else if (s.mapState === 'error') (centre = 'lookup failed' + (s.mapError ? ' (' + s.mapError + ')' : '') + ', estimated from the laps'), notes.push('Map lookup failed');
+    else if (s.mapState !== 'ok') centre = s.posSource === 'reckoned' || s.posSource === 'none' ? 'estimated from the laps (no position in this file)' : s.posSource === 'gps' ? 'estimated from the laps (no race track on the map here)' : 'estimated from the laps (track not found on the map)';
+    else centre = 'estimated from the laps (no outline on the map)';
+    rows.push(['Track centre', centre]);
+    if (edges) rows.push(['Track edges', edges]);
+    const imagery = on && s && s.map && s.mapState !== 'loading';
+    rows.push(['Ground', !on ? 'Map off' : V.noImagery ? 'satellite imagery unavailable' : imagery ? 'Esri World Imagery' : 'looking up…']);
+    if (on && V.noImagery) notes.push('Imagery unavailable');
+    // turn numbers
+    const T = V.cmp.turns;
+    let turns = 'estimated from braking zones';
     if (T && T.length) {
       const n = T.filter((c) => c.official).length;
-      text = 'Turn numbers: ' + (n === T.length ? 'true' : n ? 'partly true' : 'estimated') + (T.some((c) => c.name) ? ' · names: true' : '');
-    } else if (state.opts.map && s && s.cornerState === 'loading') text += ' (looking up)';
-    el.textContent = text;
+      turns = (n === T.length ? 'the circuit’s' : n ? 'partly the circuit’s' : 'estimated') + (T.some((c) => c.name) ? ', with corner names' : '');
+    } else if (on && s && s.cornerState === 'loading') turns = 'looking up…';
+    rows.push(['Turn numbers', turns]);
+    // heights
+    const ev = new Set(V.cmp.laps.map((l) => l.entry.s.elev || 'file'));
+    const approx = ev.has('approx');
+    let elev = 'from the file';
+    if (approx) (elev = 'approximate, from terrain data (±5 m)'), notes.push('Elevation approximate');
+    else if (ev.has('loading')) elev = 'looking up…';
+    else if (ev.has('none')) (elev = 'none in ' + (ev.size > 1 ? 'some files' : 'this file') + (on ? '' : ' (turn Map on for approximate)')), notes.push('No elevation');
+    else if (ev.has('saved')) elev = 'from a saved .ibt of this track';
+    rows.push(['Elevation', elev]);
+    // credits: the short one stays on screen whenever map data is drawn
+    const usedMap = on && s && s.map, credits = [];
+    if (usedMap) credits.push(IST.Review.MapData.ATTRIB);
+    else if (src === 'map') credits.push('Track © OpenStreetMap contributors (ODbL)');
+    if (approx) credits.push(IST.Review.Elevation.ATTRIB);
+    const short = usedMap ? (/Powered by Esri/.test(IST.Review.MapData.ATTRIB) ? 'Powered by Esri · ' : '') + '© Esri, OpenStreetMap' : src === 'map' ? '© OpenStreetMap' : '';
+    bar.querySelector('.rv-sources-notes').replaceChildren(...notes.map((n) => h('span', { class: 'rv-sources-note' }, n)));
+    bar.querySelector('.rv-sources-credit').textContent = short;
+    bar.querySelector('.rv-sources-pop').replaceChildren(
+      h('dl', null, rows.flatMap(([k, v]) => [h('dt', null, k), h('dd', null, v)])),
+      credits.length ? h('p', { class: 'rv-sources-attrib' }, credits.join(' · ')) : null);
+  }
+  const cornerStatus = mapStatus;
+
+  /** The Sources row's button opens its pop-out; a click elsewhere or Esc closes it. */
+  function sourcesBar() {
+    const pop = h('div', { class: 'rv-sources-pop hidden', role: 'dialog', 'aria-label': 'Where the track and data come from' });
+    const btn = h('button', { class: 'btn small rv-sources-btn', 'aria-expanded': 'false', title: 'Where the track, ground, turn numbers and elevation come from' }, 'Sources');
+    const set = (open) => {
+      pop.classList.toggle('hidden', !open);
+      btn.setAttribute('aria-expanded', String(open));
+      btn.classList.toggle('on', open);
+    };
+    btn.addEventListener('click', (e) => (e.stopPropagation(), set(pop.classList.contains('hidden'))));
+    document.addEventListener('pointerdown', (e) => !bar.contains(e.target) && set(false));
+    document.addEventListener('keydown', (e) => e.key === 'Escape' && set(false));
+    const bar = h('div', { class: 'rv-sources' }, pop, btn, h('span', { class: 'rv-sources-notes' }), h('span', { class: 'rv-sources-credit' }));
+    return bar;
   }
 
   const HINTS = {
@@ -607,8 +695,7 @@
         h('div', { class: 'rv-toolbar-row' }, play, seg([[0.5, '½×'], [1, '1×'], [2, '2×'], [4, '4×']], state.rate, (r) => (state.rate = r))),
         h('div', { class: 'rv-toolbar-end' }, layersBtn)),
       hint,
-      h('div', { class: 'rv-corner-status' }),
-      h('div', { class: 'rv-map-status', title: '' }),
+      sourcesBar(),
       legend,
       pip,
       trackMap,

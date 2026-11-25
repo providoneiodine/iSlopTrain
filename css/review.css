@@ -50,8 +50,16 @@
 .rv-toolbar .seg-b.on { background: var(--butter); }
 .rv-toolbar .btn { min-width: 64px; }
 .rv-hint { position: absolute; left: 12px; bottom: 9px; font-size: var(--fs-small); color: var(--muted); font-weight: var(--w-body); pointer-events: none; text-shadow: 0 1px 2px #000; }
-.rv-corner-status { position: absolute; left: 12px; bottom: 47px; font-size: var(--fs-label); color: var(--muted); font-weight: var(--w-body); pointer-events: none; text-shadow: 0 1px 2px #000; white-space: nowrap; }
-.rv-map-status { position: absolute; left: 12px; right: 24px; bottom: 28px; font-size: var(--fs-label); color: var(--muted); font-weight: var(--w-body); pointer-events: none; text-shadow: 0 1px 2px #000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rv-sources { position: absolute; left: 10px; bottom: 30px; right: 280px; display: flex; align-items: center; gap: 10px; min-width: 0; }
+.rv-sources-btn { pointer-events: auto; }
+.rv-sources-notes { display: flex; gap: 6px; flex-wrap: nowrap; min-width: 0; }
+.rv-sources-note { font-size: var(--fs-label); font-weight: var(--w-semi); color: var(--butter); border: 1px solid rgba(255, 214, 102, .45); background: rgba(31, 35, 42, .85); padding: 1px 7px; white-space: nowrap; }
+.rv-sources-credit { font-size: var(--fs-label); color: var(--muted); text-shadow: 0 1px 2px #000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.rv-sources-pop { position: absolute; left: 0; bottom: calc(100% + 6px); width: min(420px, calc(100vw - 48px)); background: rgba(31, 35, 42, .96); border: 1px solid var(--line-strong); box-shadow: var(--shadow); padding: 10px 14px 12px; z-index: 5; }
+.rv-sources-pop dl { display: grid; grid-template-columns: max-content 1fr; gap: 5px 14px; margin: 0; font-size: var(--fs-small); }
+.rv-sources-pop dt { color: var(--muted); }
+.rv-sources-pop dd { margin: 0; color: var(--text); }
+.rv-sources-attrib { margin: 10px 0 0; padding-top: 8px; border-top: 1px solid var(--line); font-size: var(--fs-label); color: var(--muted); line-height: 1.5; }
 .rv-legend {
   position: absolute; right: 10px; bottom: 8px; display: flex; gap: 12px; font-size: var(--fs-small); color: var(--text2);
   background: rgba(31, 35, 42, .85); border: 1px solid var(--line); padding: 4px 10px; pointer-events: none;
