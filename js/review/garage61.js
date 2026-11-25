@@ -104,6 +104,7 @@
       },
       lapTime: function (s) {
         if (!(s > 0)) return '-';
+        s = Math.round(s * 1000) / 1000;
         var m = Math.floor(s / 60), r = s - m * 60;
         return m + ':' + (r < 10 ? '0' : '') + r.toFixed(3);
       },

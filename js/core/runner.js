@@ -19,7 +19,7 @@
     active: null,
 
     run(def, settings) {
-      return new Promise((resolve) => {
+      return new Promise((resolve, reject) => {
         const canvas = document.getElementById('stage');
         const overlay = document.getElementById('pause-overlay');
         const g = canvas.getContext('2d', { alpha: false });
@@ -52,6 +52,7 @@
           paused = p;
           overlay.classList.toggle('hidden', !p);
           showCursor();
+          if (!inst) return;
           if (p && inst.onPause) inst.onPause();
           if (!p && inst.onResume) inst.onResume();
         }
@@ -67,10 +68,10 @@
             if (a === 'confirm') setPaused(false);
             return;
           }
-          if (inst.onAction) inst.onAction(a, t, src);
+          if (inst && inst.onAction) inst.onAction(a, t, src);
         });
 
-        function end(save) {
+        function end(save, err) {
           if (done) return;
           done = true;
           cancelAnimationFrame(raf);
@@ -84,17 +85,24 @@
           overlay.onclick = null;
           IST.Runner.active = null;
           let result = null;
-          if (save) {
-            result = inst.result();
-            result.date = Date.now();
-            result.drill = def.id;
-            result.settings = settings;
-            result.durationMs = Math.round(clock);
-            result.refreshHz = Math.round(1000 / ctx.frameInterval());
+          try {
+            if (save && !err) {
+              result = inst.result();
+              result.date = Date.now();
+              result.drill = def.id;
+              result.settings = settings;
+              result.durationMs = Math.round(clock);
+              result.refreshHz = Math.round(1000 / ctx.frameInterval());
+            }
+            if (inst && inst.destroy) inst.destroy();
+          } catch (e) {
+            err = err || e;
           }
-          if (inst.destroy) inst.destroy();
-          resolve(result);
+          if (err) reject(err);
+          else resolve(result);
         }
+        // A drill that throws ends the run unsaved, so the screen never freezes on a dead frame.
+        const fail = (e) => end(false, e);
 
         overlay.onclick = (e) => {
           const act = e.target && e.target.dataset ? e.target.dataset.act : null;
@@ -120,7 +128,11 @@
         showCursor();
 
         resize();
-        inst = def.create(ctx);
+        try {
+          inst = def.create(ctx);
+        } catch (e) {
+          return fail(e);
+        }
         IST.Runner.active = inst;
 
         function frame(ts) {
@@ -134,11 +146,15 @@
           }
           const dt = last === null ? 0 : Math.min(50, ts - last);
           last = ts;
-          if (!paused) {
-            clock += dt;
-            inst.update(dt, clock, ts);
+          try {
+            if (!paused) {
+              clock += dt;
+              inst.update(dt, clock, ts);
+            }
+            if (!done) inst.render(g, W, H, ts, paused);
+          } catch (e) {
+            return fail(e);
           }
-          if (!done) inst.render(g, W, H, ts, paused);
           raf = requestAnimationFrame(frame);
         }
         raf = requestAnimationFrame(frame);

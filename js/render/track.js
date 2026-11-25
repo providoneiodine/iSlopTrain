@@ -423,7 +423,6 @@
       lastCornerEnd: corners.length ? corners[corners.length - 1].endPos : 0,
       speedAt: (pos) => interp(v, pos),
       heightAt: (pos) => interp(hgt, pos),
-      slopeAt: (pos) => slope(U.clamp(Math.floor(pos / SEG), 0, n - 1)),
       timeAt: (pos) => interp(tCum, pos),
       lateralAt: (pos) => interp(lat, pos),
       /** car heading relative to the track (rad, + = right) from the line's lateral drift */

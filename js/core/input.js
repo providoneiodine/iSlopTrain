@@ -46,7 +46,7 @@
 
   window.addEventListener('keydown', (e) => {
     const a = KEYMAP[e.code];
-    if (!a) return;
+    if (!a || e.ctrlKey || e.metaKey || e.altKey) return; // Ctrl+D, Alt+Left... belong to the browser
     if (Input.capture) e.preventDefault();
     if (e.repeat) return;
     emit(a, e.timeStamp || performance.now(), 'key');
@@ -158,9 +158,6 @@
     },
     cancelLearn() {
       learning = null;
-    },
-    isLearning() {
-      return !!learning;
     },
     bindingsFor(action) {
       return bindings[action] || [];

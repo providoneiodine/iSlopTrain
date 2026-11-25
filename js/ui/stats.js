@@ -248,7 +248,7 @@
     el.innerHTML = '';
     draws = [];
 
-    const drillsWithData = IST.drills.filter((d) => IST.Storage.getResults(d.id).length);
+    const drillsWithData = IST.drills.filter((d) => IST.primaryMetric(d) && IST.Storage.getResults(d.id).length);
     if (state.drill !== 'all' && !drillsWithData.some((d) => d.id === state.drill)) state.drill = 'all';
 
     const seg = (opts, cur, onPick) => h('div', { class: 'seg', role: 'group' }, opts.map(([v, l]) =>

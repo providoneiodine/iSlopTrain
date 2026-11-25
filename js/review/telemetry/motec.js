@@ -34,7 +34,7 @@
     /** Beacon times (s) from an .ldx sidecar's XML. */
     T.ldxBeacons = function (xml) {
       const out = [];
-      const re = /<Marker\b[^>]*\bTime="([\d.]+)"/g;
+      const re = /<Marker\b[^>]*\bTime="([\d.]+(?:[eE][+-]?\d+)?)"/g; // i2 writes 1.2345e+008 as readily as 123450000
       let m;
       while ((m = re.exec(xml || ''))) out.push(parseFloat(m[1]) / 1e6);
       return out.sort((a, b) => a - b);
@@ -105,7 +105,7 @@
         const keys = Object.keys(pick);
         for (const k of keys) {
           const c = pick[k];
-          ch[k] = T.toSI(k, c.unit, T.resample(read(c), c.freq, n, F, k === 'gear' || k === 'lap'));
+          ch[k] = T.toSI(k, c.unit, T.resample(read(c), c.freq, n, F, k === 'lap' || T.STEP_CHANNELS.indexOf(k) >= 0));
           units[k] = c.unit;
           if (opt && opt.progress) opt.progress(++done / keys.length);
         }

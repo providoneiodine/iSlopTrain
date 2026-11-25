@@ -224,6 +224,36 @@ test('MoTeC .ld + .ldx: mixed channel rates, unit conversion, laps from the beac
   assert.ok(lo > R * 0.95 && hi < R * 1.05, 'reckoned line is the circle (got ' + lo.toFixed(1) + '-' + hi.toFixed(1) + ')');
 });
 
+test('.ldx beacon times in exponent notation are read like plain ones', () => {
+  const T = load().Telemetry.lib();
+  const xml = '<Marker Version="100" ClassName="BCN" Name="Manual.1" Flags="77" Time="9.153e+007"/><Marker Name="Manual.2" Time="45000000.5"/>';
+  assert.equal(T.ldxBeacons(xml).map((t) => t.toFixed(2)).join(), '45.00,91.53');
+});
+
+test('state channels are never blended when resampled: a setting steps, a flag stays 0 or 1', () => {
+  const T = load().Telemetry.lib();
+  ['absSet', 'tcSet', 'bb', 'absActive', 'gear'].forEach((k) => assert.ok(T.STEP_CHANNELS.includes(k), k));
+  const up = T.resample(Float64Array.from([3, 3, 4, 4]), 10, 16, 40, true);
+  assert.ok(up.every((v) => v === 3 || v === 4), 'no 3.25 between ABS 3 and ABS 4');
+});
+
+test('lap times roll over at the minute: 119.9996 s is 2:00.000', () => {
+  const C = load().Review.Compare;
+  assert.equal(C.fmtLap(119.9996), '2:00.000');
+  assert.equal(C.fmtLap(59.9996), '1:00.000');
+  assert.equal(C.fmtLap(102.315), '1:42.315');
+  assert.equal(C.fmtLap(48.2), '48.200');
+});
+
+test('CSV metadata: the track is named by its own row, not by "Track length"', () => {
+  const T = load().Telemetry.lib();
+  const rows = ['"Track","Spa"', '"Track Length","7004"', '"Car","GT3"', '"Car Number","12"', 'Time,Speed,Throttle'];
+  for (let i = 0; i < 20; i++) rows.push([i / 10, 30, 1].join(','));
+  const S = T.parseCSV(rows.join('\n'), 'x.csv');
+  assert.equal(S.meta.track, 'Spa');
+  assert.equal(S.meta.car, 'GT3');
+});
+
 test('MoTeC .ld without its .ldx is still read, as one run, and says why', () => {
   const T = load().Telemetry.lib();
   const r = T.process('session.ld', writeLd().buf);

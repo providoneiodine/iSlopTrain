@@ -183,11 +183,10 @@
     const key = 'gt:' + id + ':' + sS0.toFixed(1) + ':' + (from != null ? from.toFixed(1) : '');
     if (X.cache[key]) return X.cache[key];
     let n = nI;
-    const insideFrom = (tgt) => shape(geo, (s, i) => U.lerp(d * smax(d * tgt(s, i), d * nI[i]), nI[i], ramp(s, X.apS - 4, X.apS + 6)));
     const L = moveLen(vAt(X.freeS, sS0));
     const laneBetween = (a) => shape(geo, (s, i) => nI[i] + d * PASS * bump(s, a, a + L, X.bS - 30 - L, X.bS - 30));
     if (id === 'room') {
-      // wait on the outside: turn in ~15 m late (Pick the Line's late turn-in) and give up the kerb at the apex
+      // wait on the outside: turn in ~15 m late (Draw the Line's late turn-in) and give up the kerb at the apex
       const IL = X.idealL || (X.idealL = LL.lineFrom(geo, nI, null, {}));
       const late = LL.applyFlaw(geo, IL, 'late', 0, 0.45) || nI;
       n = shape(geo, (s, i) => U.lerp(late[i], d * smin(d * late[i], 0.6), bump(s, c0.startPos - 30, c0.startPos, c0.endPos, c0.endPos + 30)));

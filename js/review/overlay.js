@@ -123,9 +123,8 @@
         g.font = '500 11px ' + FONT;
         const sw = g.measureText(sub).width;
         const w = tw + Math.max(mw, sw) + 16, hh = 34;
-        // stack upward past chips already placed, then ease toward that height
         // above the car, or beside it when looking straight down (so the road ahead stays clear);
-        // stacked past chips already placed, easing toward that slot
+        // stacked upward past chips already placed, easing toward that slot
         const m = slot('car' + c.k);
         const beside = f.chipsBeside;
         const bx = beside ? roof.x + 26 : roof.x - w / 2, by = beside ? roof.y - hh / 2 : roof.y - 18 - hh;

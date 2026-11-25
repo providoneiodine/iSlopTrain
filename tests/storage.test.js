@@ -41,3 +41,12 @@ test('an export imports back as the same data', () => {
   assert.equal(b.getResults('apex-snap')[0].summary.score, 9);
   assert.equal(b.getPref('gameFeel'), 'silent');
 });
+
+test('an export with a broken section still imports, and the rest of the app can read it', () => {
+  const S = load().Storage;
+  S.importJSON(JSON.stringify({ results: { 'apex-snap': [{ summary: { score: 1 } }, { date: 5 }, null], 'two-point': 'oops' }, prefs: null }));
+  assert.equal(S.getResults('apex-snap').length, 1, 'sessions without a summary are dropped');
+  assert.equal(S.getResults('two-point').length, 0);
+  assert.equal(S.getPref('juice', 'full'), 'full', 'a missing prefs section reads as defaults');
+  assert.equal(Object.keys(S.getBindings()).length, 0);
+});

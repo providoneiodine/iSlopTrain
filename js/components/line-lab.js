@@ -32,12 +32,11 @@
   const HW = 6; // half track width (m)
   const DS = 2.5; // m between simulation samples
   const NMAX = 0.82; // car centre stays ~1 m inside each edge
-  const MIN_GAP = 8; // m between keypoints
   const TAIL = 900; // extra straight after the finish so the in-car view has road ahead
   const CAR = { aLat: 13.5, aBrake: 14, aTrac: 9, power: 330, drag: 0.0007, vMax: 95 };
   /*
    * Grip that grows with speed (downforce): a car may add dfLat / dfBrake (m/s^2 per
-   * (m/s)^2) to its lateral and braking limits. Pick the Line's CAR has none.
+   * (m/s)^2) to its lateral and braking limits. Draw the Line's CAR has none.
    */
   const latA = (car, v) => car.aLat + (car.dfLat || 0) * v * v;
   const brkA = (car, v) => car.aBrake + (car.dfBrake || 0) * v * v;

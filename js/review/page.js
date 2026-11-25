@@ -33,7 +33,6 @@
   const COLORS = [Th.butter, Th.sky, Th.lilac, Th.peach, Th.text];
   const MAX_LAPS = COLORS.length;
   const ACCEPT = '.ibt,.ld,.ldx,.csv,.tsv,.txt';
-  const FONT = IST.Symbols.FONT;
   const COARSE_HIDE = 350, COARSE_SHOW = 450; // m from the camera to what it looks at
 
   const state = {
@@ -104,16 +103,16 @@
 
   // bumped by Clear and Done: a load still reading when either happens is dropped when it
   // finishes, so it can't reappear (or ask about another track) on a page that moved on
-  let loadGen = 0;
+  let loadGen = 0, loadSeq = 0;
   async function loadFiles(files) {
     state.undo = null;
-    const gen = loadGen;
+    const gen = loadGen, seq = ++loadSeq;
     state.loading = { p: 0, label: 'Starting' };
     render();
     let res;
     try {
       res = await IST.Telemetry.load(files, (p, label) => {
-        if (gen !== loadGen) return;
+        if (gen !== loadGen || seq !== loadSeq) return;
         state.loading = { p, label };
         updateProgress();
       });
@@ -121,7 +120,8 @@
       res = { sessions: [], errors: [{ file: 'Telemetry', message: (e && e.message) || String(e) }] };
     }
     if (gen !== loadGen) return;
-    state.loading = null;
+    // files added while these were still reading: the bar stays up until the last load ends
+    if (seq === loadSeq) state.loading = null;
     res.errors.forEach((e) => state.errors.push(e));
     // a file with no usable lap is reported, not kept: an empty session would otherwise
     // set the track for the analysis and turn every later file into a "different track"
@@ -296,7 +296,7 @@
     loadGen++;
     state.loading = null;
     teardown();
-    IST.App.exitToMenu ? IST.App.exitToMenu() : IST.App.show('screen-menu');
+    IST.App.exitToMenu();
     syncCard();
   }
 
@@ -326,7 +326,7 @@
     V.traces && V.traces.destroy();
     V.scene && V.scene.dispose();
     V.R && V.R.destroy();
-    window.removeEventListener('keydown', V.onKey);
+    window.removeEventListener('keydown', V.onKey, true);
     if (V.popAway) document.removeEventListener('pointerdown', V.popAway, true);
     V = null;
   }
@@ -1022,8 +1022,9 @@
       V.glEl.addEventListener('pointermove', hover);
       V.carMesh = V.R.dynamic('tris');
     }
+    // capture phase, as on Stats: a modal is still open here, so the Esc that closes it doesn't also leave the page
     V.onKey = onKey;
-    window.addEventListener('keydown', onKey);
+    window.addEventListener('keydown', onKey, true);
     if (window.ResizeObserver) {
       V.ro = new ResizeObserver(() => {
         if (V && V.R) V.R.resize();
@@ -1267,7 +1268,7 @@
   }
 
   function onKey(e) {
-    if (root().classList.contains('hidden') || !V) return;
+    if (root().classList.contains('hidden') || !V || e.ctrlKey || e.metaKey || e.altKey) return;
     const tag = (e.target && e.target.tagName) || '';
     if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
     if (!document.getElementById('modal').classList.contains('hidden')) return;

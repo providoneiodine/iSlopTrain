@@ -16,7 +16,7 @@
   const U = IST.util, Sym = IST.Symbols, LL = IST.LineLab, TL = IST.TrafficLab, MC = IST.Multiclass;
   const DS = LL.DS, CARLEN = TL.CARLEN, CARW = TL.CARW;
   const { COL, LEADUP, kmh } = MC;
-  const { box, pane, caps, capsWidth } = MC.ui;
+  const { pane, caps, capsWidth } = MC.ui;
 
   MC.createScene = function (env) {
     const { S, VIEW, SEAT, cockpit } = env;

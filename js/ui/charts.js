@@ -438,7 +438,7 @@
   function calendar(box, spec) {
     const weeks = spec.weeks || 16, cell = 13, gap = 3, top = 16, left = 26;
     const H = top + 7 * (cell + gap) + 26;
-    const { W, svg } = start(box, H);
+    const { svg } = start(box, H);
     svg.setAttribute('role', 'img');
     svg.setAttribute('aria-label', 'Training activity, last ' + weeks + ' weeks');
     const tip = tooltip(box);

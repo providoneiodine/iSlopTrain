@@ -24,7 +24,7 @@
 
   function events(q, o) {
     if (o.events) return o.events;
-    const r = o.r, R = r.rec, X = q.X, me = q.me;
+    const r = o.r, R = r.rec, me = q.me;
     const mine = me === 'F' ? o.fp : o.sp, keyS = me === 'F' ? 'sF' : 'sS', keyV = me === 'F' ? 'vF' : 'vS';
     const E = [];
     const add = (kind, t, ci) => {

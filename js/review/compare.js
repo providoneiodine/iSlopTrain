@@ -208,6 +208,7 @@
 
   function fmtLap(s) {
     if (!isFinite(s)) return '–';
+    s = Math.round(s * 1000) / 1000; // to the millisecond first, so 119.9996 is 2:00.000, not 1:60.000
     const m = Math.floor(s / 60);
     const r = s - m * 60;
     return (m ? m + ':' + (r < 10 ? '0' : '') : '') + r.toFixed(3);

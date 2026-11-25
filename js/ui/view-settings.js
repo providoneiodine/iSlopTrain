@@ -76,10 +76,14 @@
     hzIn.addEventListener('input', hzShow);
     hzIn.addEventListener('pointerdown', () => ((pv.hzHeld = true), hzShow()));
     hzIn.addEventListener('focus', hzShow);
-    window.addEventListener('pointerup', () => {
+    const hzUp = () => {
       if (pv.hzHeld) hzShow();
       pv.hzHeld = false;
-    });
+    };
+    window.addEventListener('pointerup', hzUp);
+    // Esc goes back to the menu, as it does from Stats and Review
+    const onKey = (e) => e.key === 'Escape' && document.getElementById('modal').classList.contains('hidden') && close();
+    window.addEventListener('keydown', onKey, true);
 
     const aspect = select([[16 / 9, '16:9'], [1.6, '16:10'], [21 / 9, '21:9'], [32 / 9, '32:9'], [4 / 3, '4:3']], pv.aspect, (v) => {
       pv.aspect = +v;
@@ -141,7 +145,7 @@
           C.seatY.row, C.seatZ.row,
           h('h3', null, 'Boards'),
           h('label', { class: 'view-field' }, h('span', { class: 'field-l' }, 'Arrow colour'), sample, arrow, h('span', { class: 'hint' }, 'The arrow a board flashes, on black.')),
-          h('p', { class: 'hint' }, 'Used by every in-car view: Apex Snap, Race Mode, Eyes Off the Wall, Two-Point and the Pick the Line and Class Traffic replays (each of the last three also has its own Cockpit toggle). Cockpit parts can hide an apex board, so flashes only start where the board is in clear view. Drill HUDs draw over the cockpit.')))
+          h('p', { class: 'hint' }, 'Used by every in-car view: Apex Snap, Race Mode, Eyes Off the Wall, Two-Point and the Draw the Line and Class Traffic replays (each of the last three also has its own Cockpit toggle). Cockpit parts can hide an apex board, so flashes only start where the board is in clear view. Drill HUDs draw over the cockpit.')))
     );
     sync();
     IST.App.show('screen-view');
@@ -246,6 +250,8 @@
       cancelAnimationFrame(raf);
       raf = 0;
       window.removeEventListener('resize', sizeCanvas);
+      window.removeEventListener('pointerup', hzUp);
+      window.removeEventListener('keydown', onKey, true);
       IST.App.exitToMenu();
     }
   }

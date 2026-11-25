@@ -7,11 +7,24 @@
   const KEY = 'isloptrain.v1';
   const MAX_RESULTS = 300;
   const MAX_DETAIL = 50; // per-trial detail is kept only for the most recent sessions of each drill
-  let data = { settings: {}, results: {}, bindings: {}, prefs: {} };
+  const EMPTY = () => ({ settings: {}, results: {}, bindings: {}, prefs: {} });
+  const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
+  /** A saved or imported blob as a full data record: missing or malformed sections start empty. */
+  function normalise(parsed) {
+    const out = EMPTY();
+    for (const k in out) if (isObj(parsed[k])) out[k] = parsed[k];
+    for (const id in out.results) {
+      if (!Array.isArray(out.results[id])) delete out.results[id];
+      else out.results[id] = out.results[id].filter((r) => isObj(r) && isObj(r.summary));
+    }
+    return out;
+  }
+  let data = EMPTY();
 
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) data = Object.assign(data, JSON.parse(raw));
+    const parsed = raw ? JSON.parse(raw) : null;
+    if (isObj(parsed)) data = normalise(parsed);
   } catch (e) {
     console.warn('iSlopTrain: could not read saved data', e);
   }
@@ -71,12 +84,12 @@
     },
     importJSON(text) {
       const parsed = JSON.parse(text);
-      if (!parsed || typeof parsed !== 'object' || !parsed.results) throw new Error('Not an iSlopTrain export');
-      data = Object.assign({ settings: {}, results: {}, bindings: {}, prefs: {} }, parsed);
+      if (!isObj(parsed) || !isObj(parsed.results)) throw new Error('Not an iSlopTrain export');
+      data = normalise(parsed);
       save();
     },
     clearAll() {
-      data = { settings: {}, results: {}, bindings: {}, prefs: {} };
+      data = EMPTY();
       save();
     },
   };

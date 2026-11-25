@@ -280,7 +280,7 @@
       { point: 'Unexpected objects in plain view are often missed when attention is on a task.', source: 'Simons & Chabris (1999), Perception 28(9).' },
       { point: 'Respond to some signals, ignore others: hits and false alarms measure detection apart from bias.', source: 'Green & Swets (1966), Signal Detection Theory and Psychophysics.' },
     ]),
-    settings: settings.map((f) => (f.key === 'duration' ? Object.assign({}, f, { default: 240 }) : f)),
+    settings,
     metrics: [
       { key: 'seenRate', label: 'Seen, not stared', pct: true, digits: 0, better: 'higher', primary: true, hint: 'Live-hazard probes you called without reading the hazard board.' },
       { key: 'callHit', label: 'Hazards called', pct: true, digits: 0, better: 'higher', hint: 'Wrecks, yellows and spins called before you passed them.' },

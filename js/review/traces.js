@@ -287,10 +287,10 @@
         // shading under the lines
         if (p.key === 'throttle') {
           if (ref.coast) columns(a, b, every, (i) => ref.coast[i] > 0.5, y + 2, y + ph(p) - 2, 'rgba(161,169,183,0.14)');
-          cmp.laps.forEach((L) => L.tcActive && shade(a, b, every, seriesOf(p, L)[0].arr, (i) => L.tcActive[i] > 0.5, yOf, yOf(0), alpha(L.color, 0.25)));
+          cmp.laps.forEach((L) => L.tcActive && L.throttle && shade(a, b, every, seriesOf(p, L)[0].arr, (i) => L.tcActive[i] > 0.5, yOf, yOf(0), alpha(L.color, 0.25)));
         }
         if (p.key === 'brake' && cfg.abs) {
-          cmp.laps.forEach((L) => L.absActive && shade(a, b, every, seriesOf(p, L)[0].arr, (i) => L.absActive[i] > 0.5, yOf, yOf(0), alpha(L.color, 0.3)));
+          cmp.laps.forEach((L) => L.absActive && L.brake && shade(a, b, every, seriesOf(p, L)[0].arr, (i) => L.absActive[i] > 0.5, yOf, yOf(0), alpha(L.color, 0.3)));
         }
         if (p.key === 'balance') {
           const arr = seriesOf(p, ref)[0];
@@ -474,11 +474,10 @@
       draw();
       if (o.onReset) o.onReset();
     };
-    const onLeave = () => !st.drag && o.onLeave && o.onLeave();
     canvas.addEventListener('pointermove', onMove);
     canvas.addEventListener('pointerdown', onDown);
     canvas.addEventListener('pointerup', onUp);
-    canvas.addEventListener('pointerleave', onLeave);
+    canvas.addEventListener('pointercancel', onUp);
     canvas.addEventListener('wheel', onWheel, { passive: false });
     canvas.addEventListener('dblclick', onDbl);
 
@@ -518,7 +517,6 @@
         cache = new WeakMap();
         draw();
       },
-      zoomed: () => !!cmp && (v0 > 0 || v1 < cmp.n - 1),
       setCursor(i) {
         cursor = i;
         if (!cmp) return;
@@ -535,7 +533,7 @@
         canvas.removeEventListener('pointermove', onMove);
         canvas.removeEventListener('pointerdown', onDown);
         canvas.removeEventListener('pointerup', onUp);
-        canvas.removeEventListener('pointerleave', onLeave);
+        canvas.removeEventListener('pointercancel', onUp);
         canvas.removeEventListener('wheel', onWheel);
         canvas.removeEventListener('dblclick', onDbl);
       },

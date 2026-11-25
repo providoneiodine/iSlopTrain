@@ -82,8 +82,8 @@
         else if (/^(relative)?humidity/.test(k)) cond.humidity = T.share(x);
         else if (/^wind(vel|speed)?$/.test(k)) cond.wind = x;
         else if (/^(clouds|skies|sky)$/.test(k)) cond.skies = f[1];
-        else if (/venue|track/.test(k)) meta.track = f[1];
-        else if (/vehicle|car/.test(k)) meta.car = f[1];
+        else if (/venue|circuit|^track(name)?$/.test(k)) meta.track = f[1];
+        else if (/vehicle|^car(name|model)?$/.test(k)) meta.car = f[1];
         else if (/driver/.test(k)) meta.driver = f[1];
         else if (/date/.test(k)) meta.date = f[1];
       }

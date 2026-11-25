@@ -137,7 +137,7 @@
     const pm = IST.primaryMetric(def);
     const hist = IST.Storage.getResults(def.id);
     const last = hist[hist.length - 1];
-    const vals = hist.slice(-20).map((r) => r.summary && r.summary[pm.key]);
+    const vals = pm ? hist.slice(-20).map((r) => r.summary && r.summary[pm.key]) : [];
     return h('article', { class: 'card' },
       h('div', { class: 'card-head' }, h('span', { class: 'tag' }, def.category || 'Drill'), h('h3', null, def.name)),
       h('p', { class: 'tagline' }, def.tagline || ''),
@@ -336,7 +336,29 @@
   }
 
   // --------------------------------------------------------------- run flow
+  let running = false; // one run at a time: a double click on Start must not launch two
   async function startDrill(def, overrides, session) {
+    if (running) return;
+    running = true;
+    let result = null;
+    try {
+      result = await runDrill(def, overrides);
+    } finally {
+      running = false;
+    }
+    if (result) {
+      IST.Storage.addResult(def.id, {
+        date: result.date, summary: result.summary, settings: result.settings,
+        durationMs: result.durationMs, refreshHz: result.refreshHz, seed: result.seed, detail: result.detail,
+      });
+      showResults(def, result, session);
+    } else {
+      exitToMenu();
+    }
+  }
+
+  /** One run from settings to result; null when it was quit or crashed. */
+  async function runDrill(def, overrides) {
     const settings = Object.assign(IST.Storage.getSettings(def), overrides || {});
     // the in-car view the run used, saved with the result (cockpit occlusion changes what can be seen)
     if (def.usesView) settings.view = IST.View.get();
@@ -365,15 +387,7 @@
       alert('Drill crashed: ' + e.message);
     }
     IST.Input.capture = false;
-    if (result) {
-      IST.Storage.addResult(def.id, {
-        date: result.date, summary: result.summary, settings: result.settings,
-        durationMs: result.durationMs, refreshHz: result.refreshHz, seed: result.seed, detail: result.detail,
-      });
-      showResults(def, result, session);
-    } else {
-      exitToMenu();
-    }
+    return result;
   }
 
   function startSession(s, i) {
@@ -404,7 +418,7 @@
         h('td', null, prev ? deltaEl(m, s[m.key], prev.summary[m.key]) : '')));
 
     const tips = def.coach ? def.coach(s, result, hist) : [];
-    const trendVals = hist.slice(-30).map((r) => r.summary && r.summary[pm.key]);
+    const trendVals = pm ? hist.slice(-30).map((r) => r.summary && r.summary[pm.key]).filter(U.isNum) : [];
 
     let primaryBtn;
     const actions = [];
@@ -453,7 +467,7 @@
         scoreEl,
         h('div', { class: 'trend', style: 'flex:1;min-width:200px;max-width:420px' },
           h('div', { html: sparkline(trendVals, 420, 70) }),
-          h('div', { class: 'res-label' }, trendVals.filter(U.isNum).length >= 2 ? 'Last ' + trendVals.length + ' sessions' : ''))) : null,
+          h('div', { class: 'res-label' }, trendVals.length >= 2 ? 'Last ' + trendVals.length + ' sessions' : ''))) : null,
       h('div', { class: 'res-grid' },
         h('div', null, h('table', { class: 'grid' },
           h('thead', null, h('tr', null, h('th', null, 'Metric'), h('th', null, 'This session'), h('th', null, prev ? 'vs last' : ''))),
