@@ -73,7 +73,8 @@
       let a = first.start;
       if (R.brake) for (let i = first.start; i < first.apex; i++) if (R.brake[i] > 0.05) { a = i; break; }
       const n0 = cx.corners[0] + 1, n1 = cx.corners[cx.corners.length - 1] + 1;
-      if (!cuts.length || a > cuts[cuts.length - 1].a) cuts.push({ a, name: n0 === n1 ? 'T' + n0 : 'T' + n0 + '–' + n1 });
+      const known = IST.Review.Corners && IST.Review.Corners.nameSpan(cmp, a, cx.last); // a circuit's own numbers when known
+      if (!cuts.length || a > cuts[cuts.length - 1].a) cuts.push({ a, name: known || (n0 === n1 ? 'T' + n0 : 'T' + n0 + '–' + n1) });
     });
     if (cuts.length && cuts[0].a > 0) out.push({ a: 0, b: cuts[0].a, name: 'Run to ' + cuts[0].name.split('–')[0] });
     cuts.forEach((c, i) => out.push({ a: c.a, b: i < cuts.length - 1 ? cuts[i + 1].a : cmp.n - 1, name: c.name }));

@@ -7,6 +7,7 @@
  *   tr.setLanes(cfg)     cfg: { on: Set of lane keys, picks: ['front', 'LF'...], tyreMode: 'temp' | 'press',
  *                        tyreBand: 'avg' | 'i' | 'm' | 'o', abs (ABS band on the brake lane), labels: { key: text } }
  *   tr.setCursor(i)      index on the reference grid, or -1
+ *   tr.setPreview(i)     a dashed second cursor (where a click on the track map will go), or -1
  *   tr.zoom(a, b)        show indices a..b (no arguments: the whole lap)
  *   tr.draw()            redraw (sizes itself to the canvas's CSS width)
  *   tr.destroy()
@@ -124,7 +125,7 @@
     const out = canvas.getContext('2d');
     const layer = document.createElement('canvas');
     const g = layer.getContext('2d');
-    let cmp = null, cursor = -1, v0 = 0, v1 = 1, W = 0, H = 0, dpr = 1, panes = [], heads = [], axisY = 0, k = 1;
+    let cmp = null, cursor = -1, preview = -1, v0 = 0, v1 = 1, W = 0, H = 0, dpr = 1, panes = [], heads = [], axisY = 0, k = 1;
     let cfg = Object.assign({}, DEFAULT, { on: new Set(DEFAULT.on) });
     const st = { drag: null };
     let cache = new WeakMap(); // lap -> Map(lane key -> [{ arr, dash }])
@@ -371,8 +372,21 @@
       out.setTransform(1, 0, 0, 1, 0, 0);
       out.clearRect(0, 0, canvas.width, canvas.height);
       out.drawImage(layer, 0, 0);
-      if (cursor < 0) return;
       out.setTransform(dpr, 0, 0, dpr, 0, 0);
+      if (preview >= v0 && preview <= v1) {
+        const x = Math.round(xOf(preview)) + 0.5;
+        out.strokeStyle = Th.text;
+        out.globalAlpha = 0.7;
+        out.lineWidth = 1;
+        out.setLineDash([4, 4]);
+        out.beginPath();
+        out.moveTo(x, 0);
+        out.lineTo(x, axisY);
+        out.stroke();
+        out.setLineDash([]);
+        out.globalAlpha = 1;
+      }
+      if (cursor < 0) return;
       out.font = '800 11.5px ' + FONT;
       out.textAlign = 'right';
       out.textBaseline = 'alphabetic';
@@ -527,6 +541,11 @@
           v1 = v0 + w;
           draw();
         } else compose();
+      },
+      setPreview(i) {
+        if (i === preview) return;
+        preview = i;
+        if (cmp) compose();
       },
       draw,
       destroy() {

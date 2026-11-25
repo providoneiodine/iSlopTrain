@@ -37,9 +37,9 @@
 
   const state = {
     sessions: [], laps: [], refId: null, sel: [], errors: [], warnings: [],
-    opts: { inputs: 'all', lean: false, cars: true, exag: 1, map: true, paint: 'lap', fence: 'inputs', absTint: true, attScale: 1, motion: 3, wheels: true,
-      markers: new Set(Ly.MARKERS.filter((m) => m.def).map((m) => m.key)) },
-    lanes: { on: new Set(Tr.DEFAULT.on), picks: Tr.DEFAULT.picks.slice(), tyreMode: 'temp', tyreBand: 'avg', abs: true, labels: {}, folded: true },
+    opts: { inputs: 'all', lean: false, cars: true, exag: 1, map: true, paint: 'balance', fence: 'inputs', absTint: true, attScale: 1, motion: 1, wheels: true,
+      markers: new Set(['lock', 'off', 'spin', 'kerb', 'us', 'os']) },
+    lanes: { on: new Set(['speed', 'delta', 'throttle', 'brake', 'steer', 'gear']), picks: [], tyreMode: 'temp', tyreBand: 'avg', abs: true, labels: {}, folded: false },
     drawer: false,
     condOpen: false,
     cursor: -1, cursorF: -1, camMode: 'orbit', playing: false, playT: 0, rate: 1, loading: null,
@@ -47,6 +47,7 @@
     solo: null, // a lap shown on its own for now, ticks and reference left as they are
     mode: null, // 'one' or 'vs' once picked; null follows how many drivers are loaded
     names: {}, // driver key -> name typed over the file's
+    mapFolded: false, // the track map hidden (M)
   };
   // ------------------------------------------------------- remembered choices
   const LANES_KEY = 'ist.review.lanes', LAYERS_KEY = 'ist.review.layers';
@@ -61,6 +62,7 @@
       const o = JSON.parse(localStorage.getItem(LAYERS_KEY) || 'null');
       if (o) {
         ['lean', 'cars', 'exag', 'map', 'paint', 'fence', 'absTint', 'attScale', 'motion', 'wheels'].forEach((k) => o[k] != null && (state.opts[k] = o[k]));
+        if (o.mapFolded != null) state.mapFolded = !!o.mapFolded;
         if (Array.isArray(o.markers)) state.opts.markers = new Set(o.markers);
       }
     } catch (e) {
@@ -78,7 +80,7 @@
   function saveLayers() {
     try {
       const o = state.opts;
-      localStorage.setItem(LAYERS_KEY, JSON.stringify({ lean: o.lean, cars: o.cars, exag: o.exag, map: o.map, paint: o.paint, fence: o.fence, absTint: o.absTint, attScale: o.attScale, motion: o.motion, wheels: o.wheels, markers: [...o.markers] }));
+      localStorage.setItem(LAYERS_KEY, JSON.stringify({ lean: o.lean, cars: o.cars, exag: o.exag, map: o.map, paint: o.paint, fence: o.fence, absTint: o.absTint, attScale: o.attScale, motion: o.motion, wheels: o.wheels, markers: [...o.markers], mapFolded: state.mapFolded }));
     } catch (e) {
       /* not kept */
     }
@@ -207,7 +209,7 @@
     state.sessions.push(s);
     s.warnings.forEach((w) => state.warnings.push(s.file + ': ' + w));
     s.laps.forEach((l, k) => state.laps.push({ id: si + ':' + k, s, lap: l }));
-    if (state.opts.map) findMap(s);
+    if (state.opts.map) findMap(s), findCorners(s);
     // pick the fastest full lap as the reference, and the next fastest to compare
     // (and swap a partial reference for a complete lap once one arrives)
     const cur = state.refId && byId(state.refId);
@@ -229,18 +231,31 @@
     const gps = s.posSource === 'gps' && originRef;
     if (!lap || (!gps && s.posSource !== 'world')) return (s.mapState = 'none');
     s.mapState = 'loading';
-    // GPS laps already know where they are: show the imagery now, the centre when it arrives
-    if (gps) s.map = { geo: IST.Review.Track.geo(originRef.lat, originRef.lon), lines: [], halfWidth: 0, how: 'gps' };
+    // imagery waits for the lookup to confirm the spot is a circuit (and line the laps up with it)
     IST.Review.MapData.lookup({ origin: gps ? originRef : null, track: s.meta.track, x: lap.x, y: lap.y }).then((m) => {
       s.map = m;
       s.mapState = m ? 'ok' : 'none';
     }, (e) => {
+      // servers down: GPS laps still show imagery where GPS puts them, unchecked
+      if (gps) s.map = { geo: IST.Review.Track.geo(originRef.lat, originRef.lon), lines: [], halfWidth: 0, how: 'gps' };
       s.mapState = 'error';
       s.mapError = e && e.message;
     }).then(() => {
       if (V && V.cmp && V.cmp.laps[0].entry.s === s) rebuild(true);
       else mapStatus();
     });
+  }
+  /** The circuit's corner numbers (Map option only), then a rebuild if that track is on screen. */
+  function findCorners(s) {
+    if (s.cornerState || !s.meta || !(s.meta.trackId || s.meta.track)) return;
+    s.cornerState = 'loading';
+    const lap = s.laps.filter((l) => l.kind === 'full').sort((a, b) => a.time - b.time)[0];
+    IST.Review.Corners.lookup({ id: s.meta.trackId, name: s.meta.track, len: (lap && lap.len) || s.meta.trackLen }).then((t) => {
+      s.turns = t;
+      s.cornerState = t ? 'ok' : 'none';
+      if (t && V && V.cmp && V.cmp.laps[0].entry.s === s) rebuild(true);
+      else if (V) cornerStatus();
+    }, () => ((s.cornerState = 'error'), V && cornerStatus()));
   }
   const refSession = () => (byId(state.refId) || {}).s;
 
@@ -333,6 +348,8 @@
     const colors = [lapColor(ref.id)].concat(others.map((o) => lapColor(o.id)));
     const cmp = Cmp.build(ref.lap, others.map((o) => o.lap), colors, m && m.lines.length ? { lines: m.lines, halfWidth: m.halfWidth } : null);
     cmp.laps.forEach((L, k) => (L.entry = k === 0 ? ref : others[k - 1]));
+    // only on a full lap: the data's corners are shares of one
+    if (state.opts.map && ref.s.turns && ref.lap.kind === 'full') cmp.turns = IST.Review.Corners.place(cmp, ref.s.turns);
     // a part lap can't say how high the rest of the circuit is: the ground borrows a whole lap's heights
     if (ref.lap.kind !== 'full') {
       const whole = state.laps.filter((x) => x.s === ref.s && x.lap.kind === 'full').sort((a, b) => a.lap.time - b.lap.time)[0];
@@ -383,6 +400,7 @@
     V.detach && V.detach();
     V.ro && V.ro.disconnect();
     V.traces && V.traces.destroy();
+    V.map && V.map.destroy();
     V.scene && V.scene.dispose();
     V.R && V.R.destroy();
     window.removeEventListener('keydown', V.onKey, true);
@@ -530,7 +548,7 @@
     input.addEventListener('change', () => {
       state.opts.map = input.checked;
       saveLayers();
-      if (input.checked) state.sessions.forEach(findMap);
+      if (input.checked) state.sessions.forEach((s) => (findMap(s), findCorners(s)));
       rebuild(true);
     });
     return h('label', { class: 'view-check', title: 'Satellite ground and the true track centre, looked up by the track’s location (OpenStreetMap, Esri)' }, input, 'Map');
@@ -547,8 +565,21 @@
     else if (s.mapState === 'loading') text = 'Looking up the track centre…' + (V.noImagery ? ' · imagery unavailable' : '') + ' · ' + IST.Review.MapData.ATTRIB;
     else if (s.mapState === 'error' && s.map) text = 'Track centre lookup failed' + (s.mapError ? ' (' + s.mapError + ')' : '') + ' · centre estimated from the laps · ' + IST.Review.MapData.ATTRIB;
     else if (s.mapState === 'error') text = 'Map lookup failed' + (s.mapError ? ' (' + s.mapError + ')' : '') + ' · track estimated from the laps';
-    else if (s.mapState !== 'ok') text = s.posSource === 'reckoned' || s.posSource === 'none' ? 'No position in this file to place it on a map · track estimated from the laps' : 'Track not found on the map · edges estimated from the laps';
-    else text = (src === 'map' ? 'Centre: OpenStreetMap' : 'No track outline on the map · centre estimated from the laps') + (V.noImagery ? ' · imagery unavailable' : '') + ' · ' + IST.Review.MapData.ATTRIB;
+    else if (s.mapState !== 'ok') text = s.posSource === 'reckoned' || s.posSource === 'none' ? 'No position in this file to place it on a map · track estimated from the laps' : s.posSource === 'gps' ? 'No race track on the map where this lap was driven · track estimated from the laps' : 'Track not found on the map · edges estimated from the laps';
+    else text = (src === 'map' ? 'Centre: OpenStreetMap' + (s.map.shift >= 1 ? ' · GPS lined up with it (' + Math.round(s.map.shift) + ' m)' : '') : 'No track outline on the map · centre estimated from the laps') + (V.noImagery ? ' · imagery unavailable' : '') + ' · ' + IST.Review.MapData.ATTRIB;
+    el.textContent = text;
+    cornerStatus();
+  }
+  /** Above the attribution: whether the map's turn numbers (and names) are the circuit's or estimated. */
+  function cornerStatus() {
+    const el = V && V.stage.querySelector('.rv-corner-status');
+    if (!el || !V.cmp) return;
+    const T = V.cmp.turns, s = refSession();
+    let text = 'Turn numbers: estimated';
+    if (T && T.length) {
+      const n = T.filter((c) => c.official).length;
+      text = 'Turn numbers: ' + (n === T.length ? 'true' : n ? 'partly true' : 'estimated') + (T.some((c) => c.name) ? ' · names: true' : '');
+    } else if (state.opts.map && s && s.cornerState === 'loading') text += ' (looking up)';
     el.textContent = text;
   }
 
@@ -568,15 +599,19 @@
     const camSeg = seg(IST.Review.Rigs.MODES.map((m, i) => [m[0], m[1], m[2] + ' (' + (i + 1) + ')']), state.camMode || 'orbit', (m) => setCam(m));
     const hint = h('div', { class: 'rv-hint' }, HINTS.orbit);
     const pip = h('div', { class: 'rv-pip hidden', role: 'group', 'aria-label': 'Reference lap' });
+    const mapCanvas = h('canvas', { class: 'rv-map-canvas', 'aria-label': 'Track map: hover to preview a point, click to move the cursor there' });
+    const trackMap = h('div', { class: 'rv-map hidden', role: 'group', 'aria-label': 'Track map' }, mapCanvas);
     const stage = dropTarget(h('div', { class: 'rv-stage' }, gl, overlay,
       h('div', { class: 'rv-toolbar' },
         camSeg,
         h('div', { class: 'rv-toolbar-row' }, play, seg([[0.5, '½×'], [1, '1×'], [2, '2×'], [4, '4×']], state.rate, (r) => (state.rate = r))),
         h('div', { class: 'rv-toolbar-end' }, layersBtn)),
       hint,
+      h('div', { class: 'rv-corner-status' }),
       h('div', { class: 'rv-map-status', title: '' }),
       legend,
       pip,
+      trackMap,
       drawer));
     gl.addEventListener('pointerdown', () => state.drawer && setDrawer(false));
     const inputs = h('select', { 'aria-label': 'Whose fence, paint and markers to draw' });
@@ -591,7 +626,7 @@
     const condPanel = h('div', { class: 'view-panel rv-cond hidden' });
     const lanesBox = h('div', { class: 'rv-lanebar', role: 'toolbar', 'aria-label': 'Trace lanes' });
     const tracesWrap = h('div', { class: 'rv-traces-wrap' }, traces);
-    V = { glEl: gl, overlay, tracesEl: traces, tracesWrap, stage, play, camSeg, hint, pip, inputs, lapsPanel, readout, condPanel, lanesBox, drawer, layersBtn, legend, dirty: true };
+    V = { glEl: gl, overlay, tracesEl: traces, tracesWrap, stage, play, camSeg, hint, pip, trackMap, mapCanvas, inputs, lapsPanel, readout, condPanel, lanesBox, drawer, layersBtn, legend, dirty: true };
     return h('div', { class: 'rv-layout' },
       h('div', { class: 'rv-main' }, stage,
         h('div', { class: 'rv-traces-box' }, lanesBox, tracesWrap),
@@ -611,7 +646,7 @@
     const key = (k, what) => h('span', { class: 'rv-key-item' }, k.map((x) => h('kbd', null, x)), ' ' + what);
     const zoom = 'Drag across the traces to zoom both views to that stretch · shift-drag to pan · wheel to zoom · double-click for the whole lap';
     return h('div', { class: 'rv-traces-hint rv-keys', 'aria-label': 'Keyboard shortcuts' },
-      key(['Space'], 'play'), key(['1–' + n], 'camera'), key(['C'], 'next camera'), key(['L'], 'layers'),
+      key(['Space'], 'play'), key(['1–' + n], 'camera'), key(['C'], 'next camera'), key(['L'], 'layers'), key(['M'], 'map'),
       key(['←', '→'], '10 m, with Shift 100 m'), key(['Esc'], 'close'),
       h('span', { class: 'rv-keys-zoom', title: zoom }, 'Traces: drag to zoom · double-click for the whole lap'));
   }
@@ -897,6 +932,57 @@
     }
   }
 
+  // -------------------------------------------------------------- track map
+  /** The map floats in the 3D view's top right: shown with a comparison, hidden under the Layers drawer or with M. */
+  function mapCard() {
+    const el = V.trackMap, show = !!V.cmp && !state.drawer && !state.mapFolded;
+    el.classList.toggle('hidden', !show);
+    if (!show) return V.map.cancel();
+    const bar = V.stage.querySelector('.rv-toolbar');
+    if (bar && bar.offsetHeight) el.style.top = bar.offsetTop + bar.offsetHeight + 6 + 'px';
+    mapSize(true);
+  }
+  /** Shaped to the track (north up): at most about a fifth of the stage wide and 60 % of its height. */
+  function mapSize(force) {
+    if (!V || !V.cmp || V.trackMap.classList.contains('hidden') || state.mapFolded) return;
+    const B = V.cmp.bounds, sw = V.stage.clientWidth, sh = V.stage.clientHeight;
+    const asp = Math.max(0.3, Math.min(3, (B.y1 - B.y0) / Math.max(1, B.x1 - B.x0)));
+    let w = Math.max(170, Math.min(280, sw * 0.21)), hh = w * asp;
+    const maxH = Math.max(100, sh * 0.6 - 50);
+    if (hh > maxH) (hh = maxH), (w = Math.max(120, hh / asp));
+    w = Math.round(w);
+    hh = Math.round(Math.max(90, hh));
+    const key = w + 'x' + hh + ':' + V.cmp.n;
+    if (!force && key === V.mapKey) return;
+    V.mapKey = key;
+    V.mapCanvas.style.width = w + 'px';
+    V.mapCanvas.style.height = hh + 'px';
+    V.map.set(V.cmp);
+    mapTick();
+  }
+  function foldMap(on) {
+    state.mapFolded = on;
+    saveLayers();
+    if (on && V.map) V.map.cancel();
+    mapCard();
+  }
+  /** The cars and the highlighted complex. */
+  function mapTick() {
+    if (!V.map || !V.cmp || V.trackMap.classList.contains('hidden')) return;
+    const f = state.cursorF;
+    let cs = [];
+    if (f >= 0) {
+      const T = timeAt(V.cmp.laps[0].t, f);
+      cs = V.cmp.laps.map((L, k) => ({ j: k ? indexAt(L.t, T) : f, color: L.color, ref: !k }));
+    }
+    V.map.update(f, cs);
+  }
+  function mapPreview(i) {
+    V.mapPreview = i;
+    V.traces.setPreview(i);
+    mapTick();
+  }
+
   /** A lap to compare: start line to start line, not through the pits. */
   const complete = (lap) => lap.kind === 'full' && !lap.pit;
   function selIndex(id) {
@@ -1130,6 +1216,7 @@
     V.stage.classList.toggle('rv-drawer-open', open);
     V.layersBtn.classList.toggle('on', open);
     V.layersBtn.setAttribute('aria-expanded', String(open));
+    if (V.cmp) mapCard();
     dirty();
   }
 
@@ -1270,6 +1357,7 @@
     V.cam = IST.Review.Camera.create();
     V.ov = IST.Review.Overlay.create();
     V.traces = IST.Review.Traces.create(V.tracesEl, { onCursor: setCursor, onRange: frameRange, onReset: frameAll, fit: () => (V ? V.tracesWrap.clientHeight - 2 : 0) });
+    V.map = IST.Review.TrackMap.create(V.mapCanvas, { onPreview: mapPreview, onPick: (i) => setCursor(i) });
     if (!V.R) {
       V.stage.append(h('div', { class: 'rv-nogl' }, 'WebGL isn’t available in this browser, so the 3D view is off. The traces still work.'));
     } else {
@@ -1289,6 +1377,7 @@
         if (V && V.R) V.R.resize();
         if (V) V.traces.draw();
         if (V) pipPlace();
+        if (V) mapSize();
         dirty();
       });
       V.ro.observe(V.stage);
@@ -1328,6 +1417,7 @@
     conditions();
     mapStatus();
     pipCard();
+    mapCard();
     if (V.R) {
       if (V.scene) V.scene.dispose();
       // close-up cameras sit a few metres off the road: low fences there, tall ones for the overview
@@ -1511,6 +1601,7 @@
     V.dirty = false;
     V.fading = Math.max(0, (V.fading || 0) - dt);
     pipTick();
+    mapTick();
     const W = V.glEl.clientWidth, H = V.glEl.clientHeight;
     if (!V.R || !V.scene || !W || !H) return;
     V.R.resize();
@@ -1592,11 +1683,13 @@
     } else if (digit && modes[digit[1] - 1]) setCam(modes[digit[1] - 1]);
     else if (e.code === 'KeyC') setCam(modes[(modes.indexOf(V.cam.mode) + 1) % modes.length]);
     else if (e.code === 'KeyL') setDrawer(!state.drawer);
+    else if (e.code === 'KeyM') foldMap(!state.mapFolded);
     else if ((e.code === 'ArrowLeft' || e.code === 'ArrowRight') && V.cmp) {
       e.preventDefault();
       const d = Math.round((e.shiftKey ? 100 : 10) / V.cmp.step) * (e.code === 'ArrowLeft' ? -1 : 1);
       setCursor(Math.max(0, Math.min(V.cmp.n - 1, Math.max(0, state.cursor) + d)));
     } else if (e.code === 'Escape') {
+      if (V.map && V.map.cancel()) return;
       if (V.lanesOpen) setLanesOpen(false);
       else if (state.drawer) setDrawer(false);
       else close();

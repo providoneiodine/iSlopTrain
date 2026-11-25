@@ -50,6 +50,7 @@
 .rv-toolbar .seg-b.on { background: var(--butter); }
 .rv-toolbar .btn { min-width: 64px; }
 .rv-hint { position: absolute; left: 12px; bottom: 9px; font-size: var(--fs-small); color: var(--muted); font-weight: var(--w-body); pointer-events: none; text-shadow: 0 1px 2px #000; }
+.rv-corner-status { position: absolute; left: 12px; bottom: 47px; font-size: var(--fs-label); color: var(--muted); font-weight: var(--w-body); pointer-events: none; text-shadow: 0 1px 2px #000; white-space: nowrap; }
 .rv-map-status { position: absolute; left: 12px; right: 24px; bottom: 28px; font-size: var(--fs-label); color: var(--muted); font-weight: var(--w-body); pointer-events: none; text-shadow: 0 1px 2px #000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rv-legend {
   position: absolute; right: 10px; bottom: 8px; display: flex; gap: 12px; font-size: var(--fs-small); color: var(--text2);
@@ -330,3 +331,7 @@ table.grid.rv-table td:last-child, table.grid.rv-table th:last-child { padding-r
 .rv-pip-trend b { font-weight: var(--w-bold); color: var(--text2); }
 .rv-pip-trend b.bad { color: var(--rose); }
 .rv-pip-trend b.good { color: var(--mint); }
+
+/* ----------------------------------------------------- track map (floats in the 3D view, top right) */
+.rv-map { position: absolute; right: 10px; max-width: calc(100% - 20px); }
+.rv-map-canvas { display: block; touch-action: none; }

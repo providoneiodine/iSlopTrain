@@ -90,6 +90,7 @@
         const meta = {
           track: yaml(info, /TrackDisplayName:\s*(.+)/) || yaml(info, /TrackName:\s*(.+)/),
           config: yaml(info, /TrackConfigName:\s*(.+)/),
+          trackId: yaml(info, /TrackName:\s*(.+)/), // iRacing's own name for the layout
           car: '',
           driver: '',
           trackLen: (parseFloat(yaml(info, /TrackLength:\s*([\d.]+)\s*km/)) || 0) * 1000 || 0,
