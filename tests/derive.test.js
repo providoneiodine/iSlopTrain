@@ -178,3 +178,21 @@ test('wheelspin, coasting and ABS are marked where they happened', () => {
   assert.equal(abs.length, 1);
   assert.equal(ev.length, 3, 'nothing else on a quiet lap');
 });
+
+test('contact: an impact is marked, hard braking and cornering are not', () => {
+  const T = load().Telemetry.lib();
+  const lap = quietLap();
+  const f = () => new Float32Array(lap.n);
+  lap.longG = f();
+  lap.latG = f();
+  // 2 g of braking and 1.8 g of cornering: at the limit, but nothing hit anything
+  for (let i = 100; i < 200; i++) (lap.longG[i] = -20), (lap.brake[i] = 0.9), (lap.throttle[i] = 0);
+  for (let i = 300; i < 400; i++) lap.latG[i] = 18;
+  // the wall: 5 g for a few metres, and the speed gone with it
+  for (let i = 600; i < 606; i++) lap.longG[i] = -50;
+  for (let i = 600; i < lap.n; i++) lap.speed[i] = 4;
+  const ev = kinds(T.events(lap), 'crash');
+  assert.equal(ev.length, 1, 'one impact, not one per metre');
+  assert.ok(ev[0].i0 >= 595 && ev[0].i0 <= 600, 'marked where the car hit, at ' + ev[0].i0 + ' m');
+  assert.ok(ev[0].peak > 40, 'carries how hard it was (' + ev[0].peak.toFixed(0) + ' m/s²)');
+});

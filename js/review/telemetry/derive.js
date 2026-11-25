@@ -71,6 +71,87 @@
       return on;
     }
 
+    /** An angle channel made continuous, so resampling never blends across the ±π wrap. */
+    function unwrap(a) {
+      const o = Float64Array.from(a);
+      for (let i = 1; i < o.length; i++) {
+        if (!isFinite(o[i])) o[i] = o[i - 1];
+        else o[i] -= Math.round((o[i] - o[i - 1]) / (2 * Math.PI)) * 2 * Math.PI;
+      }
+      return o;
+    }
+    /**
+     * Nose heading against the direction of travel, rad, + left. From the heading channel against
+     * the GPS track when there are both (right through a roll, and whichever way the heading
+     * channel counts, found from normal driving), else from the body velocities. Held when stopped.
+     */
+    function noseVsTravel(C, n, rate, wrap) {
+      const out = new Float64Array(n), v = C.speed, h = Math.max(1, Math.round(0.05 * rate));
+      if (C.yaw && C.lat && C.lon) {
+        const kx = Math.cos((C.lat[n >> 1] * Math.PI) / 180), course = new Float64Array(n), ok = new Uint8Array(n);
+        for (let i = 0; i < n; i++) {
+          const a = Math.max(0, i - h), b = Math.min(n - 1, i + h), dx = (C.lon[b] - C.lon[a]) * kx, dy = C.lat[b] - C.lat[a];
+          course[i] = Math.atan2(dy, dx);
+          ok[i] = v[i] > 1.5 && (dx || dy) && Math.abs(C.lat[a]) > 1e-3 && Math.abs(C.lat[b]) > 1e-3 && isFinite(C.yaw[i]) ? 1 : 0;
+          // a reset or tow moves the car further than its speed could: no travel direction there
+          if (Math.hypot(dx, dy) * 111320 > 2 + (3 * v[i] * (b - a)) / rate) ok[i] = 2;
+        }
+        // compass headings count clockwise, maths ones anticlockwise: the sum or the difference is steady
+        const pick = (sg) => {
+          const d = [];
+          for (let i = 0; i < n; i += 7) if (ok[i] === 1 && v[i] > 20) d.push(wrap(C.yaw[i] + sg * course[i]));
+          if (d.length < 20) return null;
+          const m = Math.atan2(d.reduce((s, x) => s + Math.sin(x), 0), d.reduce((s, x) => s + Math.cos(x), 0));
+          const spread = d.reduce((s, x) => s + Math.abs(wrap(x - m)), 0) / d.length;
+          return { sg, m, spread };
+        };
+        const A = pick(1), B = pick(-1), c = A && B ? (A.spread < B.spread ? A : B) : A || B;
+        if (c && c.spread < 0.3) {
+          out.cuts = ok.map((x) => (x === 2 ? 1 : 0));
+          // and the nose's own heading on the map (anticlockwise from east), for drawing it
+          out.head = Float64Array.from(C.yaw, (y) => (c.sg > 0 ? c.m - y : y - c.m));
+          for (let i = 0; i < n; i++) out[i] = ok[i] === 1 ? wrap((c.sg > 0 ? c.m - C.yaw[i] : C.yaw[i] - c.m) - course[i]) : i && !ok[i] ? out[i - 1] : 0;
+          return out;
+        }
+      }
+      if (!C.vx || !C.vy) return null;
+      for (let i = 0; i < n; i++) {
+        const sp = Math.hypot(C.vx[i], C.vy[i]);
+        out[i] = sp > 1.5 && isFinite(sp) ? -Math.atan2(C.vy[i], C.vx[i]) : i ? out[i - 1] : 0;
+      }
+      return out;
+    }
+    /**
+     * The real body attitude for crashes: nose against the direction of travel (bodyYaw, + left) and
+     * on the map (bodyHead, with GPS), world roll (+ right side down) and pitch (+ nose down), and
+     * crash (0..1) where any is far past normal driving, eased in and out over about a second.
+     */
+    function attitude(C, t, n, rate) {
+      const wrap = (x) => x - Math.round(x / (2 * Math.PI)) * 2 * Math.PI;
+      const yaw = noseVsTravel(C, n, rate, wrap);
+      if (!yaw) return {};
+      const w = new Float64Array(n), ramp = (x, a, b) => Math.max(0, Math.min(1, (Math.abs(x) - a) / (b - a)));
+      const by = unwrap(yaw), br = C.roll ? unwrap(C.roll) : null, bp = C.pitch ? Float64Array.from(C.pitch, (x) => (isFinite(x) ? x : 0)) : null;
+      for (let i = 0; i < n; i++) w[i] = Math.max(ramp(wrap(by[i]), 30 * DEG, 60 * DEG), br ? ramp(wrap(br[i]), 15 * DEG, 30 * DEG) : 0, bp ? ramp(bp[i], 20 * DEG, 35 * DEG) : 0);
+      // hold each peak for 0.8 s either side, then soften the edges; a reset ends it at once
+      const cutAt = yaw.cuts, Ws = Math.max(3, Math.round(0.5 * rate) | 1);
+      const hold = (H) => {
+        const o = new Float64Array(n);
+        for (let i = 0; i < n; i++) {
+          if (!w[i]) continue;
+          for (let k = i; k >= Math.max(0, i - H) && !(cutAt && cutAt[k]); k--) if (o[k] < w[i]) o[k] = w[i];
+          for (let k = i; k <= Math.min(n - 1, i + H) && !(cutAt && cutAt[k]); k++) if (o[k] < w[i]) o[k] = w[i];
+        }
+        return o;
+      };
+      const H = Math.round(0.8 * rate), soft = smooth(hold(H), Ws), wide = hold(H + Ws);
+      const out = { bodyYaw: by, crash: soft.map((x, i) => Math.max(0, Math.min(x, wide[i]))) };
+      if (yaw.head) out.bodyHead = unwrap(yaw.head);
+      if (br) out.bodyRoll = br;
+      if (bp) out.bodyPitch = bp;
+      return out;
+    }
+
     T.derive = function (S, t) {
       const C = S.ch, n = S.n, rate = S.rate || 60;
       const out = {}, notes = [];
@@ -276,6 +357,7 @@
       });
       if (ch.coast) ch.coast = Float64Array.from(minRun(ch.coast, t, 0.25));
       Object.assign(out, ch);
+      Object.assign(out, attitude(C, t, n, rate));
 
       if (have.us && main.Gspread > 0.5) notes.push('Balance calibration uncertain (steering gain spread ' + Math.round(main.Gspread * 100) + ' %).');
       if (rFromAy) notes.push('No yaw-rate channel: balance is worked out from lateral g.');
@@ -309,6 +391,8 @@
       return list.filter(([a, b]) => lap.t[b] - lap.t[a] >= minT || (minT === 0 && b >= a));
     }
     const PHASE = ['', 'entry', 'mid', 'exit'];
+    // Impact thresholds, m/s²: above what tyres can give, so braking and cornering never reach them.
+    const HIT_G = 40, HIT_DECEL = 30;
 
     T.events = function (lap) {
       const ev = [];
@@ -348,6 +432,19 @@
       if (lap.material) runs(lap, (i) => lap.material[i] >= 11 && lap.material[i] <= 14, 0, 10).forEach((r) => push('kerb', r));
       if (lap.surface) runs(lap, (i) => lap.surface[i] === 0, 0, 10).forEach((r) => push('off', r));
       if (lap.coast) runs(lap, (i) => lap.coast[i] > 0.5, 0.25, 10).forEach((r) => push('coast', r));
+      // an impact: g, or speed lost in a quarter second, beyond anything tyres give
+      if (lap.speed) {
+        const gAt = (i) => Math.hypot(lap.longG ? lap.longG[i] : 0, lap.latG ? lap.latG[i] : 0);
+        // looking back, so the mark lands where the car hit rather than a car length before it
+        const decel = (i) => {
+          let j = i;
+          while (j > 0 && lap.t[i] - lap.t[j - 1] < 0.25) j--;
+          const dt = lap.t[i] - lap.t[j];
+          return dt > 0.05 ? (lap.speed[j] - lap.speed[i]) / dt : 0;
+        };
+        const hit = (i) => (lap.speed[i] > 8 && gAt(i) > HIT_G) || decel(i) > HIT_DECEL;
+        runs(lap, hit, 0, 25).forEach((r) => push('crash', r, (i) => Math.max(gAt(i), decel(i))));
+      }
       [['bb', 'BB', 1], ['absSet', 'ABS', 0], ['tcSet', 'TC', 0]].forEach(([key, name, dp]) => {
         const a = lap[key];
         if (!a) return;

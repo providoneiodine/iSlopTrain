@@ -27,7 +27,9 @@
  * at most 1 in 3. So a bank can't swallow the road or the cars, and there
  * are no cliffs for the top-down imagery to smear down. Where two stretches
  * at different heights pass close, staying under the road wins. Far from
- * the track it's a smooth blend of the whole track's heights.
+ * the track it's a smooth blend of the whole track's heights. When the
+ * reference is a part lap, cmp.ground (a whole lap from the same file) fills
+ * in the heights of the stretch it never drove.
  */
 (function () {
   'use strict';
@@ -72,6 +74,15 @@
     for (let i = 0; i < n; i += every(5)) smooth.add(C[i * 3], C[i * 3 + 2], [C[i * 3], C[i * 3 + 1], C[i * 3 + 2]]);
     for (let i = 0; i < n; i += every(2)) clamp.add(C[i * 3], C[i * 3 + 2], [C[i * 3], C[i * 3 + 1], C[i * 3 + 2], w[i]]);
     for (let i = 0; i < n; i += every(200)) coarse.push(C[i * 3], C[i * 3 + 1], C[i * 3 + 2]);
+    // a part lap knows only its own stretch: the rest of the circuit's heights come from a whole lap
+    const G = cmp.ground;
+    if (G) {
+      const gs = (m) => Math.max(1, Math.round(m / (G.step || 1)));
+      const at = (i) => S.toGL(G.x[i], G.y[i], G.z[i]);
+      for (let i = 0; i < G.x.length; i += gs(5)) smooth.add(at(i)[0], at(i)[2], at(i));
+      for (let i = 0; i < G.x.length; i += gs(2)) clamp.add(at(i)[0], at(i)[2], at(i).concat(6));
+      for (let i = 0; i < G.x.length; i += gs(200)) coarse.push.apply(coarse, at(i));
+    }
     const slope = exag / 3; // how steeply ground may climb or fall away from the road's edge
     return (x, z) => {
       let sw = 0, sh = 0;
@@ -255,5 +266,5 @@
     return { zoom: zb, corridor: zc };
   }
 
-  IST.Review.MapLayer = { build };
+  IST.Review.MapLayer = { build, terrain };
 })();

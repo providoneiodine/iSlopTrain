@@ -232,6 +232,9 @@ test('iRacing .ibt: a lap the car was reset during isn’t a timed lap, and noth
   const r = T.process('session.ibt', writeIbt(60, 0, (p) => Math.round(hill(p.s) * 10) / 10, true));
   // lap 2 skipped 6 % of the track: its "time" is short of a lap and must not be offered as one
   assert.equal(r.laps.filter((l) => l.kind === 'full').map((l) => l.lapNo).join(), '1,3', 'only the laps driven whole are timed');
+  // the Laps panel flags the pieces the car was moved between, and leaves the whole laps unmarked
+  assert.ok(r.laps.some((l) => l.reset), 'the pieces either side of the reset are flagged');
+  assert.ok(!r.laps.filter((l) => l.kind === 'full').some((l) => l.reset), 'a lap driven whole is never flagged');
   // every point of every lap is on the circle, at the height the hill has there
   const whole = r.laps.find((l) => l.kind === 'full');
   let cx = 0, cy = 0;

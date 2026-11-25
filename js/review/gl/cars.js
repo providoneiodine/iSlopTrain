@@ -4,7 +4,7 @@
  *
  *   IST.Review.Cars.KINDS                  ['gt', 'lmp', 'gtp', 'formula', 'road']
  *   IST.Review.Cars.kindOf(name)           car type from a car's name (road when unknown)
- *   IST.Review.Cars.model(kind)            the cached model: { tris, len, width, wheelbase, track }
+ *   IST.Review.Cars.model(kind)            the cached model: { tris, len, width, height, wheelbase, track }
  *   IST.Review.Cars.emit(V, model, road, body, rgb, st)   append lit triangles to a Verts list
  *     road, body: { p, f, u, l } origin and forward / up / left unit axes in GL space.
  *     The wheels sit on `road`; everything sprung sits on `body` (road plus stance).
@@ -259,12 +259,12 @@
     if (cache[kind]) return cache[kind];
     const B = Builder();
     MODELS[kind](B);
-    let a0 = Infinity, a1 = -Infinity, w = 0;
-    B.tris.forEach((t) => t.p.forEach((p) => ((a0 = Math.min(a0, p[0])), (a1 = Math.max(a1, p[0])), (w = Math.max(w, Math.abs(p[2]))))));
+    let a0 = Infinity, a1 = -Infinity, w = 0, ht = 0;
+    B.tris.forEach((t) => t.p.forEach((p) => ((a0 = Math.min(a0, p[0])), (a1 = Math.max(a1, p[0])), (w = Math.max(w, Math.abs(p[2]))), (ht = Math.max(ht, p[1])))));
     const wh = B.parts.filter((p) => p.wheel);
     const fr = wh.find((p) => p.steer), rr = wh.find((p) => !p.steer);
     const m = {
-      kind, tris: B.tris, parts: B.parts, front: a1, rear: a0, len: a1 - a0, width: w * 2,
+      kind, tris: B.tris, parts: B.parts, front: a1, rear: a0, len: a1 - a0, width: w * 2, height: ht,
       radii: { f: fr.ph, r: rr.ph },
       wheelbase: Math.max(...wh.map((p) => p.pa)) - Math.min(...wh.map((p) => p.pa)),
       track: 2 * Math.max(...wh.map((p) => Math.abs(p.ps))),

@@ -29,7 +29,7 @@
 (function () {
   'use strict';
   const U = IST.util, h = U.h, Th = IST.Theme, M = IST.Review.M3;
-  const Cmp = IST.Review.Compare, Tr = IST.Review.Traces, Ly = IST.Review.Layers;
+  const Cmp = IST.Review.Compare, Tr = IST.Review.Traces, Ly = IST.Review.Layers, Vs = IST.Review.Versus;
   const COLORS = [Th.butter, Th.sky, Th.lilac, Th.peach, Th.text];
   const MAX_LAPS = COLORS.length;
   const ACCEPT = '.ibt,.ld,.ldx,.csv,.tsv,.txt';
@@ -44,6 +44,9 @@
     condOpen: false,
     cursor: -1, cursorF: -1, camMode: 'orbit', playing: false, playT: 0, rate: 1, loading: null,
     partialsOpen: new Set(), // sessions whose partials footer is unfolded
+    solo: null, // a lap shown on its own for now, ticks and reference left as they are
+    mode: null, // 'one' or 'vs' once picked; null follows how many drivers are loaded
+    names: {}, // driver key -> name typed over the file's
   };
   // ------------------------------------------------------- remembered choices
   const LANES_KEY = 'ist.review.lanes', LAYERS_KEY = 'ist.review.layers';
@@ -142,7 +145,9 @@
     // one track per analysis: laps from another circuit can't share a distance grid or a map
     const base = state.sessions[0] || fresh[0];
     const other = fresh.filter((s) => !sameTrack(s, base));
+    const before = drivers().length;
     fresh.filter((s) => sameTrack(s, base)).forEach(addSession);
+    if (before < 2 && drivers().length > 1 && !state.mode) pickRival();
     render();
     if (dups.length) flash('Already loaded: ' + dups.join(', '));
     if (other.length) askNewSession(other);
@@ -239,6 +244,35 @@
   }
   const refSession = () => (byId(state.refId) || {}).s;
 
+  // ---------------------------------------------------------------- drivers
+  const drivers = () => Vs.drivers(state.sessions);
+  const vsMode = () => (state.mode || (drivers().length > 1 ? 'vs' : 'one')) === 'vs';
+  const keyOf = (x) => Vs.driverKey(x.s);
+  function driverName(key) {
+    const d = drivers().find((x) => x.key === key);
+    return state.names[key] || (d ? d.name : 'Unknown');
+  }
+  /** Short label for a lap in tight spots: "Alex L4", or "L9" with one driver. */
+  function lapTag(x, lapNo) {
+    if (!x || !vsMode()) return 'L' + lapNo;
+    return driverName(keyOf(x)).split(' ')[0].slice(0, 10) + ' L' + lapNo;
+  }
+
+  /**
+   * A second driver arrived: the reference is the best lap of whoever brought the fewest laps
+   * (a reference is usually one lap), timed against the best of whoever brought the most.
+   */
+  function pickRival() {
+    const full = state.laps.filter((x) => complete(x.lap)).sort((a, b) => a.lap.time - b.lap.time);
+    const count = (d) => full.filter((x) => keyOf(x) === d.key).length;
+    const ds = drivers().filter(count).sort((a, b) => count(a) - count(b));
+    if (ds.length < 2) return;
+    const theirs = full.find((x) => keyOf(x) === ds[0].key), mine = full.find((x) => keyOf(x) === ds[ds.length - 1].key);
+    state.refId = theirs.id;
+    state.sel = [theirs.id, mine.id];
+    state.solo = null;
+  }
+
   function loadDemo() {
     const text = IST.Review.Demo.csv(7);
     const file = new File([text], 'demo-session.csv', { type: 'text/csv' });
@@ -252,6 +286,7 @@
     return f.length ? Math.min.apply(null, f.map((x) => x.lap.time)) : NaN;
   };
   function toggle(id) {
+    state.solo = null;
     const i = state.sel.indexOf(id);
     if (i >= 0) {
       if (id === state.refId) return;
@@ -262,7 +297,21 @@
     }
     rebuild();
   }
+  /** Solo: show one lap on its own, no reference; again (or any other pick) goes back. */
+  function solo(id) {
+    state.solo = state.solo === id ? null : id;
+    rebuild();
+  }
+
+  /** Shift-click a lap: just it and the reference, to flip through laps one at a time. */
+  function versus(id) {
+    state.solo = null;
+    state.sel = id === state.refId ? [id] : [state.refId, id];
+    rebuild();
+  }
+
   function setRef(id) {
+    state.solo = null;
     state.refId = id;
     if (state.sel.indexOf(id) < 0) {
       if (state.sel.length >= MAX_LAPS) state.sel.pop();
@@ -271,14 +320,24 @@
     rebuild();
   }
 
+  const lapColor = (id) => COLORS[Math.max(0, selIndex(id)) % COLORS.length];
+
   /** Comparison laps in colour order: reference first, then the order they were picked. */
   function comparison() {
-    const ref = byId(state.refId);
+    // a soloed lap stands in as the only lap, in its own colour
+    const one = state.solo && byId(state.solo);
+    const ref = one || byId(state.refId);
     if (!ref) return null;
-    const others = state.sel.filter((id) => id !== state.refId).map(byId).filter(Boolean);
+    const others = one ? [] : state.sel.filter((id) => id !== state.refId).map(byId).filter(Boolean);
     const m = state.opts.map && ref.s.map;
-    const cmp = Cmp.build(ref.lap, others.map((o) => o.lap), COLORS, m && m.lines.length ? { lines: m.lines, halfWidth: m.halfWidth } : null);
+    const colors = [lapColor(ref.id)].concat(others.map((o) => lapColor(o.id)));
+    const cmp = Cmp.build(ref.lap, others.map((o) => o.lap), colors, m && m.lines.length ? { lines: m.lines, halfWidth: m.halfWidth } : null);
     cmp.laps.forEach((L, k) => (L.entry = k === 0 ? ref : others[k - 1]));
+    // a part lap can't say how high the rest of the circuit is: the ground borrows a whole lap's heights
+    if (ref.lap.kind !== 'full') {
+      const whole = state.laps.filter((x) => x.s === ref.s && x.lap.kind === 'full').sort((a, b) => a.lap.time - b.lap.time)[0];
+      if (whole) cmp.ground = { x: whole.lap.x, y: whole.lap.y, z: whole.lap.z, step: whole.lap.step };
+    }
     return cmp;
   }
 
@@ -356,14 +415,14 @@
 
   function clearAll() {
     loadGen++;
-    Object.assign(state, { loading: null, sessions: [], laps: [], refId: null, sel: [], errors: [], warnings: [], cursor: -1, cursorF: -1, playing: false, partialsOpen: new Set(), undo: null });
+    Object.assign(state, { loading: null, sessions: [], laps: [], refId: null, sel: [], errors: [], warnings: [], cursor: -1, cursorF: -1, playing: false, partialsOpen: new Set(), solo: null, mode: null, undo: null });
     originRef = null;
     render();
   }
 
   /** The header's Clear: forget everything, but keep it until the next load so Undo can bring it back. */
   function clearWithUndo() {
-    const keep = { sessions: state.sessions, laps: state.laps, refId: state.refId, sel: state.sel, errors: state.errors, warnings: state.warnings, partialsOpen: state.partialsOpen, originRef };
+    const keep = { sessions: state.sessions, laps: state.laps, refId: state.refId, sel: state.sel, errors: state.errors, warnings: state.warnings, partialsOpen: state.partialsOpen, mode: state.mode, originRef };
     clearAll();
     state.undo = keep;
     render();
@@ -373,7 +432,7 @@
     if (!u) return;
     loadGen++;
     originRef = u.originRef;
-    Object.assign(state, { sessions: u.sessions, laps: u.laps, refId: u.refId, sel: u.sel, errors: u.errors, warnings: u.warnings, partialsOpen: u.partialsOpen, undo: null, loading: null });
+    Object.assign(state, { sessions: u.sessions, laps: u.laps, refId: u.refId, sel: u.sel, errors: u.errors, warnings: u.warnings, partialsOpen: u.partialsOpen, mode: u.mode, solo: null, undo: null, loading: null });
     render();
   }
 
@@ -508,6 +567,7 @@
     const play = h('button', { class: 'btn small', onclick: () => setPlaying(!state.playing), title: 'Play the reference lap (Space)' }, state.playing ? 'Pause' : 'Play');
     const camSeg = seg(IST.Review.Rigs.MODES.map((m, i) => [m[0], m[1], m[2] + ' (' + (i + 1) + ')']), state.camMode || 'orbit', (m) => setCam(m));
     const hint = h('div', { class: 'rv-hint' }, HINTS.orbit);
+    const pip = h('div', { class: 'rv-pip hidden', role: 'group', 'aria-label': 'Reference lap' });
     const stage = dropTarget(h('div', { class: 'rv-stage' }, gl, overlay,
       h('div', { class: 'rv-toolbar' },
         camSeg,
@@ -516,6 +576,7 @@
       hint,
       h('div', { class: 'rv-map-status', title: '' }),
       legend,
+      pip,
       drawer));
     gl.addEventListener('pointerdown', () => state.drawer && setDrawer(false));
     const inputs = h('select', { 'aria-label': 'Whose fence, paint and markers to draw' });
@@ -530,7 +591,7 @@
     const condPanel = h('div', { class: 'view-panel rv-cond hidden' });
     const lanesBox = h('div', { class: 'rv-lanebar', role: 'toolbar', 'aria-label': 'Trace lanes' });
     const tracesWrap = h('div', { class: 'rv-traces-wrap' }, traces);
-    V = { glEl: gl, overlay, tracesEl: traces, tracesWrap, stage, play, camSeg, hint, inputs, lapsPanel, readout, condPanel, lanesBox, drawer, layersBtn, legend, dirty: true };
+    V = { glEl: gl, overlay, tracesEl: traces, tracesWrap, stage, play, camSeg, hint, pip, inputs, lapsPanel, readout, condPanel, lanesBox, drawer, layersBtn, legend, dirty: true };
     return h('div', { class: 'rv-layout' },
       h('div', { class: 'rv-main' }, stage,
         h('div', { class: 'rv-traces-box' }, lanesBox, tracesWrap),
@@ -572,7 +633,7 @@
         verdict ? h('span', { class: 'rv-cond-verdict' + (C.differs ? ' warn' : '') }, verdict) : null));
     det.addEventListener('toggle', () => (state.condOpen = det.open));
     const tb = h('table', { class: 'rv-cond-table' },
-      many ? h('tr', null, h('th', null, ''), cmp.laps.map((L, k) => h('th', null, h('i', { class: 'rv-swatch', style: 'background:' + COLORS[k] }), (k ? '' : 'Ref ') + L.lap.lapNo))) : null,
+      many ? h('tr', null, h('th', null, ''), cmp.laps.map((L, k) => h('th', null, h('i', { class: 'rv-swatch', style: 'background:' + L.color }), (k || state.solo ? '' : 'Ref ') + (vsMode() ? lapTag(L.entry, L.lap.lapNo) : L.lap.lapNo)))) : null,
       C.rows.map((r) => h('tr', { class: r.differs ? 'differs' : '', title: r.differs && r.apart ? r.apart + ' apart' : '' },
         h('td', null, r.label), r.values.map((v) => h('td', null, v)))));
     det.append(tb);
@@ -583,7 +644,7 @@
   /** Options for the Inputs select: all laps, off, or one lap; keeps the choice if it still exists. */
   function inputOptions() {
     const sel = V.inputs, cmp = V.cmp;
-    const opts = [['all', 'All laps'], ['none', 'None']].concat(cmp.laps.map((L, k) => ['lap' + k, (k ? 'Lap ' : 'Ref · Lap ') + L.lap.lapNo]));
+    const opts = [['all', 'All laps'], ['none', 'None']].concat(cmp.laps.map((L, k) => ['lap' + k, (k || state.solo ? '' : 'Ref · ') + (vsMode() ? who(L.entry) + ' · ' : '') + 'Lap ' + L.lap.lapNo]));
     if (!opts.some((o) => o[0] === state.opts.inputs)) state.opts.inputs = 'all';
     sel.innerHTML = '';
     opts.forEach(([v, l]) => sel.append(h('option', { value: v, selected: v === state.opts.inputs }, l)));
@@ -595,57 +656,247 @@
     return V.cmp.laps.map((_, k) => o === 'all' || o === 'lap' + k);
   }
 
+  /*
+   * Lap status glyphs, drawn to the right of the lap number: marshal flags for what
+   * happened on track, line icons for the pit lane. Clean laps carry none.
+   */
+  const OFF_RED = '#e0737f', PIT_BLUE = Th.sky, POLE = '#c9cfd9', GREY = Th.dim;
+  const pole = '<path d="M2 1V11.5" stroke="' + POLE + '" stroke-width="1.2"/>';
+  const ICON = {
+    off: pole + '<rect x="2.6" y="1" width="8.4" height="6" fill="' + OFF_RED + '"/>',
+    crash: pole + '<rect x="2.6" y="1" width="8.4" height="6" fill="#15171c"/><circle cx="6.8" cy="4" r="2.3" fill="#ff7a3d"/>',
+    reset: '<path d="M9.8 6A3.8 3.8 0 1 1 6 2.2H9" fill="none" stroke="' + Th.lilac + '" stroke-width="1.5" stroke-linecap="square"/><path d="M7.4 .7L9.6 2.2L7.4 3.9Z" fill="' + Th.lilac + '"/>',
+    pitOut: '<path d="M5 2H2V10H5M5.5 6H10.5M8.5 3.5L11 6L8.5 8.5" fill="none" stroke="' + PIT_BLUE + '" stroke-width="1.5" stroke-linecap="square"/>',
+    pitIn: '<path d="M7 2H10V10H7M1 6H6.5M4.5 3.5L7 6L4.5 8.5" fill="none" stroke="' + PIT_BLUE + '" stroke-width="1.5" stroke-linecap="square"/>',
+    part: pole + '<rect x="3.1" y="1.5" width="7.4" height="5" fill="none" stroke="' + GREY + '" stroke-width="1"/>',
+  };
+
+  function icon(k, title, n) {
+    const s = h('span', { class: 'rv-lap-ic', title });
+    s.innerHTML = '<svg viewBox="0 0 12 12" role="img" aria-label="' + title + '">' + ICON[k] + '</svg>';
+    if (n > 1) s.append(h('b', null, String(n)));
+    return s;
+  }
+
+  /** What happened on a lap, in one row of glyphs: off tracks, impacts, a reset, the pit lane. */
+  function lapIcons(lap) {
+    const out = [], count = (k) => (lap.events || []).filter((e) => e.kind === k).length;
+    const offs = count('off'), hits = count('crash');
+    if (offs) out.push(icon('off', offs === 1 ? 'Off track once' : 'Off track ' + offs + ' times', offs));
+    if (hits) out.push(icon('crash', hits === 1 ? 'Contact: an impact on this lap' : hits + ' impacts on this lap', hits));
+    if (lap.reset) out.push(icon('reset', 'The car was moved during this lap: a reset, a tow or a session change'));
+    if (lap.kind === 'out') out.push(icon('pitOut', 'Out lap, leaving the pits'));
+    else if (lap.kind === 'in') out.push(icon('pitIn', 'In lap, to the pits'));
+    else if (lap.pit) out.push(icon('pitIn', 'Through the pit lane'));
+    // "cut short" only when nothing else already says why the lap isn't a whole one
+    if (lap.kind === 'partial' && !out.length) out.push(icon('part', 'Part lap: cut short'));
+    return out.length ? h('span', { class: 'rv-lap-ics' }, out) : null;
+  }
+
+  /** One lap's row: tick (shift-click for it against the reference), swatch, number, flags, time, Solo and Ref. */
+  function lapRow(x, best, pip) {
+    const done = complete(x.lap);
+    const on = selIndex(x.id) >= 0;
+    const isRef = x.id === state.refId;
+    const d = done && isFinite(best) ? x.lap.time - best : NaN;
+    const box = h('input', { type: 'checkbox', checked: on, disabled: isRef, 'aria-label': 'Compare lap ' + x.lap.lapNo + ' (shift-click for it against the reference)' });
+    box.addEventListener('change', () => toggle(x.id));
+    // in the 3D view's card the reference stands out as itself: the list row only points there
+    const away = !pip && isRef && vsMode() && !state.solo;
+    // anywhere on the row, not just the box: shift and ctrl pick instead of ticking
+    const main = h('label', { class: 'rv-lap-main', title: away ? 'The reference: shown in the card in the 3D view' : 'Shift-click for this lap against the reference' },
+      box,
+      h('i', { class: 'rv-swatch', style: on || state.solo === x.id ? 'background:' + lapColor(x.id) : '' }),
+      h('span', { class: 'rv-lap-no' }, 'Lap ' + x.lap.lapNo),
+      away ? h('span', { class: 'rv-lap-away' }, 'in 3D view') : lapIcons(x.lap),
+      h('span', { class: 'rv-lap-time' }, Cmp.fmtLap(x.lap.time)),
+      pip || away ? null : h('span', { class: 'rv-lap-d' + (d === 0 ? ' best' : '') }, isFinite(d) ? (d === 0 ? 'best' : '+' + d.toFixed(3)) : ''));
+    main.addEventListener('click', (e) => {
+      if (!e.shiftKey) return;
+      e.preventDefault();
+      versus(x.id);
+    });
+    const alone = state.solo === x.id;
+    return h(pip ? 'div' : 'li', { class: 'rv-lap' + (on ? ' on' : '') + (isRef ? ' ref' : '') + (away ? ' away' : '') + (state.solo && !alone ? ' muted' : '') }, main,
+      h('button', { class: 'rv-mix' + (alone ? ' on' : ''), title: 'Solo: show this lap on its own', 'aria-pressed': alone ? 'true' : 'false', 'aria-label': 'Solo lap ' + x.lap.lapNo, onclick: () => solo(x.id) }, 'S'),
+      h('button', { class: 'rv-ref' + (isRef && !state.solo ? ' on' : ''), disabled: state.solo ? true : null, title: state.solo ? 'No reference while a lap is soloed' : 'Use as reference', onclick: () => setRef(x.id) }, 'Ref'));
+  }
+
+  /** A file's heading and its laps: complete laps listed, the rest folded into a partials footer. */
+  function sessionBlock(s, body, best) {
+    const entries = state.laps.filter((x) => x.s === s);
+    // with drivers as headings, the driver's name isn't repeated under each file
+    const meta = [s.meta.track, s.meta.car, vsMode() ? '' : s.meta.driver].filter(Boolean).join(' · ');
+    // in-car settings at the start of the first timed lap
+    const first = entries.map((x) => x.lap).find(complete) || (entries[0] && entries[0].lap);
+    const set = first ? [['absSet', 'ABS ', 0], ['tcSet', 'TC ', 0], ['bb', 'BB ', 1]].filter(([k]) => first[k]).map(([k, n, d]) => n + first[k][0].toFixed(d) + (k === 'bb' ? ' %' : '')).join(' · ') : '';
+    body.append(h('div', { class: 'rv-file' },
+      h('div', { class: 'rv-file-name', title: s.file }, s.file),
+      h('div', { class: 'rv-file-meta muted' }, (meta ? meta + ' · ' : '') + s.format),
+      set ? h('div', { class: 'rv-file-meta muted', title: 'In-car settings at the start of the first timed lap' }, set) : null));
+    const list = h('ul', { class: 'rv-lap-list' }), rest = h('ul', { class: 'rv-lap-list' });
+    let partials = 0;
+    entries.forEach((x) => {
+      const done = complete(x.lap);
+      if (!done) partials++;
+      (done ? list : rest).append(lapRow(x, best));
+    });
+    if (list.children.length) body.append(list);
+    if (partials) {
+      const open = state.partialsOpen.has(s) || (!list.children.length);
+      const box = h('details', { class: 'rv-partials', open: open || null },
+        h('summary', null, partials + (partials === 1 ? ' partial' : ' partials')), rest);
+      box.addEventListener('toggle', () => (box.open ? state.partialsOpen.add(s) : state.partialsOpen.delete(s)));
+      body.append(box);
+    }
+  }
+
+  /** A driver's heading: their name (click to rename), their best lap, and a Ref tag when the reference is theirs. */
+  function driverHead(d, best) {
+    const ref = byId(state.refId), isRefDriver = ref && keyOf(ref) === d.key && !state.solo;
+    const own = state.laps.filter((x) => keyOf(x) === d.key && complete(x.lap));
+    const fast = own.length ? Math.min.apply(null, own.map((x) => x.lap.time)) : NaN;
+    const name = h('button', { class: 'rv-drv-name', title: 'Rename this driver' }, driverName(d.key));
+    name.addEventListener('click', () => {
+      const input = h('input', { class: 'rv-drv-input', value: driverName(d.key), 'aria-label': 'Driver name', maxlength: 40 });
+      const done = (keep) => {
+        if (keep) {
+          const v = input.value.trim();
+          if (v && v !== d.name) state.names[d.key] = v;
+          else delete state.names[d.key];
+        }
+        labelsChanged();
+      };
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') done(true);
+        else if (e.key === 'Escape') (e.stopPropagation(), done(false));
+      });
+      input.addEventListener('blur', () => done(true));
+      name.replaceWith(input);
+      input.focus();
+      input.select();
+    });
+    return h('div', { class: 'rv-drv' },
+      isRefDriver ? h('span', { class: 'rv-drv-tag ref' }, 'Ref') : null,
+      name,
+      isFinite(fast) ? h('span', { class: 'rv-drv-best', title: 'Best complete lap' + (isFinite(best) && fast > best ? ', +' + (fast - best).toFixed(3) + ' to the fastest' : '') }, Cmp.fmtLap(fast)) : null);
+  }
+
   function lapList() {
-    const P = V.lapsPanel;
+    const P = V.lapsPanel, ds = drivers(), vs = vsMode();
     P.innerHTML = '';
-    P.append(h('h2', null, 'Laps'), h('p', { class: 'hint' }, 'Tick up to ' + MAX_LAPS + ' to compare. Ref sets the lap the others are timed against.'));
+    P.append(h('h2', null, 'Laps'));
+    if (ds.length > 1) {
+      P.append(h('div', { class: 'rv-mode' }, seg([['one', 'One driver', 'Every lap in one list, to find your own mistakes'], ['vs', 'Vs driver', 'Laps grouped by driver, with the reference in a card in the 3D view']], vs ? 'vs' : 'one', setMode)));
+    }
+    P.append(h('p', { class: 'hint' }, vs
+      ? 'Set one driver’s lap as Ref and tick another’s to race it. Shift-click a lap for just the two.'
+      : 'Tick up to ' + MAX_LAPS + ' to compare, or shift-click one for it against the reference. Ref sets the lap the others are timed against.'));
     // the files and laps scroll under the fixed heading when the list is long
     const body = h('div', { class: 'rv-laps-list' });
     P.append(body);
     const best = bestFull();
-    state.sessions.forEach((s) => {
-      const entries = state.laps.filter((x) => x.s === s);
-      const meta = [s.meta.track, s.meta.car, s.meta.driver].filter(Boolean).join(' · ');
-      // in-car settings at the start of the first timed lap
-      const first = entries.map((x) => x.lap).find(complete) || (entries[0] && entries[0].lap);
-      const set = first ? [['absSet', 'ABS ', 0], ['tcSet', 'TC ', 0], ['bb', 'BB ', 1]].filter(([k]) => first[k]).map(([k, n, d]) => n + first[k][0].toFixed(d) + (k === 'bb' ? ' %' : '')).join(' · ') : '';
-      body.append(h('div', { class: 'rv-file' },
-        h('div', { class: 'rv-file-name', title: s.file }, s.file),
-        h('div', { class: 'rv-file-meta muted' }, (meta ? meta + ' · ' : '') + s.format),
-        set ? h('div', { class: 'rv-file-meta muted', title: 'In-car settings at the start of the first timed lap' }, set) : null));
-      // complete laps are the list; out, in, pit and cut-short laps fold into a footer
-      const list = h('ul', { class: 'rv-lap-list' }), rest = h('ul', { class: 'rv-lap-list' });
-      let partials = 0;
-      entries.forEach((x) => {
-        const done = complete(x.lap);
-        if (!done) partials++;
-        const k = selIndex(x.id);
-        const on = k >= 0;
-        const isRef = x.id === state.refId;
-        const tag = x.lap.pit ? 'pit' : x.lap.kind !== 'full' ? x.lap.kind : null;
-        const d = done && isFinite(best) ? x.lap.time - best : NaN;
-        const box = h('input', { type: 'checkbox', checked: on, disabled: isRef, 'aria-label': 'Compare lap ' + x.lap.lapNo });
-        box.addEventListener('change', () => toggle(x.id));
-        (done ? list : rest).append(h('li', { class: 'rv-lap' + (on ? ' on' : '') + (isRef ? ' ref' : '') },
-          h('label', { class: 'rv-lap-main' },
-            box,
-            h('i', { class: 'rv-swatch', style: on ? 'background:' + COLORS[k] : '' }),
-            h('span', { class: 'rv-lap-no' }, 'Lap ' + x.lap.lapNo),
-            tag ? h('span', { class: 'rv-lap-tag' }, tag) : null,
-            h('span', { class: 'rv-lap-time' }, Cmp.fmtLap(x.lap.time)),
-            h('span', { class: 'rv-lap-d' + (d === 0 ? ' best' : '') }, isFinite(d) ? (d === 0 ? 'best' : '+' + d.toFixed(3)) : '')),
-          h('button', { class: 'rv-ref' + (isRef ? ' on' : ''), title: 'Use as reference', onclick: () => setRef(x.id) }, 'Ref')));
-      });
-      if (list.children.length) body.append(list);
-      if (partials) {
-        const open = state.partialsOpen.has(s) || (!list.children.length);
-        const box = h('details', { class: 'rv-partials', open: open || null },
-          h('summary', null, partials + (partials === 1 ? ' partial' : ' partials')), rest);
-        box.addEventListener('toggle', () => (box.open ? state.partialsOpen.add(s) : state.partialsOpen.delete(s)));
-        body.append(box);
-      }
+    if (!vs) return state.sessions.forEach((s) => sessionBlock(s, body, best));
+    ds.forEach((d) => {
+      const group = h('div', { class: 'rv-drv-group' }, driverHead(d, best));
+      d.sessions.forEach((s) => sessionBlock(s, group, best));
+      body.append(group);
     });
   }
+
+  function setMode(m) {
+    state.mode = m;
+    rebuild(true);
+  }
+
+  /** A rename: every label that names drivers, without rebuilding the 3D scene. */
+  function labelsChanged() {
+    if (!V || !V.cmp) return;
+    lapList();
+    V.fences = inputOptions();
+    conditions();
+    readout();
+    pipCard();
+  }
+
+  // ------------------------------------------------------------ versus card
+  /** The lap that races the reference in the card: another driver's if one is ticked, else the first compared. */
+  function rivalIndex() {
+    const cmp = V.cmp;
+    if (state.solo || !cmp || cmp.laps.length < 2) return -1;
+    const refKey = keyOf(cmp.laps[0].entry);
+    const k = cmp.laps.findIndex((L, i) => i > 0 && keyOf(L.entry) !== refKey);
+    return k > 0 ? k : 1;
+  }
+  const who = (x) => driverName(keyOf(x));
+
+  /**
+   * Vs driver: the reference lap's own card in the corner of the 3D view, with the list's
+   * controls and the live gap of the lap racing it. Folds to one line; hidden with one driver.
+   */
+  function pipCard() {
+    const el = V.pip, ref = byId(state.refId);
+    const show = vsMode() && !!ref && !!V.cmp;
+    el.classList.toggle('hidden', !show);
+    el.innerHTML = '';
+    V.pipVs = null;
+    if (!show) return;
+    pipPlace();
+    const folded = state.pipFolded, k = rivalIndex(), L = k > 0 ? V.cmp.laps[k] : null;
+    const fold = h('button', { class: 'rv-pip-fold', 'aria-expanded': String(!folded), title: folded ? 'Show the reference lap’s controls' : 'Fold to one line', onclick: () => ((state.pipFolded = !folded), pipCard()) }, folded ? '+' : '−');
+    const delta = h('span', { class: 'rv-pip-delta' }), trend = h('div', { class: 'rv-pip-trend' });
+    el.classList.toggle('folded', !!folded);
+    el.append(h('div', { class: 'rv-pip-head' },
+      h('span', { class: 'rv-drv-tag ref' }, 'Ref'),
+      h('span', { class: 'rv-pip-name', title: 'Reference: ' + driverName(keyOf(ref)) + ', lap ' + ref.lap.lapNo }, who(ref)),
+      folded && L ? delta : null, fold));
+    if (!folded) el.append(lapRow(ref, NaN, true));
+    if (!L) {
+      if (!folded) el.append(h('div', { class: 'rv-pip-trend' }, state.solo ? 'A lap is soloed: no reference for now.' : 'Tick a lap to race this one.'));
+      return;
+    }
+    if (!folded) {
+      el.append(h('div', { class: 'rv-pip-vs' },
+        h('span', { class: 'rv-pip-rival', title: who(L.entry) + ', lap ' + L.lap.lapNo }, h('i', { class: 'rv-swatch', style: 'background:' + L.color }), who(L.entry) + ' · Lap ' + L.lap.lapNo),
+        delta), trend);
+    }
+    V.pipVs = { k, delta, trend: folded ? null : trend, text: '', secKey: null };
+    pipTick();
+  }
+  /** Under the toolbar, however many rows it wraps to. */
+  function pipPlace() {
+    const bar = V.stage.querySelector('.rv-toolbar');
+    if (bar && bar.offsetHeight) V.pip.style.top = bar.offsetTop + bar.offsetHeight + 10 + 'px';
+  }
+  /** The card's numbers at the cursor (at the line until there is one). */
+  function pipTick() {
+    const P = V && V.pipVs;
+    if (!P) return;
+    const at = state.cursorF >= 0, b = Vs.battle(V.cmp, P.k, at ? state.cursorF : V.cmp.n - 1);
+    if (!b) return;
+    const d = b.delta, text = (d >= 0 ? '+' : '−') + Math.abs(d).toFixed(3);
+    if (text !== P.text) {
+      P.text = P.delta.textContent = text;
+      P.delta.className = 'rv-pip-delta ' + (d > 0.005 ? 'bad' : d < -0.005 ? 'good' : 'flat');
+      P.delta.title = 'Seconds behind (+) or ahead (−) of the reference ' + (at ? 'at the cursor' : 'at the line');
+    }
+    if (!P.trend) return;
+    // between braking zones: what this stretch has cost so far, and what the last one cost in all
+    const sec = at ? Vs.sectorAt(V.cmp, P.k, state.cursorF) : Vs.worst(V.cmp, P.k);
+    const key = sec ? sec.name + sec.lost.toFixed(3) + (sec.prev ? sec.prev.lost.toFixed(3) : '') : '';
+    if (key === P.secKey) return;
+    P.secKey = key;
+    P.trend.innerHTML = '';
+    if (!sec) return;
+    const part = (label, x, title) => h('span', { title }, label + ' ', h('b', { class: x.lost > 0.005 ? 'bad' : x.lost < -0.005 ? 'good' : '' }, (x.lost >= 0 ? '+' : '−') + Math.abs(x.lost).toFixed(3)));
+    const span = 'from the start of braking to the start of the next braking zone';
+    if (!at) P.trend.append(part('Most lost: ' + sec.name, sec, 'The stretch that cost the most, ' + span));
+    else {
+      P.trend.append(part(sec.name, sec, 'Time lost (+) or gained (−) so far on this stretch, ' + span));
+      if (sec.prev) P.trend.append(part(sec.prev.name, sec.prev, 'The stretch before, in full'));
+    }
+  }
+
   /** A lap to compare: start line to start line, not through the pits. */
   const complete = (lap) => lap.kind === 'full' && !lap.pit;
   function selIndex(id) {
@@ -664,13 +915,13 @@
     if (i < 0) return P.append(h('p', { class: 'hint' }, 'Hover a line in the 3D view or the traces.'));
     const onMap = cmp.centre.source === 'map';
     const row = (L) => h('tr', null,
-      h('td', { title: 'Lap ' + L.lap.lapNo }, h('i', { class: 'rv-swatch', style: 'background:' + L.color }), 'L' + L.lap.lapNo),
+      h('td', { title: (vsMode() ? who(L.entry) + ', lap ' : 'Lap ') + L.lap.lapNo }, h('i', { class: 'rv-swatch', style: 'background:' + L.color }), lapTag(L.entry, L.lap.lapNo)),
       h('td', null, Math.round(L.speed[i] * 3.6)),
       h('td', null, L.throttle ? Math.round(L.throttle[i] * 100) : '–'),
       h('td', null, L.brake ? Math.round(L.brake[i] * 100) : '–'),
       h('td', null, L.gear ? Math.round(L.gear[i]) : '–'),
       onMap ? h('td', { title: 'From the track centre' }, Math.abs(L.off[i]) < 0.05 ? '0.0' : Math.abs(L.off[i]).toFixed(1) + (L.off[i] > 0 ? ' L' : ' R')) : null,
-      h('td', { class: 'delta ' + (L === cmp.laps[0] ? 'flat' : L.delta[i] > 0.005 ? 'bad' : L.delta[i] < -0.005 ? 'good' : 'flat') }, L === cmp.laps[0] ? 'ref' : U.signedSec(L.delta[i]).replace(' s', '')));
+      h('td', { class: 'delta ' + (L === cmp.laps[0] ? 'flat' : L.delta[i] > 0.005 ? 'bad' : L.delta[i] < -0.005 ? 'good' : 'flat') }, L === cmp.laps[0] ? (state.solo ? '–' : 'ref') : U.signedSec(L.delta[i]).replace(' s', '')));
     P.append(h('table', { class: 'grid rv-table' },
       h('thead', null, h('tr', null, [['Lap'], ['km/h', 'Speed'], ['Thr', 'Throttle pedal, %'], ['Brk', 'Brake pedal, %'], ['G', 'Gear']]
         .concat(onMap ? [['Ctr m', 'Distance from the track centre, metres, to the left (L) or right (R)']] : [], [['Δ s', 'Time behind (+) or ahead (−) of the reference lap at this point, seconds']])
@@ -681,7 +932,7 @@
     const more = V.traces.values(i).filter((r) => !BASIC.has(r.key));
     if (more.length) {
       P.append(h('table', { class: 'grid rv-table rv-table-more' },
-        h('thead', null, h('tr', null, h('th', null, 'Lane'), cmp.laps.map((L) => h('th', null, h('i', { class: 'rv-swatch', style: 'background:' + L.color }), 'L' + L.lap.lapNo)))),
+        h('thead', null, h('tr', null, h('th', null, 'Lane'), cmp.laps.map((L) => h('th', null, h('i', { class: 'rv-swatch', style: 'background:' + L.color }), lapTag(L.entry, L.lap.lapNo))))),
         h('tbody', null, more.map((r) => {
           const lane = Tr.LANES.find((l) => l.key === r.key);
           const name = [r.label, r.unit && !r.label.endsWith(' ' + r.unit) ? h('span', { class: 'muted' }, ' ' + r.unit) : null];
@@ -717,7 +968,7 @@
         h('div', { class: 'rv-tyre-val' }, mean, L['p' + w] ? h('span', { class: 'muted' }, ' · ' + Math.round(L['p' + w][i]) + ' kPa') : null));
     };
     return h('div', { class: 'rv-tyres' },
-      h('h2', null, 'Tyres · ref lap'),
+      h('h2', null, state.solo ? 'Tyres' : 'Tyres · ref lap'),
       h('div', { class: 'rv-tyre-grid' }, ['LF', 'RF', 'LR', 'RR'].map(tyre)));
   }
 
@@ -1037,6 +1288,7 @@
       V.ro = new ResizeObserver(() => {
         if (V && V.R) V.R.resize();
         if (V) V.traces.draw();
+        if (V) pipPlace();
         dirty();
       });
       V.ro.observe(V.stage);
@@ -1075,6 +1327,7 @@
     readout();
     conditions();
     mapStatus();
+    pipCard();
     if (V.R) {
       if (V.scene) V.scene.dispose();
       // close-up cameras sit a few metres off the road: low fences there, tall ones for the overview
@@ -1200,7 +1453,8 @@
     const cmp = V.cmp, f = Math.max(0, state.cursorF), T = timeAt(cmp.laps[0].t, f), attitude = attitudeOn();
     return cmp.laps.map((L, k) => {
       const j = k ? indexAt(L.t, T) : f;
-      let pose = IST.Review.Rigs.pose(V.scene, k, j), slip = NaN;
+      const travel = IST.Review.Rigs.pose(V.scene, k, j);
+      let pose = travel, slip = NaN;
       if (attitude) {
         // yaw the car by its slip angle so it points where its nose did, not down its path
         // (blended between samples, like the position, so it doesn't tick at speed)
@@ -1212,7 +1466,10 @@
           pose = { p: pose.p, fwd: [F[0] * c + Lf[0] * s2, 0, F[2] * c + Lf[2] * s2], left: [Lf[0] * c - F[0] * s2, 0, Lf[2] * c - F[2] * s2] };
         }
       }
-      return Object.assign({ k, j, pose, gapM: (f - j) * cmp.step, slip }, stance(L, k, j, pose));
+      const st = stance(L, k, j, pose), cr = IST.Review.Stance.crash(L, j);
+      // a crash or spin: the whole car turns to how the file says it lay, wheels and all
+      if (cr) Object.assign(st, IST.Review.Stance.tumble(travel.fwd, travel.left, st.road, st.body, cr, IST.Review.Cars.model(st.kind)));
+      return Object.assign({ k, j, pose, gapM: (f - j) * cmp.step, slip }, st);
     });
   }
 
@@ -1253,6 +1510,7 @@
     dt = dt || 0.016;
     V.dirty = false;
     V.fading = Math.max(0, (V.fading || 0) - dt);
+    pipTick();
     const W = V.glEl.clientWidth, H = V.glEl.clientHeight;
     if (!V.R || !V.scene || !W || !H) return;
     V.R.resize();
@@ -1281,7 +1539,7 @@
       C.forEach((c) => {
         const md = Cars.model(c.kind);
         Cars.emit(Vt, md, c.road, c.body, IST.Review.GL.rgb(V.cmp.laps[c.k].color), { steer: c.steer, brake: c.braking, wheels: c.wheels, tint: state.opts.wheels });
-        Cars.shadow(Sh, md, c.road);
+        Cars.shadow(Sh, md, c.ground || c.road);
       });
       V.carMesh.set(Vt.data());
       V.shadowMesh.set(Sh.data());

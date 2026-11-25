@@ -124,3 +124,19 @@ test('one Apex camera per corner sequence: it stays put through a chicane and fr
     assert.ok(p.w > 0 && Math.hypot(p.x - W / 2, p.y - H / 2) < 100, 'at ' + f + ' m the car is at ' + Math.round(p.x) + ', ' + Math.round(p.y));
   }
 });
+
+test('satellite ground under a part lap: the stretch it never drove sits at a whole lap’s height', () => {
+  const IST = load();
+  // a 2 km straight climbing 1 in 20; the part lap drove only the first 500 m
+  const N = 2001, whole = { x: new Float32Array(N), y: new Float32Array(N), z: new Float32Array(N), step: 1 };
+  for (let i = 0; i < N; i++) (whole.x[i] = i), (whole.z[i] = i / 20);
+  const n = 501, C = new Float32Array(n * 3), w = new Float32Array(n).fill(6);
+  const S = { toGL: (x, y, z) => [x, z, -y], centre: C };
+  for (let i = 0; i < n; i++) C.set(S.toGL(i, 0, i / 20), i * 3);
+  const alone = IST.Review.MapLayer.terrain(S, { centre: { w }, step: 1 }, 1);
+  const helped = IST.Review.MapLayer.terrain(S, { centre: { w }, step: 1, ground: whole }, 1);
+  // at 1500 m the road is 75 m up: on its own the part lap can only guess from its own 0..25 m
+  assert.ok(alone(1500, 0) < 30, 'without a whole lap the far ground is a guess (' + alone(1500, 0).toFixed(1) + ' m)');
+  assert.ok(Math.abs(helped(1500, 0) - (75 - 0.4)) < 0.5, 'with one it is just under the road (' + helped(1500, 0).toFixed(1) + ' m)');
+  assert.ok(Math.abs(helped(250, 0) - (12.5 - 0.4)) < 0.5, 'and the stretch it did drive is unchanged');
+});

@@ -55,6 +55,7 @@
     { key: 'spin', label: 'Wheelspin', kinds: ['spin'], color: Th.mint, pip: true, def: false, title: 'A wheel 10 % faster than the car on throttle for 0.1 s or more' },
     { key: 'kerb', label: 'Kerbs', kinds: ['kerb'], color: Th.lilac, pip: false, def: false, title: 'On rumble strips' },
     { key: 'off', label: 'Off track', kinds: ['off'], color: Th.rose, pip: true, def: true, title: 'All four wheels off the track' },
+    { key: 'crash', label: 'Contact', kinds: ['crash'], color: '#ff7a3d', pip: true, def: true, title: 'An impact: g or a sudden speed loss beyond anything the tyres can give' },
     { key: 'coast', label: 'Coasting', kinds: ['coast'], color: Th.dim, pip: false, def: false, title: 'Neither pedal for 0.25 s or more at speed: time lost' },
     { key: 'settings', label: 'Setting changes', kinds: ['bbChange'], color: Th.butter, pip: true, def: false, title: 'Brake bias, ABS or TC changed in the car' },
     { key: 'attitude', label: 'Attitude', needs: ['vx', 'vy'], color: Th.peach, pip: true, def: false,
@@ -119,6 +120,7 @@
       case 'lock': return 'Lock ' + (e.wheel || '');
       case 'spin': return 'Wheelspin';
       case 'off': return 'Off track';
+      case 'crash': return 'Contact';
       case 'coast': return 'Coast ' + e.dur.toFixed(1) + ' s';
       case 'bbChange': return e.what + ' ' + e.from + '→' + e.to;
       default: return '';

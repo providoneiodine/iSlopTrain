@@ -129,7 +129,8 @@
       'tLF_i', 'tLF_m', 'tLF_o', 'tRF_i', 'tRF_m', 'tRF_o', 'tLR_i', 'tLR_m', 'tLR_o', 'tRR_i', 'tRR_m', 'tRR_o',
       'pLF', 'pRF', 'pLR', 'pRR', 'rhF', 'rhR', 'rhLt', 'rhRt', 'steerTq', 'surface', 'material', 'bb', 'absSet', 'tcSet',
       // derived (derive.js)
-      'us', 'beta', 'betaX', 'betaRate', 'counter', 'slipF', 'slipR', 'gripUse', 'balState', 'phase', 'coast'];
+      'us', 'beta', 'betaX', 'betaRate', 'counter', 'slipF', 'slipR', 'gripUse', 'balState', 'phase', 'coast',
+      'bodyYaw', 'bodyHead', 'bodyRoll', 'bodyPitch', 'crash'];
     /** Channels that hold a state, not a measurement: resampled by nearest sample, never blended. */
     T.STEP_CHANNELS = ['gear', 'absActive', 'tcActive', 'surface', 'material', 'bb', 'absSet', 'tcSet', 'counter', 'balState', 'phase', 'coast'];
 

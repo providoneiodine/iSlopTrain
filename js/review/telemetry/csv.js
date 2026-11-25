@@ -92,6 +92,12 @@
           if (typeof meta.cond[k] === 'number' && !isFinite(meta.cond[k])) delete meta.cond[k];
         });
       }
+      // a lap downloaded from Garage 61 has no heading rows: its file name carries the driver and car
+      const g61 = /^Garage 61 - (.+?) - (.+?) - .+ - \d+\.\d+\.\d+ - /i.exec(name || '');
+      if (g61) {
+        meta.driver = meta.driver || g61[1];
+        meta.car = meta.car || g61[2];
+      }
       const idx = T.match(names);
       if (idx.speed == null && (idx.x == null || idx.y == null) && (idx.lat == null || idx.lon == null)) {
         throw new Error('No speed or position column found. Columns seen: ' + names.slice(0, 12).join(', '));

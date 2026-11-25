@@ -140,7 +140,53 @@
     return out;
   }
 
+  // ------------------------------------------------------------------ crashes
+  /**
+   * The body's real attitude where the file says the car crashed or spun: null on normal
+   * driving, else { w (0..1 blend), yaw (rad, + nose left of travel), head (nose on the map,
+   * anticlockwise from +x, NaN unknown), roll (+ right down), pitch (+ nose down) }.
+   */
+  function crash(L, j) {
+    if (!L.crash || !L.bodyYaw) return null;
+    const w = lerpAt(L.crash, j);
+    if (!(w > 0.001)) return null;
+    return { w: Math.min(1, w), yaw: lerpAt(L.bodyYaw, j), head: L.bodyHead ? lerpAt(L.bodyHead, j) : NaN, roll: L.bodyRoll ? lerpAt(L.bodyRoll, j) : 0, pitch: L.bodyPitch ? lerpAt(L.bodyPitch, j) : 0 };
+  }
+
+  const vadd = (a, b, k) => [a[0] + b[0] * k, a[1] + b[1] * k, a[2] + b[2] * k];
+  const vmix = (a, b, k) => [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k];
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const unit = (a) => {
+    const l = Math.hypot(a[0], a[1], a[2]) || 1;
+    return [a[0] / l, a[1] / l, a[2] / l];
+  };
+  const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+
+  /**
+   * Turn the drawn car to its crash attitude c (from crash) and lift it so no corner of its
+   * box ({ front, rear, width, height }) goes below the road. fwd, left: the level direction of
+   * travel and its left in GL space (y up); road, body: the normal frames, which the wheels and
+   * the body leave by c.w. Returns { road, body } on the one rigid frame, and ground (road) for the shadow.
+   */
+  function tumble(fwd, left, road, body, c, box) {
+    const cy = Math.cos(c.yaw), sy = Math.sin(c.yaw), cp = Math.cos(c.pitch), sp = Math.sin(c.pitch), cr = Math.cos(c.roll), sr = Math.sin(c.roll);
+    const comb = (a, ka, b, kb) => [a[0] * ka + b[0] * kb, a[1] * ka + b[1] * kb, a[2] * ka + b[2] * kb];
+    // the nose's own map heading when known (GL is x east, z south), else its angle to the travel direction
+    const U = [0, 1, 0], abs = isFinite(c.head), F = abs ? [Math.cos(c.head), 0, -Math.sin(c.head)] : comb(fwd, cy, left, sy);
+    const Lh = abs ? [F[2], 0, -F[0]] : comb(left, cy, fwd, -sy);
+    const f1 = comb(F, cp, U, -sp), uT = comb(comb(U, cp, F, sp), cr, Lh, -sr);
+    // blend from the normal body frame, then square it up again
+    const f = unit(vmix(body.f, f1, c.w)), u0 = vmix(body.u, uT, c.w), u = unit(vadd(u0, f, -dot(u0, f))), l = cross(u, f);
+    let low = 0;
+    [box.front, box.rear].forEach((a) => [0, box.height].forEach((h) => [-1, 1].forEach((s) => {
+      low = Math.min(low, dot(road.u, vadd(comb(f, a, u, h), l, (s * box.width) / 2)));
+    })));
+    const p = vadd(vmix(road.p, body.p, 1 - c.w), road.u, -low);
+    const X = { p, f, u, l };
+    return { road: X, body: X, ground: road };
+  }
+
   const heat = (t) => (!isFinite(t) ? 0 : t < 70 ? -clamp01((70 - t) / 25) : clamp01((t - 85) / 30));
 
-  IST.Review.Stance = { at, wheels, heat, SPEC, WHEELS };
+  IST.Review.Stance = { at, wheels, heat, crash, tumble, SPEC, WHEELS };
 })();

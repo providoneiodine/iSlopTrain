@@ -16,7 +16,8 @@
  *      distance, so laps line up by distance, not time.
  *
  * A lap record (Float32Array channels, all n long, index i at i * step metres):
- *   { lapNo, kind: 'full' | 'out' | 'in' | 'partial', pit, time (s), len (m), step, n,
+ *   { lapNo, kind: 'full' | 'out' | 'in' | 'partial', pit, reset (car moved at one end
+ *     of it: a tow, a reset, a session change), time (s), len (m), step, n,
  *     t (s from the line), x, y, z (m, z up), speed (m/s), throttle, brake (0..1),
  *     steer (rad), gear, rpm, ... every channel in T.LAP_CHANNELS (common.js), derived ones
  *     included; events: T.events (derive.js) }  missing channels are null.
@@ -297,7 +298,7 @@
         const a = from.b, b = e.a;
         const covered = lerpAt(cum, b) - lerpAt(cum, a), moved = (!from.line && !from.start) || (!e.line && !e.end);
         // (under 100 m either side of a teleport is the run-up to the line after a reset: not worth a row)
-        if (b - a >= 2 && !(moved && covered < 100)) segs.push({ a, b, bounded: from.line && e.line, first: !!from.start, last: !!e.end, covered });
+        if (b - a >= 2 && !(moved && covered < 100)) segs.push({ a, b, bounded: from.line && e.line, first: !!from.start, last: !!e.end, moved, covered });
         if (e.b >= from.b) from = e;
       });
       const full = segs.filter((s) => s.bounded).map((s) => s.covered);
@@ -310,8 +311,9 @@
 
       const laps = [];
       segs.forEach((s, k) => {
-        // a single segment that ends where it starts is a lap (a one-lap export)
-        const closes = B.how === 'none' && segs.length === 1 && Math.hypot(lerpAt(P.x, s.b) - lerpAt(P.x, s.a), lerpAt(P.y, s.b) - lerpAt(P.y, s.a)) < 40;
+        // a single segment that ends where it starts is a lap (a one-lap export); one cut just past the
+        // line, as Garage 61's are, still has a marker, so there it must also start at speed
+        const closes = (B.how === 'none' || lerpAt(v, s.a) > 10) && segs.length === 1 && Math.hypot(lerpAt(P.x, s.b) - lerpAt(P.x, s.a), lerpAt(P.y, s.b) - lerpAt(P.y, s.a)) < 40;
         let kind = 'partial';
         // (a lap on a recorded line also ends where it began: a net for a moved car that wasn't spotted)
         const apart = P.source === 'gps' || P.source === 'world' ? Math.hypot(lerpAt(P.x, s.b) - lerpAt(P.x, s.a), lerpAt(P.y, s.b) - lerpAt(P.y, s.a)) : 0;
@@ -321,6 +323,7 @@
         const lap = cut(S, P, t, v, cum, s, step);
         if (!lap) return;
         lap.kind = kind;
+        lap.reset = !!s.moved;
         lap.lapNo = lapCounts ? Math.round(lerpAt(C.lap, Math.min(n - 1, s.a + 1))) : lapBase + k;
         if (C.onPit) {
           let pit = false;

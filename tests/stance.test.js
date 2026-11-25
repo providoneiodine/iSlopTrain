@@ -108,3 +108,20 @@ test('a car name picks its class of model', () => {
   for (const name in kinds) assert.equal(Cars.kindOf(name), kinds[name], name);
   Cars.KINDS.forEach((k) => assert.ok(Cars.model(k).tris.length > 100, k));
 });
+
+test('a crash turns the whole car to the attitude in the file; normal driving is left alone', () => {
+  const { Stance } = load().Review;
+  const calm = lap({ crash: fill(() => 0), bodyYaw: fill(() => 0.05), bodyRoll: fill(() => 0.03), bodyPitch: fill(() => 0) });
+  assert.equal(Stance.crash(calm, 100), null);
+  assert.equal(Stance.crash(lap({}), 100), null, 'no attitude channels: never a crash');
+  // on its roof, pointing back the way it came
+  const L = lap({ crash: fill(() => 1), bodyYaw: fill(() => Math.PI), bodyRoll: fill(() => Math.PI), bodyPitch: fill(() => 0) });
+  const fwd = [1, 0, 0], left = [0, 0, -1], up = [0, 1, 0];
+  const road = { p: [0, 0, 0], f: fwd, u: up, l: left }, box = { front: 2.3, rear: -2.3, width: 2, height: 1.2 };
+  const T = Stance.tumble(fwd, left, road, road, Stance.crash(L, 100), box);
+  assert.ok(T.body.f[0] < -0.99, 'nose points backwards');
+  assert.ok(T.body.u[1] < -0.99, 'roof down');
+  assert.equal(T.road, T.body, 'the wheels go with the body');
+  assert.ok(Math.abs(T.body.p[1] - box.height) < 1e-6, 'lifted so the roof rests on the road, not under it');
+  assert.equal(T.ground, road, 'the shadow stays on the road');
+});
