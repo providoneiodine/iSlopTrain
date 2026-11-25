@@ -36,14 +36,17 @@ function drive(rate) {
 }
 
 // ------------------------------------------------------------------ writers
-/** noFix: that many samples at the start with Lat, Lon and Alt all 0, as iRacing writes before the car is placed. */
-function writeIbt(rate, noFix) {
+/**
+ * noFix: that many samples at the start with Lat, Lon and Alt all 0, as iRacing writes before the car is placed.
+ * alt: (p) -> the Alt channel, m (100 when left out).
+ */
+function writeIbt(rate, noFix, alt) {
   const S = drive(rate);
   const lat0 = 50.43, lon0 = 5.97, ky = 6371008.8 * (Math.PI / 180), kx = ky * Math.cos((lat0 * Math.PI) / 180);
   const VARS = [
     ['SessionTime', 5, 's', (p) => p.t], ['Lap', 2, '', (p) => p.lap], ['LapDist', 4, 'm', (p) => p.s], ['LapDistPct', 4, '%', (p) => p.s / L],
     ['Speed', 4, 'm/s', (p) => p.v], ['Throttle', 4, '%', (p) => p.thr], ['Brake', 4, '%', (p) => p.brk], ['Gear', 2, '', (p) => p.gear],
-    ['Lat', 5, 'deg', (p) => lat0 + (R * Math.sin(p.a)) / ky], ['Lon', 5, 'deg', (p) => lon0 + (R * Math.cos(p.a)) / kx], ['Alt', 4, 'm', () => 100],
+    ['Lat', 5, 'deg', (p) => lat0 + (R * Math.sin(p.a)) / ky], ['Lon', 5, 'deg', (p) => lon0 + (R * Math.cos(p.a)) / kx], ['Alt', 4, 'm', alt || (() => 100)],
     // ABS keeps 70 % of the force; tyre columns run car-left to car-right on every tyre
     ['BrakeABSactive', 2, '', () => 1], ['BrakeABScutPct', 4, '%', () => 0.7],
     ['LFtempL', 4, 'C', () => 80], ['LFtempM', 4, 'C', () => 85], ['LFtempR', 4, 'C', () => 90],
@@ -199,6 +202,22 @@ test('iRacing .ibt: samples with no GPS fix don’t put part of a lap half a wor
   r.laps.forEach((l) => {
     for (let i = 0; i < l.n; i++) assert.ok(Math.hypot(l.x[i], l.y[i]) < R * 3 && Math.abs(l.z[i] - 100) < 1, 'lap ' + l.lapNo + ' (' + l.kind + ') at ' + i + ' m is at ' + Math.round(l.x[i]) + ', ' + Math.round(l.y[i]) + ', ' + Math.round(l.z[i]));
   });
+});
+
+test('iRacing .ibt: altitude logged in 0.1 m steps comes out as the slope it was, not a staircase', () => {
+  const T = load().Telemetry.lib();
+  // a hill 6 m high round the lap, written the way iRacing does: rounded to 0.1 m
+  const hill = (s) => 100 + 3 * Math.sin((2 * Math.PI * s) / L);
+  const r = T.process('session.ibt', writeIbt(60, 0, (p) => Math.round(hill(p.s) * 10) / 10));
+  const l = r.laps.filter((x) => x.kind === 'full')[0];
+  let off = 0, jump = 0;
+  for (let i = 1; i < l.n; i++) {
+    off = Math.max(off, Math.abs(l.z[i] - hill(i * l.step)));
+    jump = Math.max(jump, Math.abs(l.z[i] - l.z[i - 1]));
+  }
+  assert.ok(off < 0.06, 'within 6 cm of the real hill (worst ' + off.toFixed(3) + ' m)');
+  // the hill's steepest metre climbs under 2 cm; a leftover step would be 10 cm in one
+  assert.ok(jump < 0.03, 'no step from one metre to the next (worst ' + jump.toFixed(3) + ' m)');
 });
 
 test('iRacing .ibt: laps, times, units and the GPS line come out as recorded', () => {

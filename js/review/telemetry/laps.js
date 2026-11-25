@@ -40,6 +40,38 @@
       return hi - lo;
     };
 
+    /**
+     * A channel logged in coarse steps (iRacing's Alt comes in 0.1 m steps, so a gentle
+     * slope reads as a staircase). The true value is known where the level changes: half
+     * way between the two. Straight lines join those points along the distance travelled.
+     */
+    function unstep(a, t, v) {
+      const n = a.length;
+      let q = Infinity, changes = 0;
+      for (let i = 1; i < n; i++) {
+        const d = Math.abs(a[i] - a[i - 1]);
+        if (d > 0) changes++, (q = Math.min(q, d));
+      }
+      // a channel that changes on most samples isn't stepped: left as it is
+      if (!changes || changes > n * 0.5) return Float64Array.from(a);
+      const dist = new Float64Array(n), out = new Float64Array(n);
+      for (let i = 1; i < n; i++) dist[i] = dist[i - 1] + Math.abs(v[i]) * Math.max(0, t[i] - t[i - 1]);
+      let i0 = -1, v0 = 0;
+      for (let i = 1; i < n; i++) {
+        // (a jump of several steps at once is a glitch or a reset, not a slope)
+        if (a[i] === a[i - 1] || Math.abs(a[i] - a[i - 1]) > q * 3) continue;
+        const v1 = (a[i] + a[i - 1]) / 2, span = dist[i] - (i0 < 0 ? 0 : dist[i0]);
+        for (let j = Math.max(0, i0); j <= i; j++) {
+          const f = i0 < 0 ? 1 : span > 0 ? (dist[j] - dist[i0]) / span : (j - i0) / (i - i0);
+          out[j] = i0 < 0 ? v1 : v0 + (v1 - v0) * f;
+        }
+        (i0 = i), (v0 = v1);
+      }
+      if (i0 < 0) return Float64Array.from(a);
+      for (let j = i0; j < n; j++) out[j] = v0;
+      return out;
+    }
+
     /** World position (m, z up) for every sample, and where it came from. */
     function positions(S, t, v) {
       const C = S.ch, n = S.n;
@@ -78,7 +110,7 @@
             last = i;
           } else if (last >= 0) (x[i] = x[last]), (y[i] = y[last]), (z[i] = z[last]);
         }
-        return { x, y, z, source: 'gps', origin: { lat: lat0 * deg * 180 / Math.PI, lon: lon0 * deg * 180 / Math.PI } };
+        return { x, y, z: C.alt ? unstep(z, t, v) : z, source: 'gps', origin: { lat: lat0 * deg * 180 / Math.PI, lon: lon0 * deg * 180 / Math.PI } };
       }
       // dead reckoning
       const x = new Float64Array(n), y = new Float64Array(n);
