@@ -1,7 +1,7 @@
 /*
  * Heights for laps whose file has none (Garage 61 and most CSVs). Each .ibt saves its track's
- * height profile in this browser, and later laps there take it by position; elsewhere, with the
- * Map option, heights come from free AWS terrain tiles smoothed over 50 m, marked approximate.
+ * height profile in this browser, and later laps there take it by position; elsewhere heights
+ * come from free AWS terrain tiles smoothed over 50 m (Map on or off), marked approximate.
  *
  *   IST.Review.Elevation.has(s)                 -> bool    the file recorded real heights
  *   IST.Review.Elevation.profile(s, origin)     -> prof | null   from its best lap: { name, len, closed, lat, lon, z }

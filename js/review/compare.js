@@ -190,8 +190,13 @@
       }
       s.shifts = [];
       if (s.gear) {
+        // a shift through a moment of neutral still counts, from the last gear engaged
+        let last = s.gear[0] > 0 ? s.gear[0] : 0;
         for (let i = 1; i < n; i++) {
-          if (s.gear[i] !== s.gear[i - 1] && s.gear[i] > 0 && s.gear[i - 1] > 0) s.shifts.push({ i, from: s.gear[i - 1], to: s.gear[i] });
+          const g = s.gear[i];
+          if (g <= 0 || g === last) continue;
+          if (last > 0) s.shifts.push({ i, from: last, to: g });
+          last = g;
         }
       }
     });

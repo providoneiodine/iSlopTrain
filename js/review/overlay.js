@@ -24,7 +24,7 @@
   const FADE = 9; // per second
   const LABEL_DIST = 350, NEAR_CURSOR = 60; // m
   const Ly = IST.Review.Layers;
-  const DEG = Math.PI / 180, WR = 12; // steering wheel radius, px
+  const DEG = Math.PI / 180, WR = 17; // steering wheel radius, px
 
   function diamond(g, x, y, r) {
     g.beginPath();
@@ -45,35 +45,21 @@
     const s = L.steer[j], us = L.us ? L.us[j] : NaN, st = L.balState ? L.balState[j] : 0;
     const turn = L.latG && L.latG[j] < 0 ? -1 : 1;
     const at = (a) => -Math.PI / 2 - a; // wheel angle to canvas angle: 12 o'clock, anticlockwise for left
+    // dark disc, then a quiet rim so the coloured strip is the loudest thing on the wheel
     g.fillStyle = Th.deep;
     g.beginPath();
-    g.arc(cx, cy, R + 3, 0, Math.PI * 2);
+    g.arc(cx, cy, R + 5, 0, Math.PI * 2);
     g.fill();
     g.strokeStyle = Th.dim;
-    g.lineWidth = 2.5;
+    g.lineWidth = 3;
     g.beginPath();
     g.arc(cx, cy, R, 0, Math.PI * 2);
     g.stroke();
-    let tag = null;
-    if (isFinite(us) && Math.abs(us) > 0.5 * DEG) {
-      // from the lock the yaw needed to the lock held, along the rim
-      const need = s - us * turn, d = Math.max(-Math.PI, Math.min(Math.PI, s - need));
-      const strong = us > 0 ? st === 1 : st === -1;
-      g.strokeStyle = us > 0 ? Th.sky : Th.peach;
-      g.globalAlpha = strong ? 1 : 0.45;
-      g.lineWidth = strong ? 4.5 : 3.5;
-      g.beginPath();
-      g.arc(cx, cy, R, at(s), at(s - d), d < 0);
-      g.stroke();
-      g.globalAlpha = 1;
-      if (strong) tag = { text: (us > 0 ? 'US ' : 'OS ') + Math.round(Math.abs(us) / DEG) + '°', color: g.strokeStyle };
-    }
-    // three spokes and the top marker, turned with the wheel
+    // three spokes and the hub, turned with the wheel
     g.save();
     g.translate(cx, cy);
     g.rotate(-s);
-    g.strokeStyle = Th.dim;
-    g.lineWidth = 2;
+    g.lineWidth = 2.5;
     g.beginPath();
     g.moveTo(-R, 0);
     g.lineTo(R, 0);
@@ -82,16 +68,40 @@
     g.stroke();
     g.fillStyle = Th.dim;
     g.beginPath();
-    g.arc(0, 0, R * 0.32, 0, Math.PI * 2);
+    g.arc(0, 0, R * 0.3, 0, Math.PI * 2);
     g.fill();
+    g.restore();
+    if (isFinite(us) && Math.abs(us) > 0.5 * DEG) {
+      // from the lock the yaw needed to the lock held, along the rim: a thick band with round
+      // ends over the rim, full colour where the balance state calls it, half below
+      const need = s - us * turn, d = Math.max(-Math.PI, Math.min(Math.PI, s - need));
+      const strong = us > 0 ? st === 1 : st === -1, a0 = at(s), a1 = at(s - d);
+      g.lineCap = 'round';
+      g.strokeStyle = Th.deep;
+      g.lineWidth = strong ? 9 : 7;
+      g.beginPath();
+      g.arc(cx, cy, R, a0, a1, d < 0);
+      g.stroke();
+      g.strokeStyle = us > 0 ? Th.sky : Th.peach;
+      g.globalAlpha = strong ? 1 : 0.55;
+      g.lineWidth = strong ? 6 : 4;
+      g.beginPath();
+      g.arc(cx, cy, R, a0, a1, d < 0);
+      g.stroke();
+      g.globalAlpha = 1;
+      g.lineCap = 'butt';
+    }
+    // top marker last, so it reads over the strip at the held lock
+    g.save();
+    g.translate(cx, cy);
+    g.rotate(-s);
     g.strokeStyle = Th.butter;
-    g.lineWidth = 3;
+    g.lineWidth = 3.5;
     g.beginPath();
-    g.moveTo(0, -R - 1.5);
-    g.lineTo(0, -R + 3.5);
+    g.moveTo(0, -R - 3);
+    g.lineTo(0, -R + 4);
     g.stroke();
     g.restore();
-    return tag;
   }
 
   function create() {
@@ -222,7 +232,7 @@
         const sw = g.measureText(sub).width;
         const hh = 34, m = slot('car' + c.k);
         const jw = Math.round(Math.max(0, Math.min(cmp.n - 1, c.j)));
-        const ww = L.steer && isFinite(L.steer[jw]) ? WR * 2 + 10 : 0; // room for the wheel above the chip
+        const ww = L.steer && isFinite(L.steer[jw]) ? WR * 2 + 14 : 0; // room for the wheel above the chip
         // the chip is centred on the car, so its width holds while the digits change: it
         // grows at once and shrinks only when the text is a good deal narrower
         const fit = tw + Math.max(mw, sw) + 16;
@@ -267,13 +277,7 @@
         g.fillStyle = Th.dim;
         g.fillText(sub, x + tw + 8, y + 25);
         if (ww) {
-          const wx = x + tw / 2, wy = y - WR - 6, t = wheel(g, L, jw, wx, wy, WR);
-          if (t) {
-            g.font = '800 11px ' + FONT;
-            g.fillStyle = t.color;
-            g.textAlign = 'left';
-            g.fillText(t.text, wx + WR + 8, wy + 0.5);
-          }
+          wheel(g, L, jw, x + tw / 2, y - WR - 8, WR);
         }
       });
 

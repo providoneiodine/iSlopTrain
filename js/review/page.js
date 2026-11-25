@@ -235,14 +235,14 @@
     s.elev = 'file';
     E.save(E.profile(s, s.origin));
   }
-  /** GPS laps with no heights: a saved .ibt profile of the track, else (Map on) approximate terrain. */
+  /** GPS laps with no heights: a saved .ibt profile of the track, else approximate terrain (Map on or off). */
   function findHeights() {
     const E = IST.Review.Elevation, o = originRef;
     let changed = false;
     state.sessions.forEach((s) => {
       if (s.posSource !== 'gps' || !o || s.elev === 'file' || s.elev === 'saved') return;
       if (E.saved(s, o).some((p) => E.fill(s, p, o))) return (s.elev = 'saved'), (changed = true);
-      if (!state.opts.map || s.elev === 'approx' || s.elev === 'loading') return void (s.elev = s.elev || 'none');
+      if (s.elev === 'approx' || s.elev === 'loading' || s.elev === 'none') return;
       s.elev = 'loading';
       E.terrain(s, o).then((p) => {
         if (s.elev !== 'loading' || !state.sessions.includes(s)) return;
@@ -638,7 +638,7 @@
     let elev = 'from the file';
     if (approx) (elev = 'approximate, from terrain data (±5 m)'), notes.push('Elevation approximate');
     else if (ev.has('loading')) elev = 'looking up…';
-    else if (ev.has('none')) (elev = 'none in ' + (ev.size > 1 ? 'some files' : 'this file') + (on ? '' : ' (turn Map on for approximate)')), notes.push('No elevation');
+    else if (ev.has('none')) (elev = 'none in ' + (ev.size > 1 ? 'some files' : 'this file') + ' (terrain lookup failed)'),notes.push('No elevation');
     else if (ev.has('saved')) elev = 'from a saved .ibt of this track';
     rows.push(['Elevation', elev]);
     // credits: the short one stays on screen whenever map data is drawn

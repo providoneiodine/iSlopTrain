@@ -36,6 +36,19 @@
     for (let i = 0; i < a.length; i++) o[i] = f(a[i], i);
     return o;
   };
+  /** Neutral for under 25 m between two gears is the shift itself: hold the gear before it, so the line steps once. */
+  function holdGear(a, step) {
+    if (!a) return null;
+    const o = Float32Array.from(a), max = Math.max(1, Math.round(25 / (step || 1)));
+    for (let i = 1; i < o.length; i++) {
+      if (o[i] !== 0 || o[i - 1] === 0) continue;
+      let j = i;
+      while (j < o.length && o[j] === 0) j++;
+      if (j < o.length && j - i <= max) o.fill(o[i - 1], i, j);
+      i = j - 1;
+    }
+    return o;
+  }
   const r0 = (v) => Math.round(v);
   const r1 = (v) => (Math.abs(v) < 0.05 ? '0.0' : v.toFixed(1));
   const signed = (d) => (v) => (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v).toFixed(d);
@@ -47,7 +60,7 @@
     { key: 'throttle', group: 'driving', label: 'Throttle', unit: '%', h: 58, lo: 0, hi: 100, needs: ['throttle'], series: (L) => map(L.throttle, (v) => v * 100), fmt: r0, title: 'Throttle pedal, %. Grey where the reference lap coasts (neither pedal)' },
     { key: 'brake', group: 'driving', label: 'Brake', unit: '%', h: 58, lo: 0, hi: 100, needs: ['brake'], series: (L) => map(L.brake, (v) => v * 100), fmt: r0, title: 'Brake pedal, %. With ABS on the lane: shaded where ABS acts, dashed for the share of force it removed' },
     { key: 'steer', group: 'driving', label: 'Steering', unit: '°', h: 58, centre: true, needs: ['steer'], series: (L) => map(L.steer, (v) => v * DEG), fmt: r0, title: 'Steering-wheel angle in degrees, + left' },
-    { key: 'gear', group: 'driving', label: 'Gear', unit: '', h: 50, step: true, needs: ['gear'], series: (L) => L.gear, fmt: r0, title: 'Gear' },
+    { key: 'gear', group: 'driving', label: 'Gear', unit: '', h: 50, step: true, needs: ['gear'], series: (L, c) => holdGear(L.gear, c && c.step), fmt: r0, title: 'Gear' },
     { key: 'rpm', group: 'driving', label: 'RPM', unit: 'rpm', h: 58, needs: ['rpm'], series: (L) => L.rpm, fmt: r0, title: 'Engine speed, rpm' },
     { key: 'balance', group: 'car', label: 'Balance', unit: '° wheel', h: 70, centre: true, needs: ['us'], series: (L) => map(L.us, (v) => v * DEG), fmt: signed(1), title: 'Steering lock beyond what the car’s yaw needed, in degrees of wheel: + understeer, − oversteer. Zero through the car’s own linear range' },
     { key: 'yaw', group: 'car', label: 'Yaw rate', unit: '°/s', h: 70, centre: true, needs: ['yawRate'], series: (L) => map(L.yawRate, (v, i) => v * DEG * (L.latG ? sgn(L.latG[i]) : 1)), fmt: r0, title: 'How fast the car rotates, °/s, signed by the turn so left and right corners both read upward' },
@@ -134,7 +147,7 @@
       let m = cache.get(L);
       if (!m) cache.set(L, (m = new Map()));
       if (!m.has(p.key)) {
-        const s = p.multi ? p.multi(L) : [{ arr: p.series(L) }];
+        const s = p.multi ? p.multi(L) : [{ arr: p.series(L, cmp) }];
         m.set(p.key, s.filter((x) => x.arr));
       }
       return m.get(p.key);
