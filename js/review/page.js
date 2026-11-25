@@ -37,7 +37,7 @@
 
   const state = {
     sessions: [], laps: [], refId: null, sel: [], errors: [], warnings: [],
-    opts: { inputs: 'all', lean: false, cars: true, exag: 1, map: true, paint: 'lap', fence: 'inputs', absTint: true, attScale: 1,
+    opts: { inputs: 'all', lean: false, cars: true, exag: 1, map: true, paint: 'lap', fence: 'inputs', absTint: true, attScale: 1, motion: 3,
       markers: new Set(Ly.MARKERS.filter((m) => m.def).map((m) => m.key)) },
     lanes: { on: new Set(Tr.DEFAULT.on), picks: Tr.DEFAULT.picks.slice(), tyreMode: 'temp', tyreBand: 'avg', abs: true, labels: {}, folded: true },
     drawer: false,
@@ -57,7 +57,7 @@
       }
       const o = JSON.parse(localStorage.getItem(LAYERS_KEY) || 'null');
       if (o) {
-        ['lean', 'cars', 'exag', 'map', 'paint', 'fence', 'absTint', 'attScale'].forEach((k) => o[k] != null && (state.opts[k] = o[k]));
+        ['lean', 'cars', 'exag', 'map', 'paint', 'fence', 'absTint', 'attScale', 'motion'].forEach((k) => o[k] != null && (state.opts[k] = o[k]));
         if (Array.isArray(o.markers)) state.opts.markers = new Set(o.markers);
       }
     } catch (e) {
@@ -75,7 +75,7 @@
   function saveLayers() {
     try {
       const o = state.opts;
-      localStorage.setItem(LAYERS_KEY, JSON.stringify({ lean: o.lean, cars: o.cars, exag: o.exag, map: o.map, paint: o.paint, fence: o.fence, absTint: o.absTint, attScale: o.attScale, markers: [...o.markers] }));
+      localStorage.setItem(LAYERS_KEY, JSON.stringify({ lean: o.lean, cars: o.cars, exag: o.exag, map: o.map, paint: o.paint, fence: o.fence, absTint: o.absTint, attScale: o.attScale, motion: o.motion, markers: [...o.markers] }));
     } catch (e) {
       /* not kept */
     }
@@ -962,8 +962,11 @@
       saveLayers();
       rebuild(true);
     });
+    const motion = h('select', { 'aria-label': 'Body motion scale' }, [[0, 'Off'], [1, '×1 (true)'], [3, '×3'], [6, '×6']].map(([v, l]) => h('option', { value: v, selected: v === o.motion }, l)));
+    motion.addEventListener('input', () => ((o.motion = +motion.value), saveLayers(), dirty()));
     D.append(h('h2', null, 'View'),
       check('Cars', 'cars', 'A car for each lap where it was at the reference’s time, with the gap', dirty),
+      h('label', { class: 'rv-field', title: 'How far the cars’ bodies dive, squat, roll and heave on their wheels. From ride heights when the file has them, else estimated from g. Real movement is a degree or two' }, h('span', null, 'Body motion'), motion),
       mapCheck(),
       h('label', { class: 'rv-field' }, h('span', null, 'Elevation'), elev),
       h('button', { class: 'btn ghost small rv-fit-btn', onclick: () => { V.traces.zoom(); frameAll(); } }, 'Fit view'));
@@ -1021,6 +1024,7 @@
       V.detach = V.cam.attach(V.glEl, dirty);
       V.glEl.addEventListener('pointermove', hover);
       V.carMesh = V.R.dynamic('tris');
+      V.shadowMesh = V.R.dynamic('tris');
     }
     // capture phase, as on Stats: a modal is still open here, so the Esc that closes it doesn't also leave the page
     V.onKey = onKey;
@@ -1201,8 +1205,40 @@
           pose = { p: pose.p, fwd: [F[0] * c + Lf[0] * s2, 0, F[2] * c + Lf[2] * s2], left: [Lf[0] * c - F[0] * s2, 0, Lf[2] * c - F[2] * s2] };
         }
       }
-      return { k, j, pose, gapM: (f - j) * cmp.step, slip };
+      return Object.assign({ k, j, pose, gapM: (f - j) * cmp.step, slip }, stance(L, k, j, pose));
     });
+  }
+
+  const carKinds = new WeakMap(); // comparison lap -> car type, from its session's car name
+  function kindOf(L) {
+    if (!carKinds.has(L)) {
+      const e = state.laps.find((x) => x.lap === L.lap);
+      carKinds.set(L, IST.Review.Cars.kindOf(e && e.s.meta.car));
+    }
+    return carKinds.get(L);
+  }
+  /**
+   * The car's axes on the road (tilted to the slope of its line) and its body's on top
+   * (dive, roll and heave from Stance, drawn at the Body motion scale), plus what the
+   * model shows: front wheel angle and brake lights.
+   */
+  function stance(L, k, j, pose) {
+    const M = IST.Review.M3.v, P = V.scene.base[k], n = V.cmp.n, kind = kindOf(L), m = IST.Review.Cars.model(kind);
+    // slope between the axles, as drawn (so it follows the Elevation scale)
+    const half = m.wheelbase / 2 / V.cmp.step, a = Math.max(0, j - half), b = Math.min(n - 1, j + half);
+    const ya = IST.Review.Rigs.pose(V.scene, k, a).p[1], yb = IST.Review.Rigs.pose(V.scene, k, b).p[1];
+    const f = M.norm([pose.fwd[0], (yb - ya) / Math.max(0.5, (b - a) * V.cmp.step), pose.fwd[2]]);
+    const l = pose.left, u = M.norm(M.cross(f, l));
+    const p = [pose.p[0], pose.p[1] - V.scene.lift(k) + 0.02, pose.p[2]];
+    const road = { p, f, u, l };
+    const g = state.opts.motion, lim = (x, m2) => Math.max(-m2, Math.min(m2, x));
+    const st = g ? IST.Review.Stance.at(L, j, kind) : { dive: 0, roll: 0, heave: 0 };
+    const dv = lim(st.dive * g, 0.14), rl = lim(st.roll * g, 0.2), hv = lim(st.heave * g, 0.05);
+    const cd = Math.cos(dv), sd = Math.sin(dv), cr = Math.cos(rl), sr = Math.sin(rl);
+    const bf = M.add(M.scale(f, cd), M.scale(u, -sd)), u1 = M.add(M.scale(u, cd), M.scale(f, sd));
+    const body = { p: M.add(p, M.scale(u, hv)), f: bf, l: M.add(M.scale(l, cr), M.scale(u1, sr)), u: M.add(M.scale(u1, cr), M.scale(l, -sr)) };
+    const i = Math.max(0, Math.min(n - 1, Math.round(j)));
+    return { kind, road, body, steer: L.steer ? lim(L.steer[i] / 13, 0.6) : 0, braking: !!L.brake && L.brake[i] > 0.03 };
   }
 
   function draw(dt) {
@@ -1229,9 +1265,15 @@
     const items = (V.hideCoarse ? V.scene.items.filter((it) => !it.coarse) : V.scene.items).concat(V.scene.layerItems);
     if (state.opts.cars && C.length) {
       const Vt = IST.Review.GL.Verts();
-      C.forEach((c) => IST.Review.Scene.car(Vt, { p: [c.pose.p[0], c.pose.p[1] - 0.1, c.pose.p[2]], fwd: c.pose.fwd, left: c.pose.left }, IST.Review.GL.rgb(V.cmp.laps[c.k].color)));
+      const Sh = IST.Review.GL.Verts(), Cars = IST.Review.Cars;
+      C.forEach((c) => {
+        const md = Cars.model(c.kind);
+        Cars.emit(Vt, md, c.road, c.body, IST.Review.GL.rgb(V.cmp.laps[c.k].color), { steer: c.steer, brake: c.braking });
+        Cars.shadow(Sh, md, c.road);
+      });
       V.carMesh.set(Vt.data());
-      items.push({ mesh: V.carMesh, lit: true });
+      V.shadowMesh.set(Sh.data());
+      items.push({ mesh: V.carMesh, lit: true }, { mesh: V.shadowMesh, lit: false, blend: true, lift: 4 });
     }
     V.R.draw(m.vp, m.eye, items, { near: m.fog.near, far: m.fog.far, color: IST.Review.GL.rgb(Th.deep) });
 

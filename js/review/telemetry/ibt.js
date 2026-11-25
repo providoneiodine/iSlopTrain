@@ -132,9 +132,12 @@
         // ride height: front and rear axle means, then drop the corners
         const pair = (a, b) => (ch[a] && ch[b] ? ch[a].map((v, i) => (v + ch[b][i]) / 2) : null);
         const rhF = pair('rhLF', 'rhRF'), rhR = pair('rhLR', 'rhRR');
+        // and the left and right side means, for body roll in the 3D view
+        const rhLt = pair('rhLF', 'rhLR'), rhRt = pair('rhRF', 'rhRR');
         ['rhLF', 'rhRF', 'rhLR', 'rhRR'].forEach((k) => delete ch[k]);
         if (rhF) ch.rhF = rhF;
         if (rhR) ch.rhR = rhR;
+        if (rhLt && rhRt) (ch.rhLt = rhLt), (ch.rhRt = rhRt);
         // a car without ABS logs zeros: no ABS channels at all, so its lanes read "Not in this file"
         if (ch.absActive && !ch.absActive.some((v) => v > 0)) delete ch.absActive, delete ch.absCut;
         // wetness from iRacing's 0..7 scale to a share (0 = unknown: dropped)

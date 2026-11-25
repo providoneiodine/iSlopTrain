@@ -14,9 +14,9 @@
  *   S.centre      Float32Array(n * 3): the track centre in GL space (S.centreLat its left normal)
  *   S.base[k]     Float32Array(n * 3): lap k's line on the road surface, in GL space
  *   S.lateral[k]  Float32Array(n * 2): lap k's left-pointing unit normal (GL x, z)
+ *   S.lift(k)     how far lap k's line is drawn above the road (m)
  *   S.toGL(x, y, z), S.size (extent, m), S.fenceH
  *   S.dispose()
- *   IST.Review.Scene.car(V, pose, rgb)   a car marker, for the page's per-frame car mesh
  *
  * What's drawn:
  *   - a ground plane with a 50 / 100 m grid, the page's blueprint look in 3D
@@ -44,28 +44,6 @@
   const DEG = Math.PI / 180;
   const C_THR = GL.rgb(Th.hit), C_BRK = GL.rgb(Th.miss), C_ABS = GL.rgb('#8a1a14'), OUTLINE = GL.rgb('#111317');
   const C_US = GL.rgb(Th.sky), C_OS = GL.rgb(Th.peach), C_ROSE = GL.rgb(Th.rose), C_BUT = GL.rgb(Th.butter);
-
-  /**
-   * A car-sized marker (4.6 x 1.9 m body, cabin on top) at pose { p, fwd, left },
-   * appended to a Verts list as lit triangles.
-   */
-  function car(V, q, color) {
-    const dark = color.map((x) => x * 0.35);
-    const box = (along, across, h0, h1, back, col) => {
-      const c = (a, s, y) => [q.p[0] + q.fwd[0] * a + q.left[0] * s, q.p[1] + y, q.p[2] + q.fwd[2] * a + q.left[2] * s];
-      const f = along - back, b = -along - back;
-      const P = [c(b, -across, h0), c(f, -across, h0), c(f, across, h0), c(b, across, h0), c(b, -across, h1), c(f, -across, h1), c(f, across, h1), c(b, across, h1)];
-      const L = q.left, F = q.fwd, nl = [-L[0], 0, -L[2]], nb = [-F[0], 0, -F[2]];
-      const face = (a, b2, c2, d, n) => [a, b2, c2, a, c2, d].forEach((k) => V.push(P[k][0], P[k][1], P[k][2], n[0], n[1], n[2], col));
-      face(4, 5, 6, 7, [0, 1, 0]);
-      face(1, 2, 6, 5, F);
-      face(0, 4, 7, 3, nb);
-      face(3, 7, 6, 2, L);
-      face(0, 1, 5, 4, nl);
-    };
-    box(2.3, 0.95, 0.15, 0.85, 0, color);
-    box(1.05, 0.75, 0.85, 1.3, 0.35, dark);
-  }
 
   function build(R, cmp, opt) {
     const n = cmp.n, B = cmp.bounds, ce = cmp.centre;
@@ -172,13 +150,14 @@
 
     // ------------------------------------------------------------ lap lines
     const base = [], lateral = [];
+    const liftOf = (k) => 0.12 + 0.1 * k;
     const speedRange = (L) => {
       let lo = Infinity, hi = -Infinity;
       for (let i = 0; i < n; i++) (lo = Math.min(lo, L.speed[i])), (hi = Math.max(hi, L.speed[i]));
       return { lo, hi };
     };
     cmp.laps.forEach((L, k) => {
-      const lift = 0.12 + 0.1 * k;
+      const lift = liftOf(k);
       const P = new Float32Array(n * 3), Lt = new Float32Array(n * 2);
       for (let i = 0; i < n; i++) {
         const g = toGL(L.x[i], L.y[i], ce.z[i]);
@@ -401,7 +380,7 @@
     const MAX_CACHED = 6;
     const keyOf = (o) => JSON.stringify([o.paint, o.fence, o.fences, o.lean, o.absTint !== false, o.markers ? [...o.markers].sort() : [], o.gears !== false, o.fenceH || 0, !!o.closeUp, !!o.attitude, o.attScale || 1, o.deltaLap == null ? -1 : o.deltaLap]);
     const S = {
-      items, layerItems: [], base, lateral, toGL, exag, size, fenceH: autoFenceH, groundY, centre: cGL, centreLat: lat2, pad: size * 0.25,
+      items, layerItems: [], base, lateral, lift: liftOf, toGL, exag, size, fenceH: autoFenceH, groundY, centre: cGL, centreLat: lat2, pad: size * 0.25,
       /** Show these layers (scene opt fields: paint, fence, fences, lean, absTint, markers, gears, fenceH, closeUp). */
       setLayers(o) {
         const key = keyOf(o);
@@ -442,5 +421,5 @@
     return S.setLayers(opt);
   }
 
-  IST.Review.Scene = { build, car };
+  IST.Review.Scene = { build };
 })();
