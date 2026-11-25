@@ -24,6 +24,7 @@
   const FADE = 9; // per second
   const LABEL_DIST = 350, NEAR_CURSOR = 60; // m
   const Ly = IST.Review.Layers;
+  const DEG = Math.PI / 180, WR = 12; // steering wheel radius, px
 
   function diamond(g, x, y, r) {
     g.beginPath();
@@ -33,6 +34,64 @@
     g.lineTo(x - r, y);
     g.closePath();
     g.fill();
+  }
+
+  /**
+   * The steering wheel over a car's chip, turned by the lap's wheel angle (+ left). With a
+   * balance channel, a strip on the rim spans the lock the car's yaw didn't need (sky, understeer)
+   * or was short of (peach, oversteer); strong where the balance state calls it, faint below.
+   */
+  function wheel(g, L, j, cx, cy, R) {
+    const s = L.steer[j], us = L.us ? L.us[j] : NaN, st = L.balState ? L.balState[j] : 0;
+    const turn = L.latG && L.latG[j] < 0 ? -1 : 1;
+    const at = (a) => -Math.PI / 2 - a; // wheel angle to canvas angle: 12 o'clock, anticlockwise for left
+    g.fillStyle = Th.deep;
+    g.beginPath();
+    g.arc(cx, cy, R + 3, 0, Math.PI * 2);
+    g.fill();
+    g.strokeStyle = Th.dim;
+    g.lineWidth = 2.5;
+    g.beginPath();
+    g.arc(cx, cy, R, 0, Math.PI * 2);
+    g.stroke();
+    let tag = null;
+    if (isFinite(us) && Math.abs(us) > 0.5 * DEG) {
+      // from the lock the yaw needed to the lock held, along the rim
+      const need = s - us * turn, d = Math.max(-Math.PI, Math.min(Math.PI, s - need));
+      const strong = us > 0 ? st === 1 : st === -1;
+      g.strokeStyle = us > 0 ? Th.sky : Th.peach;
+      g.globalAlpha = strong ? 1 : 0.45;
+      g.lineWidth = strong ? 4.5 : 3.5;
+      g.beginPath();
+      g.arc(cx, cy, R, at(s), at(s - d), d < 0);
+      g.stroke();
+      g.globalAlpha = 1;
+      if (strong) tag = { text: (us > 0 ? 'US ' : 'OS ') + Math.round(Math.abs(us) / DEG) + '°', color: g.strokeStyle };
+    }
+    // three spokes and the top marker, turned with the wheel
+    g.save();
+    g.translate(cx, cy);
+    g.rotate(-s);
+    g.strokeStyle = Th.dim;
+    g.lineWidth = 2;
+    g.beginPath();
+    g.moveTo(-R, 0);
+    g.lineTo(R, 0);
+    g.moveTo(0, 0);
+    g.lineTo(0, R);
+    g.stroke();
+    g.fillStyle = Th.dim;
+    g.beginPath();
+    g.arc(0, 0, R * 0.32, 0, Math.PI * 2);
+    g.fill();
+    g.strokeStyle = Th.butter;
+    g.lineWidth = 3;
+    g.beginPath();
+    g.moveTo(0, -R - 1.5);
+    g.lineTo(0, -R + 3.5);
+    g.stroke();
+    g.restore();
+    return tag;
   }
 
   function create() {
@@ -162,6 +221,8 @@
         g.font = '500 11px ' + FONT;
         const sw = g.measureText(sub).width;
         const hh = 34, m = slot('car' + c.k);
+        const jw = Math.round(Math.max(0, Math.min(cmp.n - 1, c.j)));
+        const ww = L.steer && isFinite(L.steer[jw]) ? WR * 2 + 10 : 0; // room for the wheel above the chip
         // the chip is centred on the car, so its width holds while the digits change: it
         // grows at once and shrinks only when the text is a good deal narrower
         const fit = tw + Math.max(mw, sw) + 16;
@@ -173,12 +234,12 @@
         const bx = beside ? roof.x + 26 : roof.x - w / 2, by = beside ? roof.y - hh / 2 : roof.y - 18 - hh;
         const dir = -1;
         let off = 0;
-        while (off < 5 && overlaps([bx, by + dir * off * (hh + 4), w, hh])) off++;
-        const want = off * (hh + 4);
+        while (off < 5 && overlaps([bx, by + dir * off * (hh + ww + 4) - ww, w, hh + ww])) off++;
+        const want = off * (hh + ww + 4);
         m.y = m.used === frameNo - 1 ? m.y + (want - m.y) * k : want;
         m.used = frameNo;
         const x = bx, y = by + dir * m.y;
-        taken.push([x, y, w, hh]);
+        taken.push([x, y - ww, w, hh + ww]);
         // leader
         g.strokeStyle = L.color;
         g.lineWidth = 1.5;
@@ -205,6 +266,15 @@
         g.font = '500 11px ' + FONT;
         g.fillStyle = Th.dim;
         g.fillText(sub, x + tw + 8, y + 25);
+        if (ww) {
+          const wx = x + tw / 2, wy = y - WR - 6, t = wheel(g, L, jw, wx, wy, WR);
+          if (t) {
+            g.font = '800 11px ' + FONT;
+            g.fillStyle = t.color;
+            g.textAlign = 'left';
+            g.fillText(t.text, wx + WR + 8, wy + 0.5);
+          }
+        }
       });
 
       // ---- event pips, and the fading labels: event chips, lap tags along the lines and gear numbers

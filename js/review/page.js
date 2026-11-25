@@ -37,7 +37,7 @@
 
   const state = {
     sessions: [], laps: [], refId: null, sel: [], errors: [], warnings: [],
-    opts: { inputs: 'all', lean: false, cars: true, exag: 1, map: true, paint: 'balance', fence: 'inputs', absTint: true, attScale: 1, motion: 1, wheels: true,
+    opts: { inputs: 'all', lean: false, cars: true, exag: 1, map: true, paint: 'balance', fence: 'inputs', absTint: true, attScale: 1, motion: 1, wheels: true, passthru: false,
       markers: new Set(['lock', 'off', 'spin', 'kerb', 'us', 'os']) },
     lanes: { on: new Set(['speed', 'delta', 'throttle', 'brake', 'steer', 'gear']), picks: [], tyreMode: 'temp', tyreBand: 'avg', abs: true, labels: {}, folded: false },
     drawer: false,
@@ -61,7 +61,7 @@
       }
       const o = JSON.parse(localStorage.getItem(LAYERS_KEY) || 'null');
       if (o) {
-        ['lean', 'cars', 'exag', 'map', 'paint', 'fence', 'absTint', 'attScale', 'motion', 'wheels'].forEach((k) => o[k] != null && (state.opts[k] = o[k]));
+        ['lean', 'cars', 'exag', 'map', 'paint', 'fence', 'absTint', 'attScale', 'motion', 'wheels', 'passthru'].forEach((k) => o[k] != null && (state.opts[k] = o[k]));
         if (o.mapFolded != null) state.mapFolded = !!o.mapFolded;
         if (Array.isArray(o.markers)) state.opts.markers = new Set(o.markers);
       }
@@ -80,7 +80,7 @@
   function saveLayers() {
     try {
       const o = state.opts;
-      localStorage.setItem(LAYERS_KEY, JSON.stringify({ lean: o.lean, cars: o.cars, exag: o.exag, map: o.map, paint: o.paint, fence: o.fence, absTint: o.absTint, attScale: o.attScale, motion: o.motion, wheels: o.wheels, markers: [...o.markers], mapFolded: state.mapFolded }));
+      localStorage.setItem(LAYERS_KEY, JSON.stringify({ lean: o.lean, cars: o.cars, exag: o.exag, map: o.map, paint: o.paint, fence: o.fence, absTint: o.absTint, attScale: o.attScale, motion: o.motion, wheels: o.wheels, passthru: o.passthru, markers: [...o.markers], mapFolded: state.mapFolded }));
     } catch (e) {
       /* not kept */
     }
@@ -866,36 +866,56 @@
   const who = (x) => driverName(keyOf(x));
 
   /**
-   * Vs driver: the reference lap's own card in the corner of the 3D view, with the list's
-   * controls and the live gap of the lap racing it. Folds to one line; hidden with one driver.
+   * The battle card in the 3D view's corner. Vs driver: the reference lap's own card with the
+   * list's controls and the live gap of the lap racing it. One driver: with 2+ laps, every
+   * compared lap's gap and time lost per stretch against the reference. Folds to one line each.
    */
   function pipCard() {
-    const el = V.pip, ref = byId(state.refId);
-    const show = vsMode() && !!ref && !!V.cmp;
+    const el = V.pip, ref = byId(state.refId), vs = vsMode();
+    const show = !!ref && !!V.cmp && (vs || (!state.solo && V.cmp.laps.length > 1));
     el.classList.toggle('hidden', !show);
     el.innerHTML = '';
-    V.pipVs = null;
+    V.pipVs = [];
     if (!show) return;
     pipPlace();
-    const folded = state.pipFolded, k = rivalIndex(), L = k > 0 ? V.cmp.laps[k] : null;
-    const fold = h('button', { class: 'rv-pip-fold', 'aria-expanded': String(!folded), title: folded ? 'Show the reference lap’s controls' : 'Fold to one line', onclick: () => ((state.pipFolded = !folded), pipCard()) }, folded ? '+' : '−');
-    const delta = h('span', { class: 'rv-pip-delta' }), trend = h('div', { class: 'rv-pip-trend' });
+    const folded = state.pipFolded;
+    const ks = vs ? [rivalIndex()].filter((k) => k > 0) : V.cmp.laps.map((L, k) => k).slice(1);
+    const fold = h('button', { class: 'rv-pip-fold', 'aria-expanded': String(!folded), title: folded ? (vs ? 'Show the reference lap’s controls' : 'Show the time lost per stretch') : 'Fold to one line', onclick: () => ((state.pipFolded = !folded), pipCard()) }, folded ? '+' : '−');
+    const row = (k) => ({ k, delta: h('span', { class: 'rv-pip-delta' }), trend: folded ? null : h('div', { class: 'rv-pip-trend' }), text: '', secKey: null });
     el.classList.toggle('folded', !!folded);
-    el.append(h('div', { class: 'rv-pip-head' },
-      h('span', { class: 'rv-drv-tag ref' }, 'Ref'),
-      h('span', { class: 'rv-pip-name', title: 'Reference: ' + driverName(keyOf(ref)) + ', lap ' + ref.lap.lapNo }, who(ref)),
-      folded && L ? delta : null, fold));
-    if (!folded) el.append(lapRow(ref, NaN, true));
-    if (!L) {
-      if (!folded) el.append(h('div', { class: 'rv-pip-trend' }, state.solo ? 'A lap is soloed: no reference for now.' : 'Tick a lap to race this one.'));
-      return;
+    el.setAttribute('aria-label', vs ? 'Reference lap' : 'Laps against the reference');
+    if (vs) {
+      const R = ks.length ? row(ks[0]) : null;
+      el.append(h('div', { class: 'rv-pip-head' },
+        h('span', { class: 'rv-drv-tag ref' }, 'Ref'),
+        h('span', { class: 'rv-pip-name', title: 'Reference: ' + driverName(keyOf(ref)) + ', lap ' + ref.lap.lapNo }, who(ref)),
+        folded && R ? R.delta : null, fold));
+      if (!folded) el.append(lapRow(ref, NaN, true));
+      if (!R) {
+        if (!folded) el.append(h('div', { class: 'rv-pip-trend' }, state.solo ? 'A lap is soloed: no reference for now.' : 'Tick a lap to race this one.'));
+        return;
+      }
+      const L = V.cmp.laps[R.k];
+      if (!folded) {
+        el.append(h('div', { class: 'rv-pip-vs' },
+          h('span', { class: 'rv-pip-rival', title: who(L.entry) + ', lap ' + L.lap.lapNo }, h('i', { class: 'rv-swatch', style: 'background:' + L.color }), who(L.entry) + ' · Lap ' + L.lap.lapNo),
+          R.delta), R.trend);
+      }
+      V.pipVs = [R];
+    } else {
+      el.append(h('div', { class: 'rv-pip-head' },
+        h('span', { class: 'rv-drv-tag ref' }, 'Ref'),
+        h('span', { class: 'rv-pip-name', title: 'Reference: lap ' + ref.lap.lapNo + '. Gaps and time lost are against it' }, 'Lap ' + ref.lap.lapNo),
+        h('span', { class: 'rv-pip-time' }, Cmp.fmtLap(ref.lap.time)), fold));
+      V.pipVs = ks.map((k) => {
+        const R = row(k), L = V.cmp.laps[k];
+        el.append(h('div', { class: 'rv-pip-vs' },
+          h('span', { class: 'rv-pip-rival', title: 'Lap ' + L.lap.lapNo + ', ' + Cmp.fmtLap(L.lap.time) }, h('i', { class: 'rv-swatch', style: 'background:' + L.color }), 'Lap ' + L.lap.lapNo),
+          R.delta));
+        if (R.trend) el.append(R.trend);
+        return R;
+      });
     }
-    if (!folded) {
-      el.append(h('div', { class: 'rv-pip-vs' },
-        h('span', { class: 'rv-pip-rival', title: who(L.entry) + ', lap ' + L.lap.lapNo }, h('i', { class: 'rv-swatch', style: 'background:' + L.color }), who(L.entry) + ' · Lap ' + L.lap.lapNo),
-        delta), trend);
-    }
-    V.pipVs = { k, delta, trend: folded ? null : trend, text: '', secKey: null };
     pipTick();
   }
   /** Under the toolbar, however many rows it wraps to. */
@@ -905,8 +925,9 @@
   }
   /** The card's numbers at the cursor (at the line until there is one). */
   function pipTick() {
-    const P = V && V.pipVs;
-    if (!P) return;
+    if (V && V.pipVs) V.pipVs.forEach(pipRow);
+  }
+  function pipRow(P) {
     const at = state.cursorF >= 0, b = Vs.battle(V.cmp, P.k, at ? state.cursorF : V.cmp.n - 1);
     if (!b) return;
     const d = b.delta, text = (d >= 0 ? '+' : '−') + Math.abs(d).toFixed(3);
@@ -1305,6 +1326,7 @@
     D.append(h('h2', null, 'View'),
       check('Cars', 'cars', 'A car for each lap where it was at the reference’s time, with the gap', dirty),
       check('Wheel data', 'wheels', 'On the cars’ wheels: each tyre’s tread is coloured by its temperature (inner, middle and outer where the file has them): blue below 70 °C, glowing red from 85 °C, brightest at 115 °C. A rim turns rose while that wheel is locking and mint while it spins up. The wheels always turn at their own speed, so a locked one stops', dirty),
+      check('Passthru', 'passthru', 'See the wheels through the body: wherever a car’s bodywork hides a wheel, it is drawn faint, so closed-wheel cars show their tyre colours too', dirty),
       h('label', { class: 'rv-field', title: 'How far the cars’ bodies dive, squat, roll and heave on their wheels. From ride heights when the file has them, else estimated from g. Real movement is a degree or two' }, h('span', null, 'Body motion'), motion),
       mapCheck(),
       h('label', { class: 'rv-field' }, h('span', null, 'Elevation'), elev),
@@ -1364,9 +1386,11 @@
       V.detach = V.cam.attach(V.glEl, dirty);
       V.glEl.addEventListener('pointermove', hover);
       V.carMesh = V.R.dynamic('tris');
+      V.wheelMesh = V.R.dynamic('tris');
       V.shadowMesh = V.R.dynamic('tris');
       // refilled every frame, so kept: a fresh list each time is megabytes of garbage a second
       V.carVerts = IST.Review.GL.Verts();
+      V.wheelVerts = IST.Review.GL.Verts();
       V.shadowVerts = IST.Review.GL.Verts();
     }
     // capture phase, as on Stats: a modal is still open here, so the Esc that closes it doesn't also leave the page
@@ -1624,17 +1648,20 @@
     else if (m.dist > COARSE_SHOW) V.hideCoarse = false;
     const items = (V.hideCoarse ? V.scene.items.filter((it) => !it.coarse) : V.scene.items).concat(V.scene.layerItems);
     if (state.opts.cars && C.length) {
-      const Vt = V.carVerts, Sh = V.shadowVerts, Cars = IST.Review.Cars;
+      const Vt = V.carVerts, Sh = V.shadowVerts, Wv = V.wheelVerts, Cars = IST.Review.Cars, xr = !!state.opts.passthru;
       Vt.reset();
       Sh.reset();
+      Wv.reset();
       C.forEach((c) => {
         const md = Cars.model(c.kind);
-        Cars.emit(Vt, md, c.road, c.body, IST.Review.GL.rgb(V.cmp.laps[c.k].color), { steer: c.steer, brake: c.braking, wheels: c.wheels, tint: state.opts.wheels });
+        Cars.emit(Vt, md, c.road, c.body, IST.Review.GL.rgb(V.cmp.laps[c.k].color), { steer: c.steer, brake: c.braking, wheels: c.wheels, tint: state.opts.wheels, wheelsTo: xr ? Wv : null });
         Cars.shadow(Sh, md, c.ground || c.road);
       });
       V.carMesh.set(Vt.data());
       V.shadowMesh.set(Sh.data());
-      items.push({ mesh: V.carMesh, lit: true }, { mesh: V.shadowMesh, lit: false, blend: true, lift: 4 });
+      // passthru: the wheels first, then the body faint wherever it hides them
+      if (xr) V.wheelMesh.set(Wv.data()), items.push({ mesh: V.wheelMesh, lit: true });
+      items.push({ mesh: V.carMesh, lit: true, xray: xr ? { mesh: V.wheelMesh, alpha: 0.2 } : null }, { mesh: V.shadowMesh, lit: false, blend: true, lift: 4 });
     }
     V.R.draw(m.vp, m.eye, items, { near: m.fog.near, far: m.fog.far, color: IST.Review.GL.rgb(Th.deep) });
 

@@ -314,6 +314,7 @@ table.grid.rv-table td:last-child, table.grid.rv-table th:last-child { padding-r
 .rv-pip.folded { width: auto; padding-bottom: 6px; }
 .rv-pip-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .rv-pip-name { font-weight: var(--w-bold); font-size: 13px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rv-pip-time { font-size: var(--fs-small); color: var(--text2); font-variant-numeric: tabular-nums; flex: none; }
 .rv-pip-fold {
   appearance: none; font: inherit; font-weight: var(--w-bold); line-height: 1; margin-left: auto; flex: none; width: 20px; height: 20px;
   background: transparent; color: var(--muted); border: 1px solid var(--line); cursor: pointer;
@@ -324,6 +325,8 @@ table.grid.rv-table td:last-child, table.grid.rv-table th:last-child { padding-r
 .rv-pip-rival { font-size: 13px; font-weight: var(--w-semi); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rv-pip-delta { margin-left: auto; flex: none; font-size: 20px; font-weight: var(--w-bold); font-variant-numeric: tabular-nums; line-height: 1; color: var(--text2); }
 .rv-pip.folded .rv-pip-delta { font-size: 14px; margin-left: 4px; }
+.rv-pip.folded .rv-pip-vs .rv-pip-delta { margin-left: auto; }
+.rv-pip.folded .rv-pip-vs { padding-top: 4px; margin-top: 3px; }
 .rv-pip-delta.bad { color: var(--rose); }
 .rv-pip-delta.good { color: var(--mint); }
 .rv-pip-trend { display: flex; justify-content: space-between; gap: 10px; font-size: var(--fs-label); color: var(--muted); font-variant-numeric: tabular-nums; margin-top: 4px; white-space: nowrap; }

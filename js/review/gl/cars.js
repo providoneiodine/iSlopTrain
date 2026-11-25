@@ -13,6 +13,7 @@
  *     With tint, each tyre shows its temperature across the tread (inner, middle, outer:
  *     blue cold, glowing red hot) and its rim turns rose while locking, mint while spinning.
  *     Spokes blur as the wheel speeds up, so a locked wheel stands out by its sharp ones.
+ *     st.wheelsTo (a Verts list): the wheels go there instead of V, so they can be drawn apart.
  *   IST.Review.Cars.shadow(V, model, road) append a soft dark patch under the car
  *
  * Car space is [a, h, s]: metres forward of the car's centre, up from the
@@ -308,6 +309,7 @@
     const looks = parts.map((P) => (P.wheel ? wheelLook((st && st.wheels && st.wheels[P.id]) || STILL, !!(st && st.tint)) : null));
     for (let i = 0; i < tris.length; i++) {
       const t = tris[i], P = parts[t.part], X = P.wheel ? road : body, W = looks[t.part];
+      const out = P.wheel && st && st.wheelsTo ? st.wheelsTo : V;
       const c = W ? W.col[t.key] : col[t.key];
       // glow: 1 draws at full brightness whatever way the face points, 0 is lit by the sun
       const g = W ? W.glow[t.key] || 0 : t.key === 'lamp' || t.key === 'tail' ? 1 : 0;
@@ -339,7 +341,7 @@
           a = P.pa + da * cs - ds * sn;
           s = P.ps + da * sn + ds * cs;
         }
-        V.push(X.p[0] + X.f[0] * a + X.u[0] * h + X.l[0] * s, X.p[1] + X.f[1] * a + X.u[1] * h + X.l[1] * s, X.p[2] + X.f[2] * a + X.u[2] * h + X.l[2] * s, nx, ny, nz, c);
+        out.push(X.p[0] + X.f[0] * a + X.u[0] * h + X.l[0] * s, X.p[1] + X.f[1] * a + X.u[1] * h + X.l[1] * s, X.p[2] + X.f[2] * a + X.u[2] * h + X.l[2] * s, nx, ny, nz, c);
       }
     }
   }

@@ -178,7 +178,7 @@
   // a scene rebuild (a layer or exaggeration change) re-drapes the same laps: their fit is kept
   const fits = new WeakMap(); // reference lap -> Map(key -> Promise<warp | null>)
   function roadFit(cmp, geo, z) {
-    const ref = cmp.laps[0].lap, key = [z, geo.lat0, geo.lon0, cmp.n].concat(cmp.laps.map((L) => L.lap.time)).join('|');
+    const ref = cmp.laps[0].lap, key = [z, geo.lat0, geo.lon0, cmp.n, ref.time].join('|');
     if (!fits.has(ref)) fits.set(ref, new Map());
     const M = fits.get(ref);
     if (!M.has(key)) M.set(key, fitRoad(cmp, geo, z).catch(() => (M.delete(key), null)));
@@ -187,6 +187,8 @@
 
   async function fitRoad(cmp, geo, z) {
     const Tk = IST.Review.Track, ce = cmp.centre, n = cmp.n;
+    // only the reference (or soloed) lap steers the fit: other laps' lines mustn't drag the image
+    const one = cmp.laps.slice(0, 1);
     const P = Tk.roadProbe(ce.x, ce.y, n, cmp.step);
     const score = await asphaltAt(geo, z, P.pts, true);
     await breathe();
@@ -194,12 +196,12 @@
     if (!road) return null;
     // kerb strikes pin the image where they're found; elsewhere it slides only as far as
     // keeps the laps on its road
-    const K = Tk.kerbProbe(ce.x, ce.y, n, cmp.step, Tk.kerbRuns(cmp.laps, n, cmp.step));
+    const K = Tk.kerbProbe(ce.x, ce.y, n, cmp.step, Tk.kerbRuns(one, n, cmp.step));
     const anchors = K.pts.length ? Tk.kerbShift(K, await asphaltAt(geo, z, K.pts, false), road) : [];
     await breathe();
     const A = Tk.anchorField(anchors, n, cmp.step), at = new Float32Array(n);
     for (let i = 0; i < n; i++) at[i] = road.at[i] + A.at[i] * A.w[i];
-    const rest = Tk.keepOn(cmp.laps, n, cmp.step, { at, half: road.half });
+    const rest = Tk.keepOn(one, n, cmp.step, { at, half: road.half });
     const sh = new Float32Array(n);
     let big = 0;
     for (let i = 0; i < n; i++) {

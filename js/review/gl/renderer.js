@@ -16,7 +16,8 @@
  *
  * lit: 0 flat colour, 1 lit by a fixed sun (so slopes read as shape).
  * blend: alpha-blend and don't write depth (fences). lift: polygon offset so
- * lines drawn on the road win the depth test.
+ * lines drawn on the road win the depth test. xray: { mesh, alpha }: where this
+ * opaque mesh hides that one, draw it faint instead (the cars' passthru).
  * GL.Verts() is a growable vertex list, so Scene writes plain geometry;
  * V.reset() empties one for reuse.
  */
@@ -40,8 +41,8 @@
   ].join('\n');
   const FS = [
     'precision mediump float;',
-    'uniform vec3 uFogCol; varying vec4 vCol; varying float vFog;',
-    'void main() { gl_FragColor = vec4(mix(vCol.rgb, uFogCol, vFog), vCol.a); }',
+    'uniform vec3 uFogCol; uniform float uAlpha; varying vec4 vCol; varying float vFog;',
+    'void main() { gl_FragColor = vec4(mix(vCol.rgb, uFogCol, vFog), vCol.a * uAlpha); }',
   ].join('\n');
 
   // textured ground: the image, tinted, with the same fog
@@ -104,7 +105,7 @@
   }
 
   function create(canvas) {
-    const gl = canvas.getContext && (canvas.getContext('webgl', { antialias: true, alpha: false }) || canvas.getContext('experimental-webgl'));
+    const gl = canvas.getContext && (canvas.getContext('webgl', { antialias: true, alpha: false, stencil: true }) || canvas.getContext('experimental-webgl'));
     if (!gl) return null;
     const link = (vs, fs) => {
       const p = gl.createProgram();
@@ -126,7 +127,7 @@
     const A = { pos: gl.getAttribLocation(prog, 'aPos'), nrm: gl.getAttribLocation(prog, 'aNrm'), col: gl.getAttribLocation(prog, 'aCol') };
     const TA = { pos: gl.getAttribLocation(tprog, 'aPos'), uv: gl.getAttribLocation(tprog, 'aUV') };
     const U = {}, TU = {};
-    ['uVP', 'uEye', 'uLit', 'uFog', 'uFogCol'].forEach((k) => (U[k] = gl.getUniformLocation(prog, k)));
+    ['uVP', 'uEye', 'uLit', 'uFog', 'uFogCol', 'uAlpha'].forEach((k) => (U[k] = gl.getUniformLocation(prog, k)));
     ['uVP', 'uEye', 'uFog', 'uFogCol', 'uTex', 'uTint'].forEach((k) => (TU[k] = gl.getUniformLocation(tprog, k)));
     const maxAttr = gl.getParameter(gl.MAX_VERTEX_ATTRIBS);
     const onlyAttribs = (list) => {
@@ -247,9 +248,38 @@
         gl.uniform3fv(U.uEye, eye);
         gl.uniform2f(U.uFog, fog.near, fog.far);
         gl.uniform3fv(U.uFogCol, bg);
+        gl.uniform1f(U.uAlpha, 1);
         gl.enableVertexAttribArray(A.pos);
         gl.enableVertexAttribArray(A.nrm);
         gl.enableVertexAttribArray(A.col);
+        // passthru: the body as usual, except where it hides it.xray.mesh (drawn already), where
+        // only its nearest surface is drawn, at it.xray.alpha. The stencil holds those pixels.
+        const xray = (it) => {
+          const raw = (m) => ({ mesh: m, lit: it.lit });
+          gl.enable(gl.STENCIL_TEST);
+          gl.clearStencil(0);
+          gl.clear(gl.STENCIL_BUFFER_BIT);
+          gl.stencilFunc(gl.ALWAYS, 1, 0xff);
+          gl.stencilOp(gl.KEEP, gl.KEEP, gl.REPLACE);
+          gl.colorMask(false, false, false, false);
+          gl.depthFunc(gl.LEQUAL);
+          pass(Object.assign(raw(it.xray.mesh), { noDepth: true }));
+          gl.stencilOp(gl.KEEP, gl.KEEP, gl.KEEP);
+          gl.depthFunc(gl.LESS);
+          gl.colorMask(true, true, true, true);
+          gl.stencilFunc(gl.EQUAL, 0, 0xff);
+          pass(raw(it.mesh));
+          gl.stencilFunc(gl.EQUAL, 1, 0xff);
+          gl.colorMask(false, false, false, false);
+          pass(raw(it.mesh));
+          gl.colorMask(true, true, true, true);
+          gl.depthFunc(gl.EQUAL);
+          gl.uniform1f(U.uAlpha, it.xray.alpha);
+          pass(Object.assign(raw(it.mesh), { blend: true }));
+          gl.uniform1f(U.uAlpha, 1);
+          gl.depthFunc(gl.LESS);
+          gl.disable(gl.STENCIL_TEST);
+        };
         const pass = (it) => {
           if (!it.mesh || !it.mesh.count) return;
           gl.bindBuffer(gl.ARRAY_BUFFER, it.mesh.buf);
@@ -267,11 +297,12 @@
             gl.depthMask(false);
           } else {
             gl.disable(gl.BLEND);
-            gl.depthMask(true);
+            gl.depthMask(!it.noDepth);
           }
           gl.drawArrays(it.mesh.mode, 0, it.mesh.count);
         };
-        items.filter((i) => !i.blend).forEach(pass);
+        items.filter((i) => !i.blend && !i.xray).forEach(pass);
+        items.filter((i) => i.xray).forEach(xray);
         items.filter((i) => i.blend).forEach(pass);
         gl.depthMask(true);
         gl.disable(gl.BLEND);
