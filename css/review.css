@@ -256,3 +256,20 @@ table.grid.rv-table td:last-child, table.grid.rv-table th:last-child { padding-r
 .rv-cond-table tr.differs td { color: var(--text); }
 .rv-cond-table tr.differs td:first-child { color: var(--peach); box-shadow: inset 2px 0 0 var(--peach); padding-left: 8px; }
 .rv-cond .hint { font-size: var(--fs-small); color: var(--muted); margin: 10px 0 0; line-height: 1.45; }
+
+/* ------------------------------------------------------------- folder watch */
+.rv-watch { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); font-size: 13px; color: var(--text2); }
+.rv-watch-text { flex: 1 1 180px; min-width: 0; }
+.rv-watch-text b { font-weight: var(--w-semi); color: var(--text); }
+.rv-watch-dot { width: 8px; height: 8px; background: var(--muted); flex: none; }
+.rv-watch-dot.on { background: var(--mint); animation: rv-watch-pulse 2s ease-in-out infinite; }
+@keyframes rv-watch-pulse { 50% { opacity: .35; } }
+.rv-watch-prompt {
+  position: fixed; right: 16px; bottom: 16px; z-index: 15; width: min(380px, calc(100vw - 32px)); padding: 12px 14px;
+  background: var(--panel); border: 1px solid var(--butter); box-shadow: var(--shadow); font-size: 13px; color: var(--text);
+}
+.rv-watch-title { font-weight: var(--w-semi); margin-bottom: 8px; }
+.rv-watch-prompt ul { list-style: none; margin: 0; padding: 0; max-height: 40vh; overflow: auto; }
+.rv-watch-prompt li { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+.rv-watch-file { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rv-watch-prompt .modal-actions { margin-top: 10px; }

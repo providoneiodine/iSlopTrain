@@ -114,6 +114,7 @@ A telemetry viewer, kept apart from the drills. Nothing outside the folder depen
 | `traces.js` | the 2D trace strip under the 3D view: a lane registry (catalogue order, per-tyre picks, ABS / coasting / balance shading) |
 | `overlay.js` | the 2D labels over the 3D view: car chips with the gap, cursor posts, event pips and chips, lap tags, gear numbers; labels fade rather than pop |
 | `page.js` | `IST.Review.open()`: the page, lap list, lanes box, Layers drawer, cursor readout, and the glue between them |
+| `watch.js` | the Review card's folder watch: polls a picked telemetry folder (Chrome/Edge, File System Access API) for new `.ibt` files, waits until a file stops growing, then offers it to `IST.Review.open({ files })`. The folder handle and the names already seen are kept in IndexedDB |
 
 **Telemetry files are factories.** Each file in `telemetry/` (except `loader.js`) registers `function (T) { … }` with `IST.Telemetry.def`, and may use nothing outside its own body: `loader.js` stringifies them into a Blob Worker so a 100 MB `.ibt` parses off the main thread and it still works from `file://`. The tests run the same source in a bare sandbox to keep that true. To add a format, add a factory that sets `T.formats.<name> = { label, exts, sniff, parse }` returning `T.session(...)`, and a `<script>` before `laps.js`.
 
