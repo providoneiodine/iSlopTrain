@@ -232,7 +232,7 @@
     if (!lap || (!gps && s.posSource !== 'world')) return (s.mapState = 'none');
     s.mapState = 'loading';
     // imagery waits for the lookup to confirm the spot is a circuit (and line the laps up with it)
-    IST.Review.MapData.lookup({ origin: gps ? originRef : null, track: s.meta.track, x: lap.x, y: lap.y }).then((m) => {
+    IST.Review.MapData.lookup({ origin: gps ? originRef : null, id: s.meta.trackId, track: s.meta.track, x: lap.x, y: lap.y }).then((m) => {
       s.map = m;
       s.mapState = m ? 'ok' : 'none';
     }, (e) => {

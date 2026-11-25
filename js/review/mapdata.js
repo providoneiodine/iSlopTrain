@@ -20,7 +20,9 @@
  *   IST.Review.MapData.available(z, tiles) -> Promise<Set('x,y')>  which Esri really has
  *   IST.Review.MapData.ATTRIB
  *
- * Being light on free servers: raceway and place answers are cached in
+ * Being light on free servers: the circuits in data/tracks/ (built by
+ * scripts/bundle-tracks.js) come with the site, so for those nothing is asked
+ * of Overpass or Nominatim at all. Elsewhere, raceway and place answers are cached in
  * localStorage (latest 24, for 90 days) and tiles in Cache Storage (30 days,
  * 200 MB), so a track you've opened before costs them nothing and works
  * offline. The two Overpass servers are asked together and the slower
@@ -35,7 +37,11 @@
   const NOMINATIM = 'https://nominatim.openstreetmap.org/search';
   // two hosts for the same tiles, so twice as many load at once
   const TILE = (z, x, y) => 'https://' + ((x + y) % 2 ? 'server' : 'services') + '.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/' + z + '/' + y + '/' + x;
-  const ATTRIB = 'Imagery © Esri, Maxar, Earthstar Geographics · Track © OpenStreetMap contributors';
+  // with an API key in js/config.js, the same imagery from Esri's keyed service
+  const esriKey = () => (IST.CONFIG && IST.CONFIG.esriKey) || '';
+  let keyOk = true;
+  const keyed = (url) => url.replace(/^https:\/\/(server|services)\.arcgisonline\.com\/ArcGIS\//, 'https://ibasemaps-api.arcgis.com/arcgis/') + '?token=' + encodeURIComponent(esriKey());
+  const ATTRIB = (esriKey() ? 'Powered by Esri · ' : '') + 'Imagery © Esri, Maxar, Earthstar Geographics · Track © OpenStreetMap contributors (ODbL)';
   const CACHE_KEY = 'isloptrain.review.osm', CACHE_MAX = 24;
 
   // ---------------------------------------------------------------- cache
@@ -78,8 +84,61 @@
     }
   }
 
+  // ---------------------------------------------------------- bundled data
+  const BUNDLE = 'data/tracks/';
+  const metres = (a, b) => {
+    const k = Math.PI / 180, x = (b[1] - a[1]) * k * Math.cos(((a[0] + b[0]) / 2) * k), y = (b[0] - a[0]) * k;
+    return Math.hypot(x, y) * 6371000;
+  };
+  /** The scripts' 1e-6 polyline back to [[lat, lon]...]. */
+  function decode6(s) {
+    const pts = [];
+    let i = 0, a = 0, b = 0;
+    const num = () => {
+      let v = 0, sh = 0, c;
+      do (c = s.charCodeAt(i++) - 63), (v |= (c & 0x1f) << sh), (sh += 5);
+      while (c >= 0x20);
+      return v & 1 ? ~(v >> 1) : v >> 1;
+    };
+    while (i < s.length) (a += num()), (b += num()), pts.push([a / 1e6, b / 1e6]);
+    return pts;
+  }
+  let index$ = null;
+  /** The bundled circuits ([] when the site has none, or opened from file://). */
+  function circuits() {
+    if (!index$) index$ = fetchJSON(BUNDLE + 'index.json', {}, 10000).then((d) => (d && d.circuits) || [], () => []);
+    return index$;
+  }
+  const ways$ = new Map();
+  /** A bundled circuit's raceways, or null if the file can't be had (then it's asked live). */
+  function circuitWays(c) {
+    if (!c.osm) return Promise.resolve([]);
+    if (!ways$.has(c.id)) {
+      ways$.set(c.id, fetchJSON(BUNDLE + 'osm/' + c.id + '.json', {}, 15000).then((d) => d.ways.map((w) => ({ pts: decode6(w.p), width: w.w || 0 })), () => (ways$.delete(c.id), null)));
+    }
+    return ways$.get(c.id);
+  }
+  /** The bundled circuit for an iRacing trackId, else for a track name (as Corners matches them). */
+  async function bundledByName(id, name) {
+    const list = await circuits(), C = IST.Review.Corners;
+    if (!C) return null;
+    const cid = C.clean(id);
+    const hit = cid && list.find((c) => (c.ids || []).includes(cid));
+    if (hit || !name) return hit || null;
+    let best = null;
+    list.forEach((c) => (c.names || []).forEach((n) => {
+      const s = C.score(name, n);
+      if (s >= 0.6 && (!best || s > best.s)) best = { c, s };
+    }));
+    return best && best.c;
+  }
+
   /** Raceway ways within r metres of a point: [{ pts: [[lat, lon]...], width }] (cached). */
   async function raceways(lat, lon, r) {
+    // a bundled circuit whose area holds the whole circle answers it
+    const c = (await circuits()).find((x) => metres([x.lat, x.lon], [lat, lon]) + r <= x.r);
+    const own = c && (await circuitWays(c));
+    if (own) return own.filter((w) => w.pts.some((p) => metres(p, [lat, lon]) <= r));
     const key = 'p' + lat.toFixed(3) + ',' + lon.toFixed(3) + ',' + Math.round(r / 100);
     const hit = cached(key);
     if (hit) return hit;
@@ -160,9 +219,23 @@
       return { geo: gf, lines: ways.map((w) => w.pts.map((p) => gf.toXY(p[0], p[1]))), halfWidth: halfWidthOf(ways), how: 'gps', shift: a.shift };
     }
     const name = cleanName(q.track);
-    if (!name) return null;
-    for (const place of await geocode(name)) {
-      const ways = await raceways(place.lat, place.lon, 4000);
+    if (!name && !q.id) return null;
+    // a bundled circuit first; one known to have no raceways means no map, without asking anyone
+    const own = await bundledByName(q.id, name);
+    const ownWays = own && (await circuitWays(own));
+    if (own && !own.osm) return null;
+    const places = ownWays ? [{ lat: own.lat, lon: own.lon, ways: ownWays }] : [];
+    let looked = false;
+    for (let k = 0; ; k++) {
+      if (k === places.length) {
+        // not bundled, or the bundle didn't fit the lap: ask the live servers
+        if (looked || !name) break;
+        looked = true;
+        places.push(...(await geocode(name)));
+        if (k === places.length) break;
+      }
+      const place = places[k];
+      const ways = place.ways || (await raceways(place.lat, place.lon, 4000));
       if (!ways.length) continue;
       const local = Tk.geo(place.lat, place.lon);
       const lines = ways.map((w) => w.pts.map((p) => local.toXY(p[0], p[1])));
@@ -225,6 +298,32 @@
       S.cache.put(INDEX_URL, new Response(JSON.stringify(S.index), { headers: { 'Content-Type': 'application/json' } })).catch(() => {});
     }, 2000);
   }
+  /**
+   * An Esri file, through the keyed service when there's a key. The cache keeps it under the
+   * public address either way. A refused key (expired, wrong site) is dropped for the rest of
+   * the visit; any other keyed failure just tries the public service for that file.
+   */
+  async function download(url) {
+    if (esriKey() && keyOk) {
+      try {
+        const r = await fetch(keyed(url), { mode: 'cors' });
+        let err = r.ok ? 0 : r.status;
+        const blob = r.ok ? await r.blob() : null;
+        if (blob && /json/.test(blob.type)) {
+          // Esri reports token errors as JSON, sometimes with a 200
+          const t = await blob.text(), m = /"error"[^}]*?"code"\s*:\s*(\d+)/.exec(t);
+          if (m) err = +m[1];
+        }
+        if (!err) return blob;
+        if ([401, 403, 498, 499].includes(err)) keyOk = false;
+      } catch (e) {
+        /* network trouble: the public service below */
+      }
+    }
+    const r = await fetch(url, { mode: 'cors' });
+    if (!r.ok) throw new Error('HTTP ' + r.status + ' ' + url);
+    return r.blob();
+  }
   /** A response body from the cache when it's under 30 days old, else from the network (and kept). */
   async function cachedBlob(key, url) {
     const S = await tileStore();
@@ -239,9 +338,7 @@
         }
       }
     }
-    const r = await fetch(url, { mode: 'cors' });
-    if (!r.ok) throw new Error('HTTP ' + r.status + ' ' + url);
-    const blob = await r.blob();
+    const blob = await download(url);
     if (S) {
       S.cache.put(url, new Response(blob, { headers: { 'Content-Type': blob.type || 'application/octet-stream' } })).catch(() => {});
       // tiles are found again from their key; anything else keeps its url

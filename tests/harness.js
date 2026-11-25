@@ -67,7 +67,7 @@ function mockElement() {
   return el;
 }
 
-/** A fresh sandbox each call. Pass o.localStorage to keep saved data across loads (a "reload"). */
+/** A fresh sandbox each call. Pass o.localStorage to keep saved data across loads (a "reload"), o.fetch to serve requests. */
 function load(o) {
   o = o || {};
   const noop = () => {};
@@ -95,6 +95,7 @@ function load(o) {
     devicePixelRatio: 1,
     TextDecoder,
     TextEncoder,
+    fetch: o.fetch, // undefined unless a test serves the network
   };
   sandbox.window = sandbox;
   vm.createContext(sandbox);

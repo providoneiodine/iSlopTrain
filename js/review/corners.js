@@ -1,6 +1,7 @@
 /*
  * Corner numbers for known circuits, from Lovely Track Data (github.com/Lovely-Sim-Racing/lovely-track-data),
- * fetched with the Map option and cached in localStorage. Without a match the map keeps
+ * read from the site's own copy in data/tracks/lovely/ when it has one (scripts/bundle-tracks.js --corners), else
+ * fetched from GitHub with the Map option, and cached in localStorage. Without a match the map keeps
  * the app's own corners found from braking zones (compare.js).
  *
  *   IST.Review.Corners.lookup({ id, name, len }) -> Promise<[{ start, end, name }] | null>   by iRacing TrackName ('spa 2024 combined'),
@@ -16,7 +17,7 @@
 (function () {
   'use strict';
   IST.Review = IST.Review || {};
-  const BASE = 'https://raw.githubusercontent.com/Lovely-Sim-Racing/lovely-track-data/main/data/';
+  const BASE = 'https://raw.githubusercontent.com/Lovely-Sim-Racing/lovely-track-data/main/data/', LOCAL = 'data/tracks/lovely/';
   const KEY = 'isloptrain.review.corners', MAX = 40, DAYS = 30, MISS_DAYS = 7;
 
   const read = () => {
@@ -62,8 +63,14 @@
     return C.length ? hit / C.length + hit * 0.01 : 0;
   }
 
-  async function turnsOf(path) {
-    const d = await get(BASE + path);
+  async function turnsOf(base, path) {
+    let d;
+    try {
+      d = await get(base + path);
+    } catch (e) {
+      if (base === BASE) throw e;
+      d = await get(BASE + path);
+    }
     const turns = (d.turn || []).filter((t) => isFinite(t.start) && isFinite(t.end)).map((t) => ({ start: +t.start, end: +t.end, name: String(t.name || '') }));
     return { turns: turns.length ? turns : null, len: +d.length || 0 };
   }
@@ -80,19 +87,24 @@
     c.tracks = c.tracks || {};
     const hit = c.tracks[key];
     if (fresh(hit, hit && hit.turns ? DAYS : MISS_DAYS)) return hit.turns;
-    if (!fresh(c.manifest, DAYS) || !c.manifest.ir[0] || c.manifest.ir[0].length < 3) {
-      const m = await get(BASE + 'manifest.json');
-      c.manifest = { t: Date.now(), ir: ((m.tracks && m.tracks.iracing) || []).map((x) => [clean(x.trackId), x.path, String(x.trackName || '')]) };
+    if (!fresh(c.manifest, DAYS) || !c.manifest.base || !c.manifest.ir[0] || c.manifest.ir[0].length < 3) {
+      let base = LOCAL, m;
+      try {
+        m = await get(LOCAL + 'manifest.json');
+      } catch (e) {
+        (base = BASE), (m = await get(BASE + 'manifest.json'));
+      }
+      c.manifest = { t: Date.now(), base, ir: ((m.tracks && m.tracks.iracing) || []).map((x) => [clean(x.trackId), x.path, String(x.trackName || '')]) };
     }
     let turns = null;
     const row = id && c.manifest.ir.find((x) => x[0] === id);
-    if (row) turns = (await turnsOf(row[1])).turns;
+    if (row) turns = (await turnsOf(c.manifest.base, row[1])).turns;
     else if (q.name) {
       const ranked = c.manifest.ir.map((x) => ({ x, s: score(q.name, x[2]) })).filter((r) => r.s >= 0.6).sort((a, b) => b.s - a.s);
       const top = ranked.filter((r) => r.s >= ranked[0].s - 0.15).slice(0, 3);
       let best = null;
       for (const r of top) {
-        const d = await turnsOf(r.x[1]);
+        const d = await turnsOf(c.manifest.base, r.x[1]);
         if (!d.turns) continue;
         const off = q.len && d.len ? Math.abs(d.len - q.len) / q.len : 0;
         if (off > 0.04) continue; // a different layout of the same circuit

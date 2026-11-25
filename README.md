@@ -70,7 +70,7 @@ Controls: arrows / WASD to answer, Space / Enter to confirm, Esc to pause, **F**
 
 ## Review tab: 3D lap viewer (proof of concept)
 
-**Review → Lap Viewer** opens telemetry from a sim and draws the laps on a 3D track map. Files are read in the browser (in a Web Worker for big files); telemetry is never uploaded or saved. With **Map** on, the track's location (or, for sims without GPS, its name) is sent to OpenStreetMap and Esri for the real track centreline and satellite ground; lines that clip an apex then show off centre.
+**Review → Lap Viewer** opens telemetry from a sim and draws the laps on a 3D track map. Files are read in the browser (in a Web Worker for big files); telemetry is never uploaded or saved. With **Map** on, the track's location (or, for sims without GPS, its name) is sent to OpenStreetMap and Esri for the real track centreline and satellite ground (common iRacing circuits come bundled in [data/tracks](data/tracks/README.md), so only the imagery is fetched for those); lines that clip an apex then show off centre.
 
 - **Formats:** iRacing `.ibt`, MoTeC `.ld` (drop the matching `.ldx` with it for lap markers), and CSV (MoTeC i2 export, Garage 61, SimHub and others; columns are matched by name and units converted). **Try a demo session** generates one if you have no file to hand.
 - **Conditions:** a foldable panel at the top of the side column lists the compared laps' track and air temperature, wetness, rain, rubber, wind, humidity and sky, from `.ibt`, Garage 61 or CSV, and flags the ones that differ enough to matter.

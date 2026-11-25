@@ -1,0 +1,1125 @@
+{
+ "v": 1,
+ "built": "2026-11-25",
+ "circuits": [
+  {
+   "id": "adelaide",
+   "name": "Adelaide Street Circuit",
+   "lat": -34.9275,
+   "lon": 138.617,
+   "r": 3500,
+   "ids": [
+    "adelaide"
+   ],
+   "names": [
+    "Adelaide Street Circuit"
+   ],
+   "osm": true,
+   "km": 1.4
+  },
+  {
+   "id": "algarve",
+   "name": "Autodromo Internacional do Algarve",
+   "lat": 37.227,
+   "lon": -8.6267,
+   "r": 3500,
+   "ids": [
+    "algarve-gp"
+   ],
+   "names": [
+    "Autodromo Internacional do Algarve"
+   ],
+   "osm": true,
+   "km": 9.6
+  },
+  {
+   "id": "barber",
+   "name": "Barber Motorsports Park",
+   "lat": 33.5322,
+   "lon": -86.6186,
+   "r": 3500,
+   "ids": [],
+   "names": [
+    "Barber Motorsports Park",
+    "Barber Motorsports Park - Full Course"
+   ],
+   "osm": true,
+   "km": 3.7
+  },
+  {
+   "id": "barcelona",
+   "name": "Circuit de Barcelona-Catalunya",
+   "lat": 41.57,
+   "lon": 2.2611,
+   "r": 3500,
+   "ids": [
+    "barcelona-gp",
+    "barcelona-historic"
+   ],
+   "names": [
+    "Circuit de Barcelona-Catalunya",
+    "Circuit de Barcelona-Catalunya - GP",
+    "Barcelona Historic"
+   ],
+   "osm": true,
+   "km": 14.2
+  },
+  {
+   "id": "bathurst",
+   "name": "Mount Panorama Circuit",
+   "lat": -33.4447,
+   "lon": 149.5575,
+   "r": 3500,
+   "ids": [
+    "bathurst"
+   ],
+   "names": [
+    "Mount Panorama Circuit"
+   ],
+   "osm": true,
+   "km": 6.2
+  },
+  {
+   "id": "brandshatch",
+   "name": "Brands Hatch Circuit",
+   "lat": 51.3569,
+   "lon": 0.2614,
+   "r": 3500,
+   "ids": [
+    "brandshatch-grandprix"
+   ],
+   "names": [
+    "Brands Hatch Circuit",
+    "Brands Hatch GP"
+   ],
+   "osm": true,
+   "km": 7
+  },
+  {
+   "id": "cadwell",
+   "name": "Cadwell Park Circuit",
+   "lat": 53.3108,
+   "lon": -0.0603,
+   "r": 3500,
+   "ids": [
+    "cadwell-club",
+    "cadwell-full",
+    "cadwell-moto",
+    "cadwell-woodlands"
+   ],
+   "names": [
+    "Cadwell Park Circuit",
+    "Cadwell Park Circuit - Club",
+    "Cadwell Park Circuit - Full",
+    "Cadwell Park Circuit - Moto",
+    "Cadwell Park Circuit - Woodlands"
+   ],
+   "osm": true,
+   "km": 3.6
+  },
+  {
+   "id": "canadiantire",
+   "name": "Canadian Tire Motorsport Park",
+   "lat": 44.0481,
+   "lon": -78.6756,
+   "r": 3500,
+   "ids": [],
+   "names": [
+    "Canadian Tire Motorsport Park"
+   ],
+   "osm": true,
+   "km": 9.4
+  },
+  {
+   "id": "charlotte",
+   "name": "Charlotte Motor Speedway",
+   "lat": 35.3523,
+   "lon": -80.6831,
+   "r": 3500,
+   "ids": [
+    "charlotte-2018-2019-roval"
+   ],
+   "names": [
+    "Charlotte Motor Speedway",
+    "Charlotte Motor Speedway - Roval"
+   ],
+   "osm": true,
+   "km": 16.6
+  },
+  {
+   "id": "cota",
+   "name": "Circuit of the Americas",
+   "lat": 30.1328,
+   "lon": -97.6411,
+   "r": 3500,
+   "ids": [
+    "cota-gp"
+   ],
+   "names": [
+    "Circuit of the Americas"
+   ],
+   "osm": true,
+   "km": 7.3
+  },
+  {
+   "id": "daytona",
+   "name": "Daytona International Speedway",
+   "lat": 29.1852,
+   "lon": -81.0705,
+   "r": 3500,
+   "ids": [
+    "daytona-2011-road"
+   ],
+   "names": [
+    "Daytona International Speedway",
+    "Daytona"
+   ],
+   "osm": true,
+   "km": 8.9
+  },
+  {
+   "id": "donington",
+   "name": "Donington Park Racing Circuit",
+   "lat": 52.8306,
+   "lon": -1.375,
+   "r": 3500,
+   "ids": [
+    "donington-gp",
+    "donington-national"
+   ],
+   "names": [
+    "Donington Park Racing Circuit",
+    "Donington Park Racing Circuit - GP",
+    "Donington Park Racing Circuit - National"
+   ],
+   "osm": true,
+   "km": 4.2
+  },
+  {
+   "id": "fuji",
+   "name": "Fuji International Speedway",
+   "lat": 35.3717,
+   "lon": 138.9272,
+   "r": 3500,
+   "ids": [],
+   "names": [
+    "Fuji International Speedway",
+    "Fuji International Speedway - Grand Prix"
+   ],
+   "osm": true,
+   "km": 9.2
+  },
+  {
+   "id": "hockenheim",
+   "name": "Hockenheimring Baden-Württemberg",
+   "lat": 49.3278,
+   "lon": 8.5658,
+   "r": 3500,
+   "ids": [
+    "hockenheim-gp",
+    "hockenheim-nationala",
+    "hockenheim-nationalb",
+    "hockenheim-outer",
+    "hockenheim-pec-peceast",
+    "hockenheim-pec-pechandling",
+    "hockenheim-pec-pecouter",
+    "hockenheim-pec-pecwest",
+    "hockenheim-shorta",
+    "hockenheim-shortb"
+   ],
+   "names": [
+    "Hockenheimring Baden-Württemberg",
+    "Hockenheimring - GP",
+    "Hockenheimring Baden-Württemberg - National A",
+    "Hockenheimring Baden-Württemberg - National B",
+    "Hockenheimring Baden-Württemberg - Outer",
+    "Hockenheimring Baden-Württemberg - Porsche Experience Center - East",
+    "Hockenheimring Baden-Württemberg - Porsche Experience Center - Handling",
+    "Hockenheimring Baden-Württemberg - Porsche Experience Center - Outer",
+    "Hockenheimring Baden-Württemberg - Porsche Experience Center - West",
+    "Hockenheimring Baden-Württemberg - Short A",
+    "Hockenheimring Baden-Württemberg - Short B"
+   ],
+   "osm": true,
+   "km": 8.4
+  },
+  {
+   "id": "hungaroring",
+   "name": "Hungaroring",
+   "lat": 47.5789,
+   "lon": 19.2486,
+   "r": 3500,
+   "ids": [],
+   "names": [
+    "Hungaroring",
+    "Hungaroring - Grand Prix"
+   ],
+   "osm": true,
+   "km": 6.4
+  },
+  {
+   "id": "imola",
+   "name": "Autodromo Internazionale Enzo e Dino Ferrari",
+   "lat": 44.3439,
+   "lon": 11.7167,
+   "r": 3500,
+   "ids": [
+    "imola-gp"
+   ],
+   "names": [
+    "Autodromo Internazionale Enzo e Dino Ferrari",
+    "Imola"
+   ],
+   "osm": true,
+   "km": 5.3
+  },
+  {
+   "id": "indianapolis",
+   "name": "Indianapolis Motor Speedway",
+   "lat": 39.795,
+   "lon": -86.2347,
+   "r": 3500,
+   "ids": [
+    "indianapolis-2022-road"
+   ],
+   "names": [
+    "Indianapolis Motor Speedway",
+    "Indianapolis Motor Speedway - Road Course"
+   ],
+   "osm": true,
+   "km": 11.1
+  },
+  {
+   "id": "interlagos",
+   "name": "Autódromo José Carlos Pace",
+   "lat": -23.7036,
+   "lon": -46.6997,
+   "r": 3500,
+   "ids": [
+    "interlagos-gp"
+   ],
+   "names": [
+    "Autódromo José Carlos Pace",
+    "Interlagos GP"
+   ],
+   "osm": true,
+   "km": 6.5
+  },
+  {
+   "id": "jerez",
+   "name": "Circuito de Jerez",
+   "lat": 36.7083,
+   "lon": -6.0342,
+   "r": 3500,
+   "ids": [
+    "jerez-gp",
+    "jerez-moto"
+   ],
+   "names": [
+    "Circuito de Jerez",
+    "Circuito de Jerez - GP",
+    "Circuito de Jerez - Moto"
+   ],
+   "osm": true,
+   "km": 6.5
+  },
+  {
+   "id": "knockhill",
+   "name": "Knockhill Racing Circuit",
+   "lat": 56.13,
+   "lon": -3.507,
+   "r": 3500,
+   "ids": [],
+   "names": [
+    "Knockhill Racing Circuit",
+    "Knockhill Racing Circuit - International"
+   ],
+   "osm": true,
+   "km": 3.1
+  },
+  {
+   "id": "kyalami",
+   "name": "Kyalami Grand Prix Circuit",
+   "lat": -25.9958,
+   "lon": 28.0697,
+   "r": 3500,
+   "ids": [],
+   "names": [
+    "Kyalami Grand Prix Circuit"
+   ],
+   "osm": true,
+   "km": 5.6
+  },
+  {
+   "id": "lagunaseca",
+   "name": "WeatherTech Raceway Laguna Seca",
+   "lat": 36.5844,
+   "lon": -121.7533,
+   "r": 3500,
+   "ids": [
+    "lagunaseca-school",
+    "lagunaseca"
+   ],
+   "names": [
+    "WeatherTech Raceway Laguna Seca",
+    "Laguna Seca - School",
+    "Laguna Seca - Full Course"
+   ],
+   "osm": true,
+   "km": 3.6
+  },
+  {
+   "id": "ledenon",
+   "name": "Circuit de Lédenon",
+   "lat": 43.9236,
+   "lon": 4.505,
+   "r": 3500,
+   "ids": [
+    "ledenon"
+   ],
+   "names": [
+    "Circuit de Lédenon",
+    "Circuit de Ledenon"
+   ],
+   "osm": true,
+   "km": 6.4
+  },
+  {
+   "id": "lemans",
+   "name": "Circuit des 24 Heures du Mans",
+   "lat": 47.935,
+   "lon": 0.215,
+   "r": 7500,
+   "ids": [
+    "lemans-full",
+    "lemans-nochicane"
+   ],
+   "names": [
+    "Circuit des 24 Heures du Mans"
+   ],
+   "osm": true,
+   "km": 18.5
+  },
+  {
+   "id": "limerock",
+   "name": "Lime Rock Park",
+   "lat": 41.9283,
+   "lon": -73.3836,
+   "r": 3500,
+   "ids": [
+    "limerock-2019-chicanes",
+    "limerock-2019-chicanewestb",
+    "limerock-2019-classic",
+    "limerock-2019-gp",
+    "limerock-2019-school"
+   ],
+   "names": [
+    "Lime Rock Park",
+    "Lime Rock Park - Chicanes",
+    "Lime Rock Park - West Bend Chicane",
+    "Limerock GP",
+    "Lime Rock Park - School"
+   ],
+   "osm": true,
+   "km": 4.3
+  },
+  {
+   "id": "longbeach",
+   "name": "Long Beach Street Circuit",
+   "lat": 33.765,
+   "lon": -118.189,
+   "r": 3500,
+   "ids": [
+    "longbeach"
+   ],
+   "names": [
+    "Long Beach Street Circuit",
+    "Longbeach"
+   ],
+   "osm": true,
+   "km": 0.3
+  },
+  {
+   "id": "magnycours",
+   "name": "Circuit de Nevers Magny-Cours",
+   "lat": 46.8642,
+   "lon": 3.1636,
+   "r": 3500,
+   "ids": [
+    "magnycours-gp"
+   ],
+   "names": [
+    "Circuit de Nevers Magny-Cours",
+    "Magny-Cours"
+   ],
+   "osm": true,
+   "km": 9.2
+  },
+  {
+   "id": "mexicocity",
+   "name": "Autódromo Hermanos Rodríguez",
+   "lat": 19.4042,
+   "lon": -99.0907,
+   "r": 3500,
+   "ids": [
+    "mexicocity-gp"
+   ],
+   "names": [
+    "Autódromo Hermanos Rodríguez",
+    "Autódromo Hermanos Rodríguez - Grand Prix"
+   ],
+   "osm": true,
+   "km": 6.5
+  },
+  {
+   "id": "midohio",
+   "name": "Mid-Ohio Sports Car Course",
+   "lat": 40.6892,
+   "lon": -82.6364,
+   "r": 3500,
+   "ids": [],
+   "names": [
+    "Mid-Ohio Sports Car Course",
+    "Mid-Ohio Sports Car Course - Full Course"
+   ],
+   "osm": true,
+   "km": 4.1
+  },
+  {
+   "id": "misano",
+   "name": "Misano World Circuit Marco Simoncelli",
+   "lat": 43.9614,
+   "lon": 12.6833,
+   "r": 3500,
+   "ids": [
+    "misano-gp"
+   ],
+   "names": [
+    "Misano World Circuit Marco Simoncelli",
+    "Misano Grand Prix"
+   ],
+   "osm": true,
+   "km": 9.7
+  },
+  {
+   "id": "montreal",
+   "name": "Circuit Gilles Villeneuve",
+   "lat": 45.5,
+   "lon": -73.5228,
+   "r": 3500,
+   "ids": [
+    "montreal"
+   ],
+   "names": [
+    "Circuit Gilles Villeneuve"
+   ],
+   "osm": true,
+   "km": 5.2
+  },
+  {
+   "id": "monza",
+   "name": "Autodromo Nazionale Monza",
+   "lat": 45.6156,
+   "lon": 9.2811,
+   "r": 3500,
+   "ids": [
+    "monza-combinedchicanes",
+    "monza-full",
+    "monza-junior",
+    "monza-nochicane"
+   ],
+   "names": [
+    "Autodromo Nazionale Monza",
+    "Autodromo Nazionale Monza - Combined",
+    "Monza Full",
+    "Autodromo Nazionale Monza - Junior",
+    "Autodromo Nazionale Monza - GP without chicanes"
+   ],
+   "osm": true,
+   "km": 13.1
+  },
+  {
+   "id": "motegi",
+   "name": "Mobility Resort Motegi",
+   "lat": 36.5333,
+   "lon": 140.2272,
+   "r": 3500,
+   "ids": [
+    "twinring-east",
+    "twinring-fullrc",
+    "twinring-oval",
+    "twinring-west"
+   ],
+   "names": [
+    "Mobility Resort Motegi",
+    "Mobility Resort Motegi - East",
+    "Mobility Resort Motegi - Grand Prix",
+    "Mobility Resort Motegi - Oval",
+    "Mobility Resort Motegi - West"
+   ],
+   "osm": true,
+   "km": 11.1
+  },
+  {
+   "id": "mugello",
+   "name": "Autodromo Internazionale del Mugello",
+   "lat": 43.9975,
+   "lon": 11.3719,
+   "r": 3500,
+   "ids": [
+    "mugello-gp",
+    "mugello-short"
+   ],
+   "names": [
+    "Autodromo Internazionale del Mugello",
+    "Mugello Grand Prix",
+    "Autodromo Internazionale del Mugello - Short"
+   ],
+   "osm": true,
+   "km": 8.2
+  },
+  {
+   "id": "navarra",
+   "name": "Circuito de Navarra",
+   "lat": 42.563,
+   "lon": -2.163,
+   "r": 4500,
+   "ids": [
+    "navarra-speedlong",
+    "navara-speedmedium",
+    "navarra-speedshort"
+   ],
+   "names": [
+    "Circuito de Navarra",
+    "Circuito de Navarra Speed Circuit Long",
+    "Circuito de Navarra - Speed Circuit - Medium",
+    "Circuito de Navarra - Speed Circuit - Short"
+   ],
+   "osm": true,
+   "km": 15.3
+  },
+  {
+   "id": "nurburgring",
+   "name": "Nürburgring",
+   "lat": 50.36,
+   "lon": 6.96,
+   "r": 9000,
+   "ids": [
+    "nurburgring-combined",
+    "nurburgring-gp",
+    "nurburgring-gpnochicane",
+    "nurburgring-gpshort",
+    "nurburgring-nordschleife"
+   ],
+   "names": [
+    "Nürburgring",
+    "Nuerburgring Gesamtstrecke 24h",
+    "Nuerburgring Grand-Prix-Strecke - Grand Prix",
+    "Nuerburgring Grand-Prix-Strecke - BES/WEC",
+    "Nuerburgring Grand-Prix-Strecke - Grand Prix w/out Arena",
+    "Nuerburgring Nordschleife"
+   ],
+   "osm": true,
+   "km": 29.4
+  },
+  {
+   "id": "okayama",
+   "name": "Okayama International Circuit",
+   "lat": 34.9147,
+   "lon": 134.2211,
+   "r": 3500,
+   "ids": [
+    "okayama-full",
+    "okayama-short"
+   ],
+   "names": [
+    "Okayama International Circuit",
+    "Okayama Full Course",
+    "Okayama International Circuit - Short"
+   ],
+   "osm": true,
+   "km": 5.5
+  },
+  {
+   "id": "oran",
+   "name": "Oran Park Raceway",
+   "lat": -34.008,
+   "lon": 150.727,
+   "r": 3500,
+   "ids": [
+    "oran-gp",
+    "oran-moto",
+    "oran-north",
+    "oran-northa",
+    "oran-northb",
+    "oran-south"
+   ],
+   "names": [
+    "Oran Park Raceway",
+    "Oran Park Raceway - GP",
+    "Oran Park Raceway - Moto",
+    "Oran Park Raceway - North",
+    "Oran Park Raceway - North A",
+    "Oran Park Raceway - North B",
+    "Oran Park Raceway - South"
+   ],
+   "osm": false,
+   "km": 0
+  },
+  {
+   "id": "oschersleben",
+   "name": "Motorsport Arena Oschersleben",
+   "lat": 52.0272,
+   "lon": 11.28,
+   "r": 3500,
+   "ids": [
+    "oschersleben-alt",
+    "oschersleben-bcourse",
+    "oschersleben-ccourse",
+    "oschersleben-gp"
+   ],
+   "names": [
+    "Motorsport Arena Oschersleben",
+    "Motorsport Arena Oschersleben - Alternate",
+    "Motorsport Arena Oschersleben - B Course",
+    "Motorsport Arena Oschersleben - C Course",
+    "Motorsport Arena Oschersleben - Grand Prix"
+   ],
+   "osm": true,
+   "km": 6.5
+  },
+  {
+   "id": "oulton",
+   "name": "Oulton Park Circuit",
+   "lat": 53.18,
+   "lon": -2.6131,
+   "r": 3500,
+   "ids": [
+    "oulton-fosters",
+    "oulton-fosterswithhislop",
+    "outlon-intbrittens",
+    "oulton-international",
+    "oulton-inthislop",
+    "oulton-intnochicane",
+    "oulton-islandhistoric",
+    "oulton-island"
+   ],
+   "names": [
+    "Oulton Park Circuit",
+    "Oulton Park Circuit - Fosters",
+    "Oulton Park Circuit - Intl w/out Hislop",
+    "Oulton Park Circuit - Intl w/out Brittens",
+    "Oulton Park Circuit - International",
+    "Oulton Park intl w/out Brittens",
+    "Oulton Park Circuit - Intl w/no Chicanes",
+    "Oulton Park Circuit - Island Historic",
+    "Oulton Park Circuit - Island"
+   ],
+   "osm": true,
+   "km": 6.1
+  },
+  {
+   "id": "phillipisland",
+   "name": "Phillip Island Circuit",
+   "lat": -38.5047,
+   "lon": 145.2333,
+   "r": 3500,
+   "ids": [
+    "phillipisland"
+   ],
+   "names": [
+    "Phillip Island Circuit"
+   ],
+   "osm": true,
+   "km": 5.3
+  },
+  {
+   "id": "portland",
+   "name": "Portland International Raceway",
+   "lat": 45.595,
+   "lon": -122.6939,
+   "r": 3500,
+   "ids": [],
+   "names": [
+    "Portland International Raceway"
+   ],
+   "osm": true,
+   "km": 4.7
+  },
+  {
+   "id": "roadamerica",
+   "name": "Road America",
+   "lat": 43.7972,
+   "lon": -87.9894,
+   "r": 3500,
+   "ids": [
+    "roadamerica-2026-bend",
+    "roadamerica-2026-full",
+    "roadamerica-bend",
+    "roadamerica-full"
+   ],
+   "names": [
+    "Road America",
+    "Road America 2026 Bend",
+    "Road America 2026 Full Course",
+    "Road America Bend",
+    "Road America Full Course"
+   ],
+   "osm": true,
+   "km": 8.6
+  },
+  {
+   "id": "roadatlanta",
+   "name": "Michelin Raceway Road Atlanta",
+   "lat": 34.1458,
+   "lon": -83.8136,
+   "r": 3500,
+   "ids": [
+    "roadatlanta-full"
+   ],
+   "names": [
+    "Michelin Raceway Road Atlanta",
+    "Road Atlanta - Full Course"
+   ],
+   "osm": true,
+   "km": 6.4
+  },
+  {
+   "id": "rudskogen",
+   "name": "Rudskogen Motorsenter",
+   "lat": 59.365,
+   "lon": 11.26,
+   "r": 3500,
+   "ids": [
+    "rudskogen"
+   ],
+   "names": [
+    "Rudskogen Motorsenter"
+   ],
+   "osm": true,
+   "km": 6.4
+  },
+  {
+   "id": "sachsenring",
+   "name": "Sachsenring",
+   "lat": 50.7914,
+   "lon": 12.6883,
+   "r": 3500,
+   "ids": [
+    "sachsenring"
+   ],
+   "names": [
+    "Sachsenring"
+   ],
+   "osm": true,
+   "km": 4.4
+  },
+  {
+   "id": "sandown",
+   "name": "Sandown International Raceway",
+   "lat": -37.9494,
+   "lon": 145.1667,
+   "r": 3500,
+   "ids": [],
+   "names": [
+    "Sandown International Raceway"
+   ],
+   "osm": true,
+   "km": 3.4
+  },
+  {
+   "id": "sebring",
+   "name": "Sebring International Raceway",
+   "lat": 27.4547,
+   "lon": -81.3483,
+   "r": 3500,
+   "ids": [
+    "sebring-club",
+    "sebring-international",
+    "sebring-modified"
+   ],
+   "names": [
+    "Sebring International Raceway",
+    "Sebring International Raceway - Club",
+    "Sebring Int. Raceway",
+    "Sebring International Raceway - Modified"
+   ],
+   "osm": true,
+   "km": 7.5
+  },
+  {
+   "id": "silverstone",
+   "name": "Silverstone Circuit",
+   "lat": 52.0786,
+   "lon": -1.0169,
+   "r": 3500,
+   "ids": [
+    "silverstone-2019-gp"
+   ],
+   "names": [
+    "Silverstone Circuit",
+    "Silverstone Circuit - Arena Grand Prix"
+   ],
+   "osm": true,
+   "km": 17.9
+  },
+  {
+   "id": "snetterton",
+   "name": "Snetterton Circuit",
+   "lat": 52.4636,
+   "lon": 0.9456,
+   "r": 3500,
+   "ids": [
+    "snetterton-100",
+    "snetterton-200",
+    "snetterton-300"
+   ],
+   "names": [
+    "Snetterton Circuit",
+    "Snetterton Circuit - 100",
+    "Snetterton Circuit - 200",
+    "Snetterton 300 Circuit"
+   ],
+   "osm": true,
+   "km": 4.9
+  },
+  {
+   "id": "sonoma",
+   "name": "Sonoma Raceway",
+   "lat": 38.1611,
+   "lon": -122.4547,
+   "r": 3500,
+   "ids": [],
+   "names": [
+    "Sonoma Raceway"
+   ],
+   "osm": true,
+   "km": 7.8
+  },
+  {
+   "id": "spa",
+   "name": "Circuit de Spa-Francorchamps",
+   "lat": 50.4372,
+   "lon": 5.9714,
+   "r": 3500,
+   "ids": [
+    "spa-2024-combined",
+    "spa-2024-low",
+    "spa-2024-up",
+    "spa-combined",
+    "spa-low",
+    "spa-up"
+   ],
+   "names": [
+    "Circuit de Spa-Francorchamps",
+    "Spa Endurance",
+    "Spa Classic Pits",
+    "Spa Grand Prix Pits",
+    "Spa Endurance - 2010",
+    "Spa Classic Pits - 2010",
+    "Spa Grand Prix Pits - 2010"
+   ],
+   "osm": true,
+   "km": 8.3
+  },
+  {
+   "id": "spielberg",
+   "name": "Red Bull Ring",
+   "lat": 47.2197,
+   "lon": 14.7647,
+   "r": 3500,
+   "ids": [
+    "spielberg-gp",
+    "spielberg-national",
+    "speilberg-north"
+   ],
+   "names": [
+    "Red Bull Ring",
+    "Red Bull Ring - GP",
+    "Red Bull Ring - National",
+    "Red Bull Ring - North"
+   ],
+   "osm": true,
+   "km": 9.1
+  },
+  {
+   "id": "summit",
+   "name": "Summit Point Motorsports Park",
+   "lat": 39.2333,
+   "lon": -77.9747,
+   "r": 3500,
+   "ids": [
+    "summit-jefferson-rev",
+    "summit-jefferson",
+    "summit-summit-raceway-school",
+    "summit-summit-raceway",
+    "summit-summit-short"
+   ],
+   "names": [
+    "Summit Point Motorsports Park",
+    "Summit Point Raceway - Jefferson Circuit Reverse",
+    "Summit Point Raceway - Jefferson Circuit",
+    "Summit Point Raceway - School",
+    "Summit Point Raceway",
+    "Summit Point Raceway - Short"
+   ],
+   "osm": true,
+   "km": 15.3
+  },
+  {
+   "id": "suzuka",
+   "name": "Suzuka International Racing Course",
+   "lat": 34.8431,
+   "lon": 136.5411,
+   "r": 3500,
+   "ids": [
+    "suzuka-grandprix"
+   ],
+   "names": [
+    "Suzuka International Racing Course",
+    "Suzuka Int Racing Course - GP"
+   ],
+   "osm": true,
+   "km": 10.4
+  },
+  {
+   "id": "tsukuba",
+   "name": "Tsukuba Circuit",
+   "lat": 36.15,
+   "lon": 139.9208,
+   "r": 3500,
+   "ids": [
+    "tsukuba-1kchicane",
+    "tsukuba-1kfull",
+    "tsukuba-1kfullreverse",
+    "tsukuba-1kouter",
+    "tsukuba-2kchicane",
+    "tsukuba-2kfull",
+    "tsukuba-2kshort"
+   ],
+   "names": [
+    "Tsukuba Circuit",
+    "Tsukuba Circuit - 1000 Chicane",
+    "Tsukuba Circuit - 1000 Full",
+    "Tsukuba Circuit - 1000 Full Reverse",
+    "Tsukuba Circuit - 1000 Outer",
+    "Tsukuba Circuit - 2000 Moto",
+    "Tsukuba Circuit - 2000 Full",
+    "Tsukuba Circuit - 2000 Short"
+   ],
+   "osm": true,
+   "km": 7.5
+  },
+  {
+   "id": "virginia",
+   "name": "Virginia International Raceway",
+   "lat": 36.5683,
+   "lon": -79.2064,
+   "r": 3500,
+   "ids": [
+    "virginia-2022-full",
+    "virginia-2022-grand",
+    "virginia-2022-north",
+    "virginia-2022-patriot",
+    "virginia-2022-south"
+   ],
+   "names": [
+    "Virginia International Raceway",
+    "Virginia International Raceway - Full Course",
+    "Virginia International Raceway - Grand West Course",
+    "Virginia International Raceway - North Course",
+    "Virginia International Raceway - Patriot Course",
+    "Virginia International Raceway - South Course"
+   ],
+   "osm": true,
+   "km": 13.5
+  },
+  {
+   "id": "watkinsglen",
+   "name": "Watkins Glen International",
+   "lat": 42.3369,
+   "lon": -76.9272,
+   "r": 3500,
+   "ids": [
+    "watkinsglen-2021-classic",
+    "watkinsglen-2021-cupcircuit",
+    "watkinsglen-2021-fullcourse",
+    "watkinsglen-2021-fullnoloop"
+   ],
+   "names": [
+    "Watkins Glen International",
+    "Watkins Glen International - Classic",
+    "Watkins Glen International - Cup",
+    "Watkins Glen",
+    "Watkins Glen International - Classic Boot"
+   ],
+   "osm": true,
+   "km": 6.1
+  },
+  {
+   "id": "willowsprings",
+   "name": "Willow Springs International Raceway",
+   "lat": 34.8717,
+   "lon": -118.2636,
+   "r": 3500,
+   "ids": [],
+   "names": [
+    "Willow Springs International Raceway"
+   ],
+   "osm": true,
+   "km": 12.7
+  },
+  {
+   "id": "winton",
+   "name": "Winton Motor Raceway",
+   "lat": -36.516,
+   "lon": 146.087,
+   "r": 3500,
+   "ids": [
+    "winton-club",
+    "winton-national"
+   ],
+   "names": [
+    "Winton Motor Raceway",
+    "Winton Motor Raceway - Club Circuit",
+    "Winton National"
+   ],
+   "osm": true,
+   "km": 4.7
+  },
+  {
+   "id": "zandvoort",
+   "name": "Circuit Zandvoort",
+   "lat": 52.3888,
+   "lon": 4.5409,
+   "r": 3500,
+   "ids": [
+    "zandvoort-2023-gp"
+   ],
+   "names": [
+    "Circuit Zandvoort",
+    "Circuit Zandvoort - GP"
+   ],
+   "osm": true,
+   "km": 4.5
+  },
+  {
+   "id": "zolder",
+   "name": "Circuit Zolder",
+   "lat": 50.9906,
+   "lon": 5.2564,
+   "r": 3500,
+   "ids": [
+    "zolder-alt",
+    "zolder-gp"
+   ],
+   "names": [
+    "Circuit Zolder",
+    "Zolder Circuit - Alternate",
+    "Zolder Circuit - Grand Prix"
+   ],
+   "osm": true,
+   "km": 4.1
+  }
+ ]
+}
