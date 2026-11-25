@@ -21,7 +21,7 @@ const path = require('node:path');
 
 const ROOT = path.join(__dirname, '..');
 const OUT = path.join(ROOT, 'data', 'tracks');
-const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter'];
+const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
 const LTD = 'https://raw.githubusercontent.com/Lovely-Sim-Racing/lovely-track-data/main/data/';
 const UA = { 'User-Agent': 'isloptrain-track-bundler/1 (static site build script)' };
 const R_DEFAULT = 3500;
@@ -72,14 +72,17 @@ const metres = (a, b) => {
 
 /**
  * Raceways around a point, filtered exactly as mapdata.js does live. A street or public-road
- * circuit (Bathurst, Adelaide) also takes the public roads it's made of, by their OSM names.
+ * circuit (Bathurst, Long Beach, Le Mans) also takes the roads it's made of, by OSM name or ref,
+ * cut to its clip box and with dead ends trimmed (see loopsOnly).
  */
-async function raceways(lat, lon, r, roads) {
-  const near = '(around:' + r + ',' + lat + ',' + lon + ')';
+async function raceways(lat, lon, r, roads, clip) {
+  const near = clip ? '(' + clip.join(',') + ')' : '(around:' + r + ',' + lat + ',' + lon + ')';
+  const ring = '(around:' + r + ',' + lat + ',' + lon + ')';
   // anything but letters, digits, spaces, hyphens and apostrophes matches as any character
   const esc = (n) => n.replace(/[^\w '-]/g, '.');
-  const named = roads && roads.length ? 'way["highway"]["name"~"^(' + roads.map(esc).join('|') + ')$"]' + near + ';' : '';
-  const q = '[out:json][timeout:60];(way["highway"="raceway"]' + near + ';' + named + ');out tags geom;';
+  const any = roads && roads.length ? '"~"^(' + roads.map(esc).join('|') + ')$"]' + near + ';' : '';
+  const named = any ? 'way["highway"]["name' + any + 'way["highway"]["ref' + any : '';
+  const q = '[out:json][timeout:60];(way["highway"="raceway"]' + ring + ';' + named + ');out tags geom;';
   let last;
   for (let attempt = 0; attempt < 3; attempt++) {
     // every mirror at once, first answer wins (as mapdata.js does), the others cancelled
@@ -90,14 +93,16 @@ async function raceways(lat, lon, r, roads) {
         if (!r.ok) throw new Error('HTTP ' + r.status + ' ' + url);
         return r.json();
       }));
-      return (res.elements || [])
+      const ways = (res.elements || [])
         .filter((e) => e.type === 'way' && e.geometry && e.geometry.length > 1)
         .filter((e) => {
           const t = e.tags || {};
-          // a named road was asked for by name, so Bathurst's Pit Straight stays
-          return t.highway !== 'raceway' || (t.area !== 'yes' && !/pit/i.test(t.name || '') && t.service !== 'repair' && t.service !== 'pit');
+          // a named road was asked for by name, so Bathurst's Pit Straight stays; footpaths and cycle lanes of the same name don't
+          if (t.highway !== 'raceway') return !NOT_ROAD.test(t.highway) && t.area !== 'yes';
+          return t.area !== 'yes' && !/pit/i.test(t.name || '') && t.service !== 'repair' && t.service !== 'pit';
         })
-        .map((e) => ({ pts: e.geometry.map((g) => [g.lat, g.lon]), width: parseFloat((e.tags || {}).width) || 0 }));
+        .map((e) => ({ pts: e.geometry.map((g) => [g.lat, g.lon]), width: parseFloat((e.tags || {}).width) || 0, road: e.tags.highway !== 'raceway' }));
+      return loopsOnly(clip ? clipRoads(ways, clip) : ways).map(({ pts, width }) => ({ pts, width }));
     } catch (e) {
       last = e;
     } finally {
@@ -106,6 +111,64 @@ async function raceways(lat, lon, r, roads) {
     await sleep(10000 * (attempt + 1));
   }
   throw last;
+}
+
+/** Road ways cut to the runs of their points inside the clip box [south, west, north, east]. */
+function clipRoads(ways, [s, w, n, e]) {
+  const inside = (p) => p[0] >= s && p[0] <= n && p[1] >= w && p[1] <= e;
+  return ways.flatMap((x) => {
+    if (!x.road) return [x];
+    const runs = [];
+    let run = null;
+    x.pts.forEach((p) => {
+      if (!inside(p)) return (run = null);
+      if (!run) runs.push((run = { pts: [], width: x.width, road: true }));
+      run.pts.push(p);
+    });
+    return runs.filter((r) => r.pts.length > 1);
+  });
+}
+
+const NOT_ROAD =/^(footway|cycleway|path|steps|pedestrian|bridleway|track|corridor|platform|proposed|construction)$/;
+
+/**
+ * The public roads trimmed to what can be part of a lap: a road segment that ends where nothing
+ * else carries on (past the clip box, a side road) is dropped, repeatedly, so only roads closing
+ * a loop with the raceways stay. A road end within 15 m of a raceway counts as joined to it.
+ */
+function loopsOnly(ways) {
+  if (!ways.some((w) => w.road)) return ways;
+  const key = (p) => p[0].toFixed(7) + ',' + p[1].toFixed(7);
+  const race = ways.filter((w) => !w.road).flatMap((w) => w.pts);
+  const anchored = (p) => race.some((q) => metres(p, q) < 15);
+  const deg = new Map(), bump = (p, d) => deg.set(key(p), (deg.get(key(p)) || 0) + d);
+  ways.forEach((w) => w.pts.forEach((p, i) => bump(p, (i > 0) + (i < w.pts.length - 1))));
+  const pin = new Set();
+  // segments still kept, per road way
+  const keep = ways.map((w) => (w.road ? w.pts.slice(1).map(() => true) : null));
+  for (let changed = true; changed; ) {
+    changed = false;
+    ways.forEach((w, k) => {
+      if (!w.road) return;
+      w.pts.slice(1).forEach((b, i) => {
+        if (!keep[k][i]) return;
+        const a = w.pts[i];
+        const loose = [a, b].some((p) => deg.get(key(p)) < 2 && !(pin.has(key(p)) || (anchored(p) && pin.add(key(p)))));
+        if (loose) (keep[k][i] = false), bump(a, -1), bump(b, -1), (changed = true);
+      });
+    });
+  }
+  const out = [];
+  ways.forEach((w, k) => {
+    if (!w.road) return out.push(w);
+    let run = null;
+    w.pts.slice(1).forEach((b, i) => {
+      if (!keep[k][i]) return (run = null);
+      if (!run) out.push((run = { pts: [w.pts[i]], width: w.width, road: true }));
+      run.pts.push(b);
+    });
+  });
+  return out;
 }
 
 async function main() {
@@ -151,7 +214,7 @@ async function main() {
     process.stdout.write(c.id.padEnd(16));
     let ways;
     try {
-      ways = await raceways(c.lat, c.lon, r, c.roads);
+      ways = await raceways(c.lat, c.lon, r, c.roads, c.clip);
     } catch (e) {
       // servers down for this one: keep what was there, run it again later
       console.log('failed (' + e.message + ')' + (prev ? ', kept the old data' : ', left out'));
@@ -201,7 +264,9 @@ function writeScript() {
   console.log('wrote ' + path.relative(ROOT, path.join(OUT, 'bundle.js')));
 }
 
-main().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((e) => {
+    console.error(e);
+    process.exit(1);
+  });
+} else module.exports = { loopsOnly, clipRoads };

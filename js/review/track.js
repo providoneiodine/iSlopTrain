@@ -18,8 +18,9 @@
  *     over 4 m (wrong track, or a layout the map doesn't have).
  *   IST.Review.Track.align(x, y, lines)
  *       -> { m, fitted, shift, med, cover } | null
- *     For GPS laps: a shift (ICP, translation only) onto the lines, kept when
- *     it's within 150 m and cuts the median miss by over half a metre.
+ *     For GPS laps: a shift (ICP, translation, plus a turn of up to 2° on laps
+ *     over 1.5 km across) onto the lines, kept when no point moves over 150 m
+ *     and it cuts the median miss by over half a metre.
  *     cover is the share of the lap within 25 m of a line; low means the GPS
  *     spot isn't the track the lap was driven on.
  *   IST.Review.Track.roadProbe(cx, cy, n, step), roadShift(probe, score), asphalt(r, g, b)
@@ -316,6 +317,12 @@
     return ds.length > src.length * 0.5 ? ds[ds.length >> 1] : Infinity;
   }
 
+  /** Diagonal of the points' bounding box, metres. */
+  const span = (pts) => {
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    pts.forEach((p) => ((x0 = Math.min(x0, p[0])), (x1 = Math.max(x1, p[0])), (y0 = Math.min(y0, p[1])), (y1 = Math.max(y1, p[1]))));
+    return Math.hypot(x1 - x0, y1 - y0);
+  };
   function align(x, y, lines) {
     if (!lines || !lines.length || x.length < 20) return null;
     const I = pointIndex(lines, 1, 40);
@@ -339,8 +346,16 @@
       ty += sy / k;
       if (Math.hypot(sx / k, sy / k) < 0.01) break;
     }
-    const m = [1, 0, 0, 1, tx, ty], shift = Math.hypot(tx, ty);
-    const med0 = medianMiss(I, src, id), med = medianMiss(I, src, m);
+    let m = [1, 0, 0, 1, tx, ty], med = medianMiss(I, src, m);
+    const med0 = medianMiss(I, src, id);
+    // a long lap whose GPS is turned a little about the origin (iRacing's Le Mans: 0.6°, 50 m off
+    // at Mulsanne) is pinned well enough to also take a small turn
+    if (med > 3 && span(src) > 1500) {
+      const r = icp(I, src, m, 40), turn = Math.abs(Math.atan2(r.m[2], r.m[0])) / DEG;
+      if (r.m[0] * r.m[3] - r.m[1] * r.m[2] > 0 && turn <= 2 && r.med < med - 0.5) (m = r.m), (med = r.med);
+    }
+    // how far the nudge moves the lap, at most
+    const shift = src.reduce((s, p) => Math.max(s, Math.hypot(apply(m, p)[0] - p[0], apply(m, p)[1] - p[1])), 0);
     // keep the nudge only when it's a clear improvement, close to where GPS put the lap
     const ok = med <= 6 && shift >= 1 && shift <= 150 && med < med0 - 0.5;
     const fitted = ok ? cover(I, src, m, 25) : 0;

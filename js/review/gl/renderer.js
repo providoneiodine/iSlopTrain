@@ -11,6 +11,8 @@
  *   R.draw(viewProj, eye, items, fog)  items: [{ mesh, lit, blend, depth, lift }]
  *                             or { mesh (texMesh), tex, tint ([r g b]), lift }: drawn
  *                             first, opaque, unlit (the satellite ground)
+ *                             back: drawn before everything with no depth, so anything
+ *                             (the satellite ground included) covers it (the ground plane)
  *   R.resize()                match the canvas to its CSS size x devicePixelRatio
  *   R.destroy()
  *
@@ -218,7 +220,31 @@
         gl.disable(gl.CULL_FACE);
         gl.disable(gl.BLEND);
         gl.depthMask(true);
+        const back = items.filter((i) => i.back);
+        items = items.filter((i) => !i.back);
         const texd = items.filter((i) => i.tex && i.mesh && i.mesh.count);
+        const plain = () => {
+          gl.useProgram(prog);
+          onlyAttribs([]);
+          gl.uniformMatrix4fv(U.uVP, false, vp);
+          gl.uniform3fv(U.uEye, eye);
+          gl.uniform2f(U.uFog, fog.near, fog.far);
+          gl.uniform3fv(U.uFogCol, bg);
+          gl.uniform1f(U.uAlpha, 1);
+          gl.enableVertexAttribArray(A.pos);
+          gl.enableVertexAttribArray(A.nrm);
+          gl.enableVertexAttribArray(A.col);
+        };
+        // the ground plane is only a backdrop, so nothing tests depth against it: it used to win
+        // over satellite tiles pushed back by their depth offset, far off on a flat circuit (Le Mans)
+        if (back.length) {
+          plain();
+          gl.disable(gl.DEPTH_TEST);
+          back.forEach((it) => pass(Object.assign({}, it, { noDepth: true, lift: 0 })));
+          gl.enable(gl.DEPTH_TEST);
+          gl.disable(gl.BLEND);
+          gl.depthMask(true);
+        }
         if (texd.length) {
           gl.useProgram(tprog);
           onlyAttribs([TA.pos, TA.uv]);
@@ -242,16 +268,7 @@
           });
         }
         items = items.filter((i) => !i.tex);
-        gl.useProgram(prog);
-        onlyAttribs([]);
-        gl.uniformMatrix4fv(U.uVP, false, vp);
-        gl.uniform3fv(U.uEye, eye);
-        gl.uniform2f(U.uFog, fog.near, fog.far);
-        gl.uniform3fv(U.uFogCol, bg);
-        gl.uniform1f(U.uAlpha, 1);
-        gl.enableVertexAttribArray(A.pos);
-        gl.enableVertexAttribArray(A.nrm);
-        gl.enableVertexAttribArray(A.col);
+        plain();
         // passthru: the body as usual, except where it hides it.xray.mesh (drawn already), where
         // only its nearest surface is drawn, at it.xray.alpha. The stencil holds those pixels.
         const xray = (it) => {
@@ -280,7 +297,7 @@
           gl.depthFunc(gl.LESS);
           gl.disable(gl.STENCIL_TEST);
         };
-        const pass = (it) => {
+        function pass(it) {
           if (!it.mesh || !it.mesh.count) return;
           gl.bindBuffer(gl.ARRAY_BUFFER, it.mesh.buf);
           gl.vertexAttribPointer(A.pos, 3, gl.FLOAT, false, STRIDE * 4, 0);
@@ -300,7 +317,7 @@
             gl.depthMask(!it.noDepth);
           }
           gl.drawArrays(it.mesh.mode, 0, it.mesh.count);
-        };
+        }
         items.filter((i) => !i.blend && !i.xray).forEach(pass);
         items.filter((i) => i.xray).forEach(xray);
         items.filter((i) => i.blend).forEach(pass);

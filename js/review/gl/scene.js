@@ -74,12 +74,12 @@
       const gx0 = B.x0 - ox - pad, gx1 = B.x1 - ox + pad, gz0 = -(B.y1 - oy) - pad, gz1 = -(B.y0 - oy) + pad;
       const V = GL.Verts(), c = GL.rgb(Th.deep);
       [[gx0, gz0], [gx1, gz0], [gx1, gz1], [gx0, gz0], [gx1, gz1], [gx0, gz1]].forEach((p) => V.push(p[0], groundY, p[1], 0, 1, 0, c));
-      add('tris', V, { lit: false });
+      add('tris', V, { lit: false, back: true });
       const G = GL.Verts(), gc = GL.rgb(Th.line);
       const sp = size > 2500 ? 100 : 50;
       for (let x = Math.ceil(gx0 / sp) * sp; x <= gx1; x += sp) G.push(x, groundY + 0.02, gz0, 0, 1, 0, gc, 0.55), G.push(x, groundY + 0.02, gz1, 0, 1, 0, gc, 0.55);
       for (let z = Math.ceil(gz0 / sp) * sp; z <= gz1; z += sp) G.push(gx0, groundY + 0.02, z, 0, 1, 0, gc, 0.55), G.push(gx1, groundY + 0.02, z, 0, 1, 0, gc, 0.55);
-      add('lines', G, { lit: false, blend: true });
+      add('lines', G, { lit: false, blend: true, back: true });
     }
 
     // ----------------------------------------------------------------- track

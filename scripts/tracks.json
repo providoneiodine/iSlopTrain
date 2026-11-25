@@ -1,5 +1,5 @@
 {
-  "_": "Circuits to bundle: id, name, rough centre, radius in metres to take raceways from (default 3500), and the Lovely Track Data iRacing trackId prefixes that are layouts of it. 'names' are extra iRacing names for circuits Lovely Track Data doesn't list. 'roads': for a public-road circuit with no raceway in OSM, the OSM names of the roads it's made of.",
+  "_": "Circuits to bundle: id, name, rough centre, radius in metres to take raceways from (default 3500), and the Lovely Track Data iRacing trackId prefixes that are layouts of it. 'names' are extra iRacing names for circuits Lovely Track Data doesn't list. 'roads': for a circuit run partly or wholly on public roads, the OSM names or refs of those roads; 'clip' ([south, west, north, east]) cuts them to the circuit, and road ends that join nothing are trimmed.",
   "circuits": [
     { "id": "adelaide", "name": "Adelaide Street Circuit", "lat": -34.9275, "lon": 138.617, "match": ["adelaide"] },
     { "id": "algarve", "name": "Autodromo Internacional do Algarve", "lat": 37.227, "lon": -8.6267, "match": ["algarve"] },
@@ -24,9 +24,9 @@
     { "id": "kyalami", "name": "Kyalami Grand Prix Circuit", "lat": -25.9958, "lon": 28.0697, "names": ["Kyalami Grand Prix Circuit"] },
     { "id": "lagunaseca", "name": "WeatherTech Raceway Laguna Seca", "lat": 36.5844, "lon": -121.7533, "match": ["lagunaseca"] },
     { "id": "ledenon", "name": "Circuit de Lédenon", "lat": 43.9236, "lon": 4.505, "match": ["ledenon"] },
-    { "id": "lemans", "name": "Circuit des 24 Heures du Mans", "lat": 47.935, "lon": 0.215, "r": 7500, "match": ["lemans"] },
+    { "id": "lemans", "name": "Circuit des 24 Heures du Mans", "lat": 47.935, "lon": 0.215, "r": 7500, "match": ["lemans"], "roads": ["D 338", "D 140", "D 139"], "clip": [47.905, 0.195, 47.965, 0.25] },
     { "id": "limerock", "name": "Lime Rock Park", "lat": 41.9283, "lon": -73.3836, "match": ["limerock"] },
-    { "id": "longbeach", "name": "Long Beach Street Circuit", "lat": 33.765, "lon": -118.189, "match": ["longbeach"] },
+    { "id": "longbeach", "name": "Long Beach Street Circuit", "lat": 33.765, "lon": -118.189, "match": ["longbeach"], "roads": ["Shoreline Drive", "Aquarium Way", "South Pine Avenue", "East Seaside Way", "Shoreline Village Drive", "South Chestnut Place", "Cedar Avenue"], "clip": [33.758, -118.2, 33.768, -118.182] },
     { "id": "magnycours", "name": "Circuit de Nevers Magny-Cours", "lat": 46.8642, "lon": 3.1636, "match": ["magnycours"] },
     { "id": "mexicocity", "name": "Autódromo Hermanos Rodríguez", "lat": 19.4042, "lon": -99.0907, "match": ["mexicocity"] },
     { "id": "midohio", "name": "Mid-Ohio Sports Car Course", "lat": 40.6892, "lon": -82.6364, "names": ["Mid-Ohio Sports Car Course - Full Course"] },

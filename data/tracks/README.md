@@ -3,7 +3,7 @@
 Circuit outlines that ship with the site, so the Lap Viewer's Map option doesn't need to ask OpenStreetMap's volunteer servers (Overpass, Nominatim) for the usual iRacing circuits. Tracks not listed here are still looked up live, as before.
 
 - `index.json`: each circuit's name, rough centre and radius, and the iRacing layouts (`ids`, `names`) that belong to it. `osm: false` means OpenStreetMap has no circuit there (Oran Park, built over), so the app shows no map without asking.
-- `osm/<id>.json`: the circuit's `highway=raceway` ways within that radius, pit lanes left out, as polylines at 1e-6 degree precision.
+- `osm/<id>.json`: the circuit's `highway=raceway` ways within that radius, pit lanes left out, as polylines at 1e-6 degree precision. Circuits run on public roads (Bathurst, Long Beach, Le Mans) also get those roads, by OSM name or ref, cut to the circuit.
 - `bundle.js`: `index.json` and every `osm/<id>.json` as one script, for the app opened from `file://` (where it can't fetch JSON). Written by every run of the script; `--js` rewrites just this file.
 - `lovely/` (only when built with `--corners`): a copy of Lovely Track Data's iRacing corner files.
 

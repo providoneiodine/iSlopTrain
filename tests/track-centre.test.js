@@ -86,6 +86,26 @@ test('a GPS lap a few metres off the map is lined up with the raceway', () => {
   assert.ok(a.cover > 0.95);
 });
 
+test('a long GPS lap turned a little about its origin (iRacing at Le Mans) is lined up with the map', () => {
+  // a 13 km loop whose GPS is turned 0.6° about a point 3 km away: up to ~50 m off
+  const S = 2500, shape = (a) => S * (1 + 0.3 * Math.cos(a) + 0.1 * Math.sin(3 * a));
+  const line = [];
+  for (let k = 0; k <= 400; k++) {
+    const a = (k / 400) * 2 * Math.PI;
+    line.push([shape(a) * Math.cos(a), shape(a) * Math.sin(a)]);
+  }
+  const n = 6000, x = new Float64Array(n), y = new Float64Array(n), t = 0.6 * Math.PI / 180, c = Math.cos(t), s = Math.sin(t);
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * 2 * Math.PI, px = shape(a) * Math.cos(a) - 3000, py = shape(a) * Math.sin(a);
+    x[i] = c * px - s * py + 3000;
+    y[i] = s * px + c * py;
+  }
+  const a = IST.Review.Track.align(x, y, [line]);
+  assert.ok(a && a.fitted, 'lined up');
+  assert.ok(a.cover > 0.95, 'cover ' + a.cover);
+  assert.ok(a.med < 2, 'median miss ' + a.med);
+});
+
 test('a GPS lap where the map has no matching raceway is not called a track', () => {
   // the lap's circuit was built over; the only raceway nearby is a small kart loop
   const kart = [];
