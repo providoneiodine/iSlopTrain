@@ -139,7 +139,10 @@
     });
     const cv = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(256, 256) : Object.assign(document.createElement('canvas'), { width: 256, height: 256 });
     const cx = cv.getContext('2d', { willReadFrequently: true });
+    let t0 = performance.now();
     for (const [key, list] of byTile) {
+      // a cached tile resolves at once, so without this the whole lap would run in one go
+      if (performance.now() - t0 > BUDGET) (await breathe()), (t0 = performance.now());
       const [x, y] = key.split('/').map(Number);
       let img;
       try {
@@ -169,15 +172,31 @@
     return score;
   }
 
-  async function roadFit(cmp, geo, z) {
+  /** Hand the page a frame before carrying on with background work. */
+  const breathe = () => new Promise((ok) => setTimeout(ok, 0));
+
+  // a scene rebuild (a layer or exaggeration change) re-drapes the same laps: their fit is kept
+  const fits = new WeakMap(); // reference lap -> Map(key -> Promise<warp | null>)
+  function roadFit(cmp, geo, z) {
+    const ref = cmp.laps[0].lap, key = [z, geo.lat0, geo.lon0, cmp.n].concat(cmp.laps.map((L) => L.lap.time)).join('|');
+    if (!fits.has(ref)) fits.set(ref, new Map());
+    const M = fits.get(ref);
+    if (!M.has(key)) M.set(key, fitRoad(cmp, geo, z).catch(() => (M.delete(key), null)));
+    return M.get(key);
+  }
+
+  async function fitRoad(cmp, geo, z) {
     const Tk = IST.Review.Track, ce = cmp.centre, n = cmp.n;
     const P = Tk.roadProbe(ce.x, ce.y, n, cmp.step);
-    const road = Tk.roadShift(P, await asphaltAt(geo, z, P.pts, true));
+    const score = await asphaltAt(geo, z, P.pts, true);
+    await breathe();
+    const road = Tk.roadShift(P, score);
     if (!road) return null;
     // kerb strikes pin the image where they're found; elsewhere it slides only as far as
     // keeps the laps on its road
     const K = Tk.kerbProbe(ce.x, ce.y, n, cmp.step, Tk.kerbRuns(cmp.laps, n, cmp.step));
     const anchors = K.pts.length ? Tk.kerbShift(K, await asphaltAt(geo, z, K.pts, false), road) : [];
+    await breathe();
     const A = Tk.anchorField(anchors, n, cmp.step), at = new Float32Array(n);
     for (let i = 0; i < n; i++) at[i] = road.at[i] + A.at[i] * A.w[i];
     const rest = Tk.keepOn(cmp.laps, n, cmp.step, { at, half: road.half });
@@ -194,7 +213,7 @@
     // a smooth blend of the nearby probe points' moves, not just the nearest one's: where two
     // stretches pass close (a chicane) the nearest flips between them and tears the image
     const pts = [];
-    return (xy) => {
+    const blend = (xy) => {
       let bd = Infinity;
       pts.length = 0;
       near.each(xy[0], xy[1], 5, (L, k) => {
@@ -213,7 +232,24 @@
         dy += q * pts[k + 2];
       }
       const f = Math.max(0, Math.min(1, (250 - Math.sqrt(bd)) / 190)) / w;
-      return [xy[0] + dx * f, xy[1] + dy * f];
+      return [dx * f, dy * f];
+    };
+    // the blend is smooth, so it's worked out once per corner of a 4 m grid and interpolated:
+    // tiles share corners, and a re-drape costs a lookup per vertex instead of a search
+    const C = 4, corners = new Map();
+    const corner = (i, j) => {
+      const k = i * 1048576 + j;
+      let v = corners.get(k);
+      if (!v) corners.set(k, (v = blend([i * C, j * C])));
+      return v;
+    };
+    return (xy) => {
+      const gx = xy[0] / C, gy = xy[1] / C, i = Math.floor(gx), j = Math.floor(gy), u = gx - i, v = gy - j;
+      const a = corner(i, j), b = corner(i + 1, j), c = corner(i, j + 1), d = corner(i + 1, j + 1);
+      return [
+        xy[0] + (a[0] * (1 - u) + b[0] * u) * (1 - v) + (c[0] * (1 - u) + d[0] * u) * v,
+        xy[1] + (a[1] * (1 - u) + b[1] * u) * (1 - v) + (c[1] * (1 - u) + d[1] * u) * v,
+      ];
     };
   }
 
@@ -280,14 +316,9 @@
     const fitZoom = (z) => roadFit(cmp, geo, z).then((w) => {
       if (!w || S.disposed) return;
       warps.set(z, w);
-      // re-drape what's already down; tiles still to come use the warp as they arrive
-      placed.forEach(([t, item]) => {
-        if (warpOf(t) !== w) return;
-        R.free(item.mesh);
-        item.mesh = R.texMesh('tris', patch(t));
-        S.adopt(item.mesh);
-      });
-      onChange();
+      // re-drape what's already down, a few a frame; tiles still to come use the warp as they arrive
+      placed.forEach((p) => warpOf(p[0]) === w && redrape.push(p));
+      if (!pumping) (pumping = true), requestAnimationFrame(pump);
     }, () => {});
     if (zc >= 17) fitZoom(zc);
 
@@ -317,7 +348,7 @@
     const LIFT = [-4, -2, -1];
     let pending = 0, failed = 0, total = 0;
     // tiles that have arrived wait here and are draped a few at a time each frame
-    const queue = [], placed = [];
+    const queue = [], placed = [], redrape = [];
     let pumping = false;
     const place = (t, img) => {
       const key = t.z + '/' + t.x + '/' + t.y;
@@ -342,8 +373,15 @@
         place(t, img);
         placed++;
       }
+      while (redrape.length && placed < PER_FRAME && (performance.now() - t0 < BUDGET || !placed)) {
+        const [t, item] = redrape.shift();
+        R.free(item.mesh);
+        item.mesh = R.texMesh('tris', patch(t));
+        S.adopt(item.mesh);
+        placed++;
+      }
       onChange();
-      if (queue.length) requestAnimationFrame(pump);
+      if (queue.length || redrape.length) requestAnimationFrame(pump);
       else pumping = false;
     };
     const arrive = (t, img) => {
