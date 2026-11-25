@@ -83,14 +83,14 @@
     const key = 'p' + lat.toFixed(3) + ',' + lon.toFixed(3) + ',' + Math.round(r / 100);
     const hit = cached(key);
     if (hit) return hit;
-    const q = '[out:json][timeout:25];way["highway"="raceway"](around:' + Math.round(r) + ',' + lat.toFixed(6) + ',' + lon.toFixed(6) + ');out tags geom;';
-    // Ask every server at once and take the first answer: the main one can take 30 s+
-    // for a big circuit while a mirror answers in under one. GET, because the main
-    // server answers browser POSTs with 502s. The rest are cancelled once one answers.
+    const q = '[out:json][timeout:15];way["highway"="raceway"](around:' + Math.round(r) + ',' + lat.toFixed(6) + ',' + lon.toFixed(6) + ');out tags geom;';
+    // Ask every server at once and take the first answer: a mirror usually answers in a
+    // few seconds, so 15 s means they're all down or overloaded (tried again next load).
+    // GET, because the main server answers browser POSTs with 502s. The rest are cancelled once one answers.
     const ctls = OVERPASS.map(() => (typeof AbortController !== 'undefined' ? new AbortController() : null));
     let res;
     try {
-      res = await Promise.any(OVERPASS.map((url, k) => fetchJSON(url + '?data=' + encodeURIComponent(q), { signal: ctls[k] && ctls[k].signal }, 45000)));
+      res = await Promise.any(OVERPASS.map((url, k) => fetchJSON(url + '?data=' + encodeURIComponent(q), { signal: ctls[k] && ctls[k].signal }, 15000)));
     } catch (e) {
       throw new Error('map servers unreachable');
     } finally {

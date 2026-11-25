@@ -221,7 +221,7 @@
         bd = Math.min(bd, d);
         pts.push(d, L[k + 2] * L[k + 4], L[k + 3] * L[k + 4]);
       });
-      if (!pts.length) return xy;
+      if (!pts.length) return [0, 0];
       const reach = (Math.sqrt(bd) + 40) ** 2;
       let w = 0, dx = 0, dy = 0;
       for (let k = 0; k < pts.length; k += 3) {
