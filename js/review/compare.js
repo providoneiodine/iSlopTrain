@@ -26,6 +26,9 @@
  * centre.source says which ('map' | 'laps'). The half width covers every
  * lap plus a margin (at least 5 m each side), or the map's width if wider.
  * Each lap's off[i] is its signed distance from the centre (m, + left).
+ * With a map, laps that all leave the road on the same side are moved back
+ * onto it together (local GPS error: see onRoad), so x / y can differ a few
+ * metres from the lap's own.
  */
 (function () {
   'use strict';
@@ -105,6 +108,35 @@
     return c;
   }
 
+  /**
+   * Imagery and GPS still disagree locally by a few metres, enough to put a lap on the
+   * grass. Where every lap is past the map's road edge on the same side, that shared excess
+   * is taken as local GPS error, spread smoothly over ~120 m and taken off all laps alike.
+   */
+  function onRoad(out, cx, cy, n, step, hw) {
+    const nx = new Float32Array(n), ny = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const a = Math.max(0, i - 3), b = Math.min(n - 1, i + 3);
+      const tx = cx[b] - cx[a], ty = cy[b] - cy[a], l = Math.hypot(tx, ty) || 1;
+      nx[i] = -ty / l;
+      ny[i] = tx / l;
+    }
+    const offs = out.map((s) => {
+      const off = new Float32Array(n);
+      for (let i = 0; i < n; i++) off[i] = (s.x[i] - cx[i]) * nx[i] + (s.y[i] - cy[i]) * ny[i];
+      return { off, start: s.start, end: s.end };
+    });
+    const b = IST.Review.Track.keepOn(offs, n, step, null, hw);
+    if (!b.some((v) => Math.abs(v) >= 0.2)) return;
+    // new arrays: the reference's x / y are the lap's own
+    out.forEach((s) => {
+      const x = Float32Array.from(s.x), y = Float32Array.from(s.y);
+      for (let i = 0; i < n; i++) (x[i] -= b[i] * nx[i]), (y[i] -= b[i] * ny[i]);
+      s.x = x;
+      s.y = y;
+    });
+  }
+
   function build(ref, laps, colors, track) {
     const all = [ref].concat(laps.filter((l) => l !== ref));
     const n = ref.n, step = ref.len / (n - 1);
@@ -170,6 +202,7 @@
       cx.set(onMap.x);
       cy.set(onMap.y);
     }
+    if (onMap) onRoad(out, cx, cy, n, step, track.halfWidth || 6.5);
     // each lap's signed distance from the centre (+ left of travel)
     out.forEach((s) => {
       s.off = new Float32Array(n);

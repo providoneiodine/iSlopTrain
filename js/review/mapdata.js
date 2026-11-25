@@ -8,11 +8,14 @@
  *   IST.Review.MapData.lookup(q) -> Promise<{ geo, lines, halfWidth, how } | null>
  *     q: { origin ({ lat, lon } of the session frame, GPS laps), track (name),
  *          x, y (the reference lap, session metres) }
- *     GPS laps: raceways around the lap. Laps in a sim's own coordinates: the
+ *     GPS laps: raceways around the lap, the lap nudged onto them (Track.align)
+ *     to undo the sim's GPS offset; null if the lap doesn't follow any raceway
+ *     (the spot isn't a circuit on the map). Laps in a sim's own coordinates: the
  *     track name is looked up (Nominatim), raceways fetched round each hit,
  *     and the lap fitted onto them (Track.fit) to find where it is.
  *     geo: Track.geo for the session frame; lines: raceway centrelines in
- *     session metres (pit lanes and areas left out). null: nothing usable.
+ *     session metres (pit lanes and areas left out); shift: metres the laps
+ *     were moved to meet the map. null: nothing usable.
  *   IST.Review.MapData.tile(z, x, y) -> Promise<ImageBitmap | HTMLImageElement>
  *   IST.Review.MapData.available(z, tiles) -> Promise<Set('x,y')>  which Esri really has
  *   IST.Review.MapData.ATTRIB
@@ -28,7 +31,7 @@
   IST.Review = IST.Review || {};
   const Tk = IST.Review.Track;
   // servers that answer browser requests from any origin (a static GitHub Pages site)
-  const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter'];
+  const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter', 'https://maps.mail.ru/osm/tools/overpass/api/interpreter'];
   const NOMINATIM = 'https://nominatim.openstreetmap.org/search';
   // two hosts for the same tiles, so twice as many load at once
   const TILE = (z, x, y) => 'https://' + ((x + y) % 2 ? 'server' : 'services') + '.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/' + z + '/' + y + '/' + x;
@@ -148,8 +151,13 @@
       for (let i = 0; i < n; i += 5) (x0 = Math.min(x0, q.x[i])), (x1 = Math.max(x1, q.x[i])), (y0 = Math.min(y0, q.y[i])), (y1 = Math.max(y1, q.y[i]));
       const c = g.toLL((x0 + x1) / 2, (y0 + y1) / 2);
       const ways = await raceways(c[0], c[1], Math.hypot(x1 - x0, y1 - y0) / 2 + 300);
-      // imagery works without raceways; the centre then falls back to the laps
-      return { geo: g, lines: ways.map((w) => w.pts.map((p) => g.toXY(p[0], p[1]))), halfWidth: halfWidthOf(ways), how: 'gps' };
+      // no raceway under the lap (a closed circuit since built over, or a sim's fantasy
+      // track) means the imagery would show the wrong place, so there's no map
+      const a = Tk.align(q.x, q.y, ways.map((w) => w.pts.map((p) => g.toXY(p[0], p[1]))));
+      if (!a || a.cover < 0.6) return null;
+      // session -> map metres is a.m; nudge the geo frame so laps sit on the raceway
+      const gf = a.fitted ? Tk.geo(q.origin.lat, q.origin.lon, Tk.invert(a.m)) : g;
+      return { geo: gf, lines: ways.map((w) => w.pts.map((p) => gf.toXY(p[0], p[1]))), halfWidth: halfWidthOf(ways), how: 'gps', shift: a.shift };
     }
     const name = cleanName(q.track);
     if (!name) return null;

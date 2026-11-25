@@ -18,6 +18,9 @@
  * Web Mercator lines, so each is a grid of vertices mapped back to the laps'
  * frame one by one.
  *
+ * Once a zoom's tiles are in, the road in its image is found (roadFit) and its
+ * tiles re-draped so that road sits on the map's centre, where the laps are.
+ *
  * Coarse tiles are marked (item.coarse): close up they're only a blur round
  * the sharp corridor, so the page stops drawing them when the camera is near.
  *
@@ -120,6 +123,101 @@
   const BUDGET = 6, PER_FRAME = 40;
 
   /**
+   * Imagery, OSM and GPS can disagree by several metres, which puts laps on the grass in the
+   * picture. Finds the road in the zoom-z pixels (Track.roadShift) and the kerbs the laps
+   * struck (Track.kerbShift), and returns a warp that slides the image onto them, fading out
+   * 60-250 m from the track. null when the road can't be made out or already lines up.
+   */
+  /** How asphalt-like the zoom-z image is at each point (laps' frame): a 3 x 3 pixel mean, or bilinear. */
+  async function asphaltAt(geo, z, pts, blur) {
+    const Tk = IST.Review.Track, score = new Float32Array(pts.length).fill(NaN), byTile = new Map();
+    pts.forEach((p, k) => {
+      const ll = geo.toLL(p[0], p[1]), X = lon2x(ll[1], z), Y = lat2y(ll[0], z);
+      const key = Math.floor(X) + '/' + Math.floor(Y);
+      if (!byTile.has(key)) byTile.set(key, []);
+      byTile.get(key).push(k, (X % 1) * 256, (Y % 1) * 256);
+    });
+    const cv = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(256, 256) : Object.assign(document.createElement('canvas'), { width: 256, height: 256 });
+    const cx = cv.getContext('2d', { willReadFrequently: true });
+    for (const [key, list] of byTile) {
+      const [x, y] = key.split('/').map(Number);
+      let img;
+      try {
+        img = await IST.Review.MapData.tile(z, x, y);
+      } catch (e) {
+        continue;
+      }
+      cx.drawImage(img, 0, 0, 256, 256);
+      const px = cx.getImageData(0, 0, 256, 256).data;
+      const at = (u, v) => {
+        const o = (Math.max(0, Math.min(255, v)) * 256 + Math.max(0, Math.min(255, u))) * 4;
+        return Tk.asphalt(px[o], px[o + 1], px[o + 2]);
+      };
+      for (let q = 0; q < list.length; q += 3) {
+        const U = list[q + 1] - 0.5, V = list[q + 2] - 0.5, u0 = Math.floor(U), v0 = Math.floor(V);
+        let t = 0;
+        if (blur) {
+          for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) t += at(u0 + dx, v0 + dy);
+          t /= 9;
+        } else {
+          const fu = U - u0, fv = V - v0;
+          t = (at(u0, v0) * (1 - fu) + at(u0 + 1, v0) * fu) * (1 - fv) + (at(u0, v0 + 1) * (1 - fu) + at(u0 + 1, v0 + 1) * fu) * fv;
+        }
+        score[list[q]] = t;
+      }
+    }
+    return score;
+  }
+
+  async function roadFit(cmp, geo, z) {
+    const Tk = IST.Review.Track, ce = cmp.centre, n = cmp.n;
+    const P = Tk.roadProbe(ce.x, ce.y, n, cmp.step);
+    const road = Tk.roadShift(P, await asphaltAt(geo, z, P.pts, true));
+    if (!road) return null;
+    // kerb strikes pin the image where they're found; elsewhere it slides only as far as
+    // keeps the laps on its road
+    const K = Tk.kerbProbe(ce.x, ce.y, n, cmp.step, Tk.kerbRuns(cmp.laps, n, cmp.step));
+    const anchors = K.pts.length ? Tk.kerbShift(K, await asphaltAt(geo, z, K.pts, false), road) : [];
+    const A = Tk.anchorField(anchors, n, cmp.step), at = new Float32Array(n);
+    for (let i = 0; i < n; i++) at[i] = road.at[i] + A.at[i] * A.w[i];
+    const rest = Tk.keepOn(cmp.laps, n, cmp.step, { at, half: road.half });
+    const sh = new Float32Array(n);
+    let big = 0;
+    for (let i = 0; i < n; i++) {
+      sh[i] = A.at[i] * A.w[i] + rest[i] * (1 - A.w[i]);
+      big = Math.max(big, Math.abs(sh[i]));
+    }
+    if (big < 0.5) return null;
+    // the probe lines' centre points and normals, gridded for the nearest one to a vertex
+    const near = gridOf(5, 50);
+    P.idx.forEach((i, k) => near.add(ce.x[i], ce.y[i], [ce.x[i], ce.y[i], P.nx[k], P.ny[k], sh[i]]));
+    // a smooth blend of the nearby probe points' moves, not just the nearest one's: where two
+    // stretches pass close (a chicane) the nearest flips between them and tears the image
+    const pts = [];
+    return (xy) => {
+      let bd = Infinity;
+      pts.length = 0;
+      near.each(xy[0], xy[1], 5, (L, k) => {
+        const d = (L[k] - xy[0]) ** 2 + (L[k + 1] - xy[1]) ** 2;
+        bd = Math.min(bd, d);
+        pts.push(d, L[k + 2] * L[k + 4], L[k + 3] * L[k + 4]);
+      });
+      if (!pts.length) return xy;
+      const reach = (Math.sqrt(bd) + 40) ** 2;
+      let w = 0, dx = 0, dy = 0;
+      for (let k = 0; k < pts.length; k += 3) {
+        if (pts[k] > reach) continue;
+        const q = 1 / (pts[k] + 400) ** 2;
+        w += q;
+        dx += q * pts[k + 1];
+        dy += q * pts[k + 2];
+      }
+      const f = Math.max(0, Math.min(1, (250 - Math.sqrt(bd)) / 190)) / w;
+      return [xy[0] + dx * f, xy[1] + dy * f];
+    };
+  }
+
+  /**
    * opt.texCache: a Map ('z/x/y' -> texture) that outlives the scene (the page keeps one per
    * GL context), so a rebuild re-drapes tiles it already has without fetching or uploading them.
    */
@@ -174,12 +272,31 @@
       }
     }
 
+    // the imagery's road against the map's centre (see roadFit), found for each zoom on its
+    // own: Esri's zooms come from different photos, a few metres apart. The coarse ground
+    // follows the corridor's.
+    const warps = new Map(), noWarp = (xy) => xy;
+    const warpOf = (t) => warps.get(t.layer ? t.z : zc) || noWarp;
+    const fitZoom = (z) => roadFit(cmp, geo, z).then((w) => {
+      if (!w || S.disposed) return;
+      warps.set(z, w);
+      // re-drape what's already down; tiles still to come use the warp as they arrive
+      placed.forEach(([t, item]) => {
+        if (warpOf(t) !== w) return;
+        R.free(item.mesh);
+        item.mesh = R.texMesh('tris', patch(t));
+        S.adopt(item.mesh);
+      });
+      onChange();
+    }, () => {});
+    if (zc >= 17) fitZoom(zc);
+
     function patch(t) {
       const N = 16, drop = t.layer ? 0 : 1.5;
       const P = [];
       for (let j = 0; j <= N; j++) for (let i = 0; i <= N; i++) {
         const lat = y2lat(t.y + j / N, t.z), lon = x2lon(t.x + i / N, t.z);
-        const xy = geo.toXY(lat, lon);
+        const xy = warpOf(t)(geo.toXY(lat, lon));
         const g = S.toGL(xy[0], xy[1], 0);
         P.push([g[0], height(g[0], g[2]) - drop, g[2], i / N, j / N]);
       }
@@ -200,7 +317,7 @@
     const LIFT = [-4, -2, -1];
     let pending = 0, failed = 0, total = 0;
     // tiles that have arrived wait here and are draped a few at a time each frame
-    const queue = [];
+    const queue = [], placed = [];
     let pumping = false;
     const place = (t, img) => {
       const key = t.z + '/' + t.x + '/' + t.y;
@@ -212,7 +329,9 @@
       }
       const mesh = R.texMesh('tris', patch(t));
       S.adopt(mesh);
-      S.items.push({ mesh, tex, tint: TINT, lift: LIFT[t.layer || 0], coarse: !t.layer });
+      const item = { mesh, tex, tint: TINT, lift: LIFT[t.layer || 0], coarse: !t.layer };
+      S.items.push(item);
+      placed.push([t, item]);
     };
     const pump = () => {
       if (S.disposed) return (queue.length = 0), (pumping = false);
@@ -258,7 +377,7 @@
         }
         const ok = list.filter((t) => have.has(t.x + ',' + t.y));
         if (ok.length >= list.length * 0.6) {
-          if (!S.disposed) load(ok.sort((p, q) => p.i - q.i));
+          if (!S.disposed) load(ok.sort((p, q) => p.i - q.i)), fitZoom(zr);
           return;
         }
       }
