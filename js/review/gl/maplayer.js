@@ -126,8 +126,9 @@
       lo1 = Math.max(lo1, ll[1]);
     });
     const range = (z) => ({ x0: Math.floor(lon2x(lo0, z)), x1: Math.floor(lon2x(lo1, z)), y0: Math.floor(lat2y(la1, z)), y1: Math.floor(lat2y(la0, z)) });
+    // (all the way down: stopping at a floor let a ground hundreds of km wide ask for thousands of tiles)
     let zb = 18;
-    while (zb > 10) {
+    while (zb > 0) {
       const r = range(zb);
       if ((r.x1 - r.x0 + 1) * (r.y1 - r.y0 + 1) <= MAX_BASE) break;
       zb--;

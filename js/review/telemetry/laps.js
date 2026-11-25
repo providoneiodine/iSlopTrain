@@ -65,12 +65,20 @@
         // iRacing stores degrees; a few tools store radians
         const deg = Math.abs(lat0) > Math.PI / 2 + 0.01 || range(C.lat) > 0.05 || Math.abs(lon0) > Math.PI ? Math.PI / 180 : 1;
         const kx = R_EARTH * deg * Math.cos(lat0 * deg), ky = R_EARTH * deg;
-        const x = new Float64Array(n), y = new Float64Array(n);
+        const x = new Float64Array(n), y = new Float64Array(n), z = C.alt ? Float64Array.from(C.alt) : new Float64Array(n);
+        // a sample with no fix (0, 0 before the car is placed, or a glitch far from the track)
+        // takes the nearest good one: left in, it puts a point of the lap half a world away
+        const good = (i) => (C.lat[i] || C.lon[i]) && Math.abs(C.lat[i] - lat0) * ky < 50000 && Math.abs(C.lon[i] - lon0) * kx < 50000;
+        let last = -1;
         for (let i = 0; i < n; i++) {
-          x[i] = (C.lon[i] - lon0) * kx;
-          y[i] = (C.lat[i] - lat0) * ky;
+          if (good(i)) {
+            x[i] = (C.lon[i] - lon0) * kx;
+            y[i] = (C.lat[i] - lat0) * ky;
+            for (let j = last < 0 ? 0 : i; j < i; j++) (x[j] = x[i]), (y[j] = y[i]), (z[j] = z[i]);
+            last = i;
+          } else if (last >= 0) (x[i] = x[last]), (y[i] = y[last]), (z[i] = z[last]);
         }
-        return { x, y, z: C.alt ? Float64Array.from(C.alt) : new Float64Array(n), source: 'gps', origin: { lat: lat0 * deg * 180 / Math.PI, lon: lon0 * deg * 180 / Math.PI } };
+        return { x, y, z, source: 'gps', origin: { lat: lat0 * deg * 180 / Math.PI, lon: lon0 * deg * 180 / Math.PI } };
       }
       // dead reckoning
       const x = new Float64Array(n), y = new Float64Array(n);

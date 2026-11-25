@@ -36,7 +36,8 @@ function drive(rate) {
 }
 
 // ------------------------------------------------------------------ writers
-function writeIbt(rate) {
+/** noFix: that many samples at the start with Lat, Lon and Alt all 0, as iRacing writes before the car is placed. */
+function writeIbt(rate, noFix) {
   const S = drive(rate);
   const lat0 = 50.43, lon0 = 5.97, ky = 6371008.8 * (Math.PI / 180), kx = ky * Math.cos((lat0 * Math.PI) / 180);
   const VARS = [
@@ -84,7 +85,7 @@ function writeIbt(rate) {
   str(infoOff, yaml);
   S.forEach((p, r) => {
     vars.forEach((v) => {
-      const o = dataOff + r * bufLen + v.offset, x = v.get(p);
+      const o = dataOff + r * bufLen + v.offset, x = r < (noFix || 0) && /^(Lat|Lon|Alt)$/.test(v.name) ? 0 : v.get(p);
       if (v.type === 5) dv.setFloat64(o, x, true);
       else if (v.type === 4) dv.setFloat32(o, x, true);
       else dv.setInt32(o, x, true);
@@ -190,6 +191,15 @@ const radius = (l) => {
   }
   return [lo, hi];
 };
+
+test('iRacing .ibt: samples with no GPS fix don’t put part of a lap half a world away', () => {
+  const T = load().Telemetry.lib();
+  const r = T.process('session.ibt', writeIbt(60, 3));
+  // every lap, the partial out lap that holds those samples included, stays on the circle
+  r.laps.forEach((l) => {
+    for (let i = 0; i < l.n; i++) assert.ok(Math.hypot(l.x[i], l.y[i]) < R * 3 && Math.abs(l.z[i] - 100) < 1, 'lap ' + l.lapNo + ' (' + l.kind + ') at ' + i + ' m is at ' + Math.round(l.x[i]) + ', ' + Math.round(l.y[i]) + ', ' + Math.round(l.z[i]));
+  });
+});
 
 test('iRacing .ibt: laps, times, units and the GPS line come out as recorded', () => {
   const T = load().Telemetry.lib();
