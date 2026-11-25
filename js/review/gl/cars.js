@@ -8,7 +8,11 @@
  *   IST.Review.Cars.emit(V, model, road, body, rgb, st)   append lit triangles to a Verts list
  *     road, body: { p, f, u, l } origin and forward / up / left unit axes in GL space.
  *     The wheels sit on `road`; everything sprung sits on `body` (road plus stance).
- *     st: { steer (front wheel angle, rad, + left), brake (bool) }
+ *     st: { steer (front wheel angle, rad, + left), brake (bool),
+ *           wheels ({ LF, RF, LR, RR } from Stance.wheels: each turns by its rot), tint (bool) }
+ *     With tint, each tyre shows its temperature across the tread (inner, middle, outer:
+ *     blue cold, glowing red hot) and its rim turns rose while locking, mint while spinning.
+ *     Spokes blur as the wheel speeds up, so a locked wheel stands out by its sharp ones.
  *   IST.Review.Cars.shadow(V, model, road) append a soft dark patch under the car
  *
  * Car space is [a, h, s]: metres forward of the car's centre, up from the
@@ -24,6 +28,10 @@
     dark: [0.07, 0.075, 0.09], glass: [0.1, 0.13, 0.17], tyre: [0.05, 0.05, 0.055], rim: [0.5, 0.52, 0.56],
     lamp: [1, 0.97, 0.85], tail: [0.42, 0.04, 0.04], tailOn: [1, 0.14, 0.09],
   };
+  const COLD = [0.1, 0.34, 0.62], HOT = [1, 0.13, 0.04], WHITE_HOT = [1, 0.5, 0.12];
+  const GL = IST.Review.GL, Th = IST.Theme;
+  const LOCK = GL.rgb(Th.rose), SPIN = GL.rgb(Th.mint);
+  const mix = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
 
   /** Car type from its name as telemetry gives it (iRacing's CarScreenName, a CSV's Vehicle row). */
   function kindOf(name) {
@@ -83,15 +91,17 @@
       },
       /** A wheel as its own part (unsprung, the fronts steered): axle at a, outer face at s = side * so. */
       wheel(a, side, so, r, w, steer) {
-        parts.push({ wheel: true, steer, pa: a, ps: side * (so - w / 2) });
+        parts.push({ wheel: true, id: (side > 0 ? 'L' : 'R') + (steer ? 'F' : 'R'), steer, pa: a, ph: r, ps: side * (so - w / 2) });
         part = parts.length - 1;
         const N = 14, s1 = side * so, s0 = side * (so - w), ref = [a, r, side * (so - w / 2)];
         const at = (k, rad, s) => [a + Math.cos((k / N) * 2 * Math.PI) * rad, r + Math.sin((k / N) * 2 * Math.PI) * rad, s];
+        const band = (b) => s0 + ((s1 - s0) * b) / 3;
         for (let k = 0; k < N; k++) {
-          B.quad(at(k, r, s0), at(k + 1, r, s0), at(k + 1, r, s1), at(k, r, s1), 'tyre', ref);
-          B.quad(at(k, r, s1), at(k + 1, r, s1), at(k + 1, r * 0.64, s1), at(k, r * 0.64, s1), 'tyre', ref);
-          // five spokes: every third wedge of the rim left dark
-          B.tri([a, r, s1], at(k, r * 0.64, s1), at(k + 1, r * 0.64, s1), k % 3 === 2 ? 'dark' : 'rim', ref);
+          // the tread in three bands, inner to outer, each coloured by its own temperature
+          for (let b = 0; b < 3; b++) B.quad(at(k, r, band(b)), at(k + 1, r, band(b)), at(k + 1, r, band(b + 1)), at(k, r, band(b + 1)), 'tread' + b, ref);
+          B.quad(at(k, r, s1), at(k + 1, r, s1), at(k + 1, r * 0.64, s1), at(k, r * 0.64, s1), 'wall', ref);
+          // spokes: every third wedge of the rim left dark
+          B.tri([a, r, s1], at(k, r * 0.64, s1), at(k + 1, r * 0.64, s1), k % 3 === 2 ? 'spoke' : 'rim', ref);
           B.tri([a, r, s0], at(k, r, s0), at(k + 1, r, s0), 'tyre', ref);
         }
         part = 0;
@@ -252,36 +262,84 @@
     let a0 = Infinity, a1 = -Infinity, w = 0;
     B.tris.forEach((t) => t.p.forEach((p) => ((a0 = Math.min(a0, p[0])), (a1 = Math.max(a1, p[0])), (w = Math.max(w, Math.abs(p[2]))))));
     const wh = B.parts.filter((p) => p.wheel);
+    const fr = wh.find((p) => p.steer), rr = wh.find((p) => !p.steer);
     const m = {
       kind, tris: B.tris, parts: B.parts, front: a1, rear: a0, len: a1 - a0, width: w * 2,
+      radii: { f: fr.ph, r: rr.ph },
       wheelbase: Math.max(...wh.map((p) => p.pa)) - Math.min(...wh.map((p) => p.pa)),
       track: 2 * Math.max(...wh.map((p) => Math.abs(p.ps))),
     };
     return (cache[kind] = m);
   }
 
+  /** One wheel's colours and turn from its Stance.wheels entry: { cs, sn, col, glow } by triangle key. */
+  function wheelLook(w, tint) {
+    const o = { cs: Math.cos(w.rot), sn: Math.sin(w.rot), col: {}, glow: {} };
+    // spokes lose contrast as the wheel speeds up (a blur), and are sharp on a wheel that has stopped
+    const blur = Math.max(0, Math.min(1, (Math.abs(w.omega) - 12) / 33)) * 0.75;
+    const even = mix(FIXED.rim, FIXED.dark, 0.3);
+    let rim = mix(FIXED.rim, even, blur), spoke = mix(FIXED.dark, even, blur), rimGlow = 0;
+    let heat = [0, 0, 0];
+    if (tint) {
+      if (w.temp) heat = w.temp.map(IST.Review.Stance.heat);
+      const flag = w.lock > w.spin ? LOCK : SPIN, f = Math.max(w.lock, w.spin);
+      if (f > 0) (rim = mix(rim, flag, f)), (spoke = mix(spoke, flag, f * 0.5)), (rimGlow = f);
+    }
+    const tyre = (h) => (h < 0 ? mix(FIXED.tyre, COLD, -h * 0.8) : mix(FIXED.tyre, h > 0.7 ? mix(HOT, WHITE_HOT, (h - 0.7) / 0.3) : HOT, Math.min(1, h * 1.3)));
+    for (let b = 0; b < 3; b++) (o.col['tread' + b] = tyre(heat[b])), (o.glow['tread' + b] = Math.abs(heat[b]));
+    // the sidewall takes the tyre's mean at half strength, so heat reads from the side too
+    const mean = (heat[0] + heat[1] + heat[2]) / 3;
+    o.col.wall = tyre(mean * 0.55);
+    o.glow.wall = Math.abs(mean) * 0.55;
+    o.col.tyre = FIXED.tyre;
+    o.col.rim = rim;
+    o.col.spoke = spoke;
+    o.glow.rim = rimGlow;
+    o.glow.spoke = rimGlow * 0.5;
+    return o;
+  }
+  const STILL = { rot: 0, omega: 0, lock: 0, spin: 0, temp: null };
+
   function emit(V, m, road, body, rgb, st) {
     const col = Object.assign({}, FIXED, { body: rgb, trim: rgb.map((x) => x * 0.5) });
     if (st && st.brake) col.tail = FIXED.tailOn;
     const d = (st && st.steer) || 0, cs = Math.cos(d), sn = Math.sin(d);
     const tris = m.tris, parts = m.parts;
+    const looks = parts.map((P) => (P.wheel ? wheelLook((st && st.wheels && st.wheels[P.id]) || STILL, !!(st && st.tint)) : null));
     for (let i = 0; i < tris.length; i++) {
-      const t = tris[i], P = parts[t.part], X = P.wheel ? road : body, c = col[t.key], glow = t.key === 'lamp' || t.key === 'tail';
-      let na = t.n[0], ns = t.n[2];
-      if (P.steer) (na = t.n[0] * cs - t.n[2] * sn), (ns = t.n[0] * sn + t.n[2] * cs);
-      const nh = t.n[1];
-      const nx = glow ? SUN[0] : X.f[0] * na + X.u[0] * nh + X.l[0] * ns;
-      const ny = glow ? SUN[1] : X.f[1] * na + X.u[1] * nh + X.l[1] * ns;
-      const nz = glow ? SUN[2] : X.f[2] * na + X.u[2] * nh + X.l[2] * ns;
+      const t = tris[i], P = parts[t.part], X = P.wheel ? road : body, W = looks[t.part];
+      const c = W ? W.col[t.key] : col[t.key];
+      // glow: 1 draws at full brightness whatever way the face points, 0 is lit by the sun
+      const g = W ? W.glow[t.key] || 0 : t.key === 'lamp' || t.key === 'tail' ? 1 : 0;
+      let na = t.n[0], nh = t.n[1], ns = t.n[2];
+      if (W) {
+        const a0 = na;
+        na = a0 * W.cs + nh * W.sn;
+        nh = nh * W.cs - a0 * W.sn;
+      }
+      if (P.steer) {
+        const a0 = na;
+        na = a0 * cs - ns * sn;
+        ns = a0 * sn + ns * cs;
+      }
+      const nx = (X.f[0] * na + X.u[0] * nh + X.l[0] * ns) * (1 - g) + SUN[0] * g;
+      const ny = (X.f[1] * na + X.u[1] * nh + X.l[1] * ns) * (1 - g) + SUN[1] * g;
+      const nz = (X.f[2] * na + X.u[2] * nh + X.l[2] * ns) * (1 - g) + SUN[2] * g;
       for (let k = 0; k < 3; k++) {
         const p = t.p[k];
-        let a = p[0], s = p[2];
+        let a = p[0], h = p[1], s = p[2];
+        if (W) {
+          // rolling forward: the top of the wheel moves toward the nose
+          const da = a - P.pa, dh = h - P.ph;
+          a = P.pa + da * W.cs + dh * W.sn;
+          h = P.ph + dh * W.cs - da * W.sn;
+        }
         if (P.steer) {
           const da = a - P.pa, ds = s - P.ps;
           a = P.pa + da * cs - ds * sn;
           s = P.ps + da * sn + ds * cs;
         }
-        V.push(X.p[0] + X.f[0] * a + X.u[0] * p[1] + X.l[0] * s, X.p[1] + X.f[1] * a + X.u[1] * p[1] + X.l[1] * s, X.p[2] + X.f[2] * a + X.u[2] * p[1] + X.l[2] * s, nx, ny, nz, c);
+        V.push(X.p[0] + X.f[0] * a + X.u[0] * h + X.l[0] * s, X.p[1] + X.f[1] * a + X.u[1] * h + X.l[1] * s, X.p[2] + X.f[2] * a + X.u[2] * h + X.l[2] * s, nx, ny, nz, c);
       }
     }
   }

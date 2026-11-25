@@ -1,10 +1,17 @@
 /*
  * How a car's body sits on the road at a point on a lap. Pure, no DOM.
  *
- *   IST.Review.Stance.at(L, j, kind) -> { dive, roll, heave, measured }
- *     L: a comparison lap (compare.js), j: fractional grid index, kind: Cars kind
+ *   IST.Review.Stance.at(L, j, kind, step) -> { dive, roll, heave, measured }
+ *     L: a comparison lap (compare.js), j: fractional grid index, kind: Cars kind,
+ *     step: metres per grid index (1 when left out)
  *     dive   rad, + nose down          roll   rad, + leaning right (left side up)
  *     heave  m, + body up              measured: from ride heights, not estimated
+ *   IST.Review.Stance.wheels(L, j, step, radii) -> { LF, RF, LR, RR }, each
+ *     { rot (rad rolled since the line), omega (rad/s), slip (wheel speed / car speed - 1, NaN unknown),
+ *       lock, spin (0..1: slower than the car on the brakes, faster on throttle),
+ *       temp ([inner, mid, outer] °C, or null) }
+ *     radii: { f, r } tyre radius (m). Without usable wheel speeds a wheel rolls at road speed.
+ *   IST.Review.Stance.heat(t) -> -1 (cold, 45 °C or less) .. 0 (70 to 85 °C) .. 1 (115 °C or more)
  *
  * With ride heights (iRacing) the angles are the real ones: rake against the
  * lap's usual for dive, left against right for roll, the mean for heave.
@@ -45,26 +52,95 @@
     }
     return b;
   }
-  /** Mean over about ±2 samples round j, so a kerb strike doesn't snap the body. */
-  function near(a, j) {
-    const n = a.length, i0 = Math.max(0, Math.floor(j) - 2), i1 = Math.min(n - 1, Math.floor(j) + 3);
+  /**
+   * Mean round j, weighted down to nothing W samples either side. It changes smoothly as
+   * j moves, so the body doesn't tick over once a metre.
+   */
+  function near(a, j, W) {
+    const n = a.length, i0 = Math.max(0, Math.ceil(j - W)), i1 = Math.min(n - 1, Math.floor(j + W));
     let s = 0, c = 0;
-    for (let i = i0; i <= i1; i++) if (isFinite(a[i])) (s += a[i]), c++;
+    for (let i = i0; i <= i1; i++) {
+      const w = 1 - Math.abs(i - j) / W;
+      if (w > 0 && isFinite(a[i])) (s += a[i] * w), (c += w);
+    }
     return c ? s / c : 0;
   }
+  /** Linear between samples. */
+  function lerpAt(a, j) {
+    const i = Math.max(0, Math.min(a.length - 2, Math.floor(j)));
+    return a[i] + (a[i + 1] - a[i]) * Math.max(0, Math.min(1, j - i));
+  }
 
-  function at(L, j, kind) {
+  function at(L, j, kind, step) {
     const S = SPEC[kind] || SPEC.road, b = baseOf(L);
+    // averaged over about a fifth of a second of travel, at least ±3 samples: ride heights
+    // buzz over bumps at speed, and a fixed few metres there is only a frame or two
+    const v = L.speed ? lerpAt(L.speed, j) : 0;
+    const W = Math.max(3, Math.min(30, ((isFinite(v) ? v : 0) * 0.1) / (step || 1)));
     let dive = 0, roll = 0, heave = 0;
     if (b.ok) {
-      const f = near(L.rhF, j), r = near(L.rhR, j);
+      const f = near(L.rhF, j, W), r = near(L.rhR, j, W);
       dive = Math.atan((r - f - b.rake) / S.wb);
       heave = (f + r) / 2 - b.ride;
-    } else if (L.longG) dive = (-near(L.longG, j) / G0) * S.dive;
-    if (b.sides) roll = Math.atan((near(L.rhLt, j) - near(L.rhRt, j) - b.side) / S.tr);
-    else if (L.latG) roll = (near(L.latG, j) / G0) * S.roll;
+    } else if (L.longG) dive = (-near(L.longG, j, W) / G0) * S.dive;
+    if (b.sides) roll = Math.atan((near(L.rhLt, j, W) - near(L.rhRt, j, W) - b.side) / S.tr);
+    else if (L.latG) roll = (near(L.latG, j, W) / G0) * S.roll;
     return { dive, roll, heave, measured: b.ok };
   }
 
-  IST.Review.Stance = { at, SPEC };
+  // ------------------------------------------------------------------ wheels
+  const WHEELS = ['LF', 'RF', 'LR', 'RR'];
+  const clamp01 = (x) => Math.max(0, Math.min(1, x));
+  const rolled = new WeakMap(); // lap -> { key, ang: { LF: Float64Array | null, ... } }
+
+  /** How far each wheel has turned by every grid index, from its own speed (null: no usable channel). */
+  function rolledOf(L, radii) {
+    const key = radii.f + '/' + radii.r;
+    let c = rolled.get(L);
+    if (c && c.key === key) return c;
+    c = { key, ang: {} };
+    const n = L.t ? L.t.length : 0, v = L.speed;
+    WHEELS.forEach((w) => {
+      const ws = L['ws' + w];
+      c.ang[w] = null;
+      if (!ws || !v || n < 2) return;
+      // a wheel speed is close to the car's on most of a lap: anything else is another unit
+      const m = median(n, (i) => (v[i] > 10 ? ws[i] / v[i] : NaN));
+      if (!(m > 0.8 && m < 1.25)) return;
+      const r = w[1] === 'F' ? radii.f : radii.r, a = new Float64Array(n);
+      const at = (i) => (isFinite(ws[i]) ? ws[i] : v[i]);
+      for (let i = 1; i < n; i++) a[i] = a[i - 1] + ((0.5 * (at(i) + at(i - 1))) / r) * Math.max(0, L.t[i] - L.t[i - 1]);
+      c.ang[w] = a;
+    });
+    rolled.set(L, c);
+    return c;
+  }
+
+  function wheels(L, j, step, radii) {
+    const R = rolledOf(L, radii), out = {};
+    const v = L.speed ? lerpAt(L.speed, j) : 0;
+    const brake = L.brake ? lerpAt(L.brake, j) : 0, thr = L.throttle ? lerpAt(L.throttle, j) : 0;
+    WHEELS.forEach((w) => {
+      const r = w[1] === 'F' ? radii.f : radii.r, ang = R.ang[w];
+      const ws = ang ? lerpAt(L['ws' + w], j) : NaN, live = isFinite(ws);
+      const slip = live && v > 8 ? ws / v - 1 : NaN;
+      let temp = null;
+      const band = (k) => (L[k] ? lerpAt(L[k], j) : NaN);
+      const ti = band('t' + w + '_i'), tm = band('t' + w + '_m'), to = band('t' + w + '_o'), t1 = band('t' + w);
+      if (isFinite(ti) && isFinite(tm) && isFinite(to)) temp = [ti, tm, to];
+      else if (isFinite(t1)) temp = [t1, t1, t1];
+      out[w] = {
+        rot: ang ? lerpAt(ang, j) : (j * step) / r, omega: (live ? ws : v) / r, slip,
+        // the same thresholds as the lockup and wheelspin events (derive.js), eased in
+        lock: slip < 0 && brake > 0.05 ? clamp01((-slip - 0.05) / 0.1) : 0,
+        spin: slip > 0 && thr > 0.1 ? clamp01((slip - 0.03) / 0.07) : 0,
+        temp,
+      };
+    });
+    return out;
+  }
+
+  const heat = (t) => (!isFinite(t) ? 0 : t < 70 ? -clamp01((70 - t) / 25) : clamp01((t - 85) / 30));
+
+  IST.Review.Stance = { at, wheels, heat, SPEC, WHEELS };
 })();

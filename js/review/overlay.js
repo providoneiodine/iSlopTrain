@@ -43,6 +43,45 @@
       return m;
     };
     let frameNo = 0;
+    const SCR = { x: 0, y: 0 }, PAD = [0, 0, 0, 0];
+
+    /*
+     * Every label the current choices could show, each with its place in the scene. Built
+     * once per scene and set of choices and reused, since a frame only has to place them.
+     */
+    let made = null;
+    function labels(f, top) {
+      const S = f.scene, cmp = f.cmp;
+      if (made && made.S === S && made.cmp === cmp && made.top === top && made.tags === !!f.tags && made.gears === !!f.gears && made.fences === f.fences && made.markers === f.markers) return made.list;
+      const list = [];
+      const put = (key, li, p, text, kind, more) => list.push(Object.assign({ li, p, text, kind, m: slot(key), r: [0, 0, 0, 0], on: false, near: 0, far: false }, more));
+      if (f.markers && f.markers.size) {
+        cmp.laps.forEach((L, li) => {
+          if (f.fences && !f.fences[li]) return;
+          const P = S.base[li];
+          (L.events || []).forEach((e) => {
+            const mk = f.markers.has(e.kind) && Ly.markerFor(e.kind), i = e.iPeak;
+            if (mk && mk.pip) put('e' + li + ':' + e.kind + ':' + e.i0, li, [P[i * 3], P[i * 3 + 1] + 0.4, P[i * 3 + 2]], Ly.eventLabel(e), 'event', { color: mk.color, e });
+          });
+        });
+      }
+      if (f.tags) {
+        const every = Math.round(200 / cmp.step);
+        cmp.laps.forEach((L, li) => {
+          const P = S.base[li], off = Math.round((60 + li * 37) / cmp.step);
+          for (let j = off; j < cmp.n; j += every) put('t' + li + ':' + j, li, [P[j * 3], P[j * 3 + 1] + 0.3, P[j * 3 + 2]], 'L' + L.lap.lapNo, 'tag');
+        });
+      }
+      if (f.gears) {
+        cmp.laps.forEach((L, li) => {
+          if (f.fences && !f.fences[li]) return;
+          const P = S.base[li];
+          L.shifts.forEach((s) => put('g' + li + ':' + s.i, li, [P[s.i * 3], P[s.i * 3 + 1] + top, P[s.i * 3 + 2]], String(Math.round(s.to)), 'gear'));
+        });
+      }
+      made = { S, cmp, top, tags: !!f.tags, gears: !!f.gears, fences: f.fences, markers: f.markers, list };
+      return list;
+    }
 
     function draw(g, W, H, f) {
       frameNo++;
@@ -122,10 +161,14 @@
         const mw = g.measureText(main).width;
         g.font = '500 11px ' + FONT;
         const sw = g.measureText(sub).width;
-        const w = tw + Math.max(mw, sw) + 16, hh = 34;
+        const hh = 34, m = slot('car' + c.k);
+        // the chip is centred on the car, so its width holds while the digits change: it
+        // grows at once and shrinks only when the text is a good deal narrower
+        const fit = tw + Math.max(mw, sw) + 16;
+        if (!(m.w >= fit && m.w < fit + 14)) m.w = Math.ceil(fit + 4);
+        const w = m.w;
         // above the car, or beside it when looking straight down (so the road ahead stays clear);
         // stacked upward past chips already placed, easing toward that slot
-        const m = slot('car' + c.k);
         const beside = f.chipsBeside;
         const bx = beside ? roof.x + 26 : roof.x - w / 2, by = beside ? roof.y - hh / 2 : roof.y - 18 - hh;
         const dir = -1;
@@ -164,69 +207,51 @@
         g.fillText(sub, x + tw + 8, y + 25);
       });
 
-      // ---- event pips (labels join the fading labels below)
-      const cand = [];
-      if (f.markers && f.markers.size) {
-        const cur = f.cursorF >= 0 ? f.cursorF : -1e9, near = NEAR_CURSOR / cmp.step;
-        cmp.laps.forEach((L, li) => {
-          if (f.fences && !f.fences[li]) return;
-          const P = S.base[li];
-          (L.events || []).forEach((e) => {
-            if (!f.markers.has(e.kind)) return;
-            const mk = Ly.markerFor(e.kind);
-            if (!mk || !mk.pip) return;
-            const i = e.iPeak, at = [P[i * 3], P[i * 3 + 1] + 0.4, P[i * 3 + 2]], p = proj(at);
-            if (!onScreen(p, 10)) return;
-            g.fillStyle = '#111317';
-            diamond(g, p.x, p.y, 6);
-            g.fillStyle = mk.color;
-            diamond(g, p.x, p.y, 4);
-            const close = Math.abs(i - cur) < near || (cur >= e.i0 && cur <= e.i1);
-            const text = Ly.eventLabel(e);
-            if (text && (p.w < LABEL_DIST || close)) cand.push({ key: 'e' + li + ':' + e.kind + ':' + e.i0, li, p: at, text, kind: 'event', color: mk.color, near: close ? 1 : 0 });
-          });
-        });
-      }
-
-      // ---- fading labels: event chips, lap tags along the lines and gear numbers
-      if (f.tags) {
-        const every = Math.round(200 / cmp.step);
-        cmp.laps.forEach((L, li) => {
-          const P = S.base[li], off = Math.round((60 + li * 37) / cmp.step);
-          for (let j = off; j < cmp.n; j += every) cand.push({ key: 't' + li + ':' + j, li, p: [P[j * 3], P[j * 3 + 1] + 0.3, P[j * 3 + 2]], text: 'L' + L.lap.lapNo, kind: 'tag' });
-        });
-      }
-      if (f.gears) {
-        cmp.laps.forEach((L, li) => {
-          if (f.fences && !f.fences[li]) return;
-          const P = S.base[li];
-          L.shifts.forEach((s) => cand.push({ key: 'g' + li + ':' + s.i, li, p: [P[s.i * 3], P[s.i * 3 + 1] + top, P[s.i * 3 + 2]], text: String(Math.round(s.to)), kind: 'gear' }));
-        });
+      // ---- event pips, and the fading labels: event chips, lap tags along the lines and gear numbers
+      const cand = labels(f, top);
+      const cur = f.cursorF >= 0 ? f.cursorF : -1e9, near = NEAR_CURSOR / cmp.step, far = S.size * 0.9, sp = SCR;
+      for (let q = 0; q < cand.length; q++) {
+        const c = cand[q], at = c.p;
+        const cw = vp[3] * at[0] + vp[7] * at[1] + vp[11] * at[2] + vp[15];
+        c.on = false;
+        c.near = 0;
+        if (cw <= 1e-6) continue;
+        sp.x = ((vp[0] * at[0] + vp[4] * at[1] + vp[8] * at[2] + vp[12]) / cw * 0.5 + 0.5) * W;
+        sp.y = (0.5 - (vp[1] * at[0] + vp[5] * at[1] + vp[9] * at[2] + vp[13]) / cw * 0.5) * H;
+        if (!(sp.x > -10 && sp.y > -10 && sp.x < W + 10 && sp.y < H + 10)) continue;
+        const r = c.r;
+        if (c.kind === 'event') {
+          g.fillStyle = '#111317';
+          diamond(g, sp.x, sp.y, 6);
+          g.fillStyle = c.color;
+          diamond(g, sp.x, sp.y, 4);
+          const close = Math.abs(c.e.iPeak - cur) < near || (cur >= c.e.i0 && cur <= c.e.i1);
+          if (!c.text || !(cw < LABEL_DIST || close)) continue;
+          c.near = close ? 1 : 0;
+          if (!c.tw) (g.font = '700 10.5px ' + FONT), (c.tw = g.measureText(c.text).width + 14);
+          (r[0] = sp.x - c.tw / 2), (r[1] = sp.y - 27), (r[2] = c.tw), (r[3] = 17);
+        } else if (c.kind === 'tag') {
+          // tags thin out with distance so the far track doesn't fill with them
+          c.far = cw >= far;
+          (r[0] = sp.x - 12), (r[1] = sp.y - 7.5), (r[2] = 24), (r[3] = 15);
+        } else (r[0] = sp.x - 8.5), (r[1] = sp.y - 16), (r[2] = 17), (r[3] = 16);
+        c.on = true;
       }
       // labels already showing keep their place; new ones fit round them
-      cand.forEach((c) => (c.m = slot(c.key)));
-      cand.sort((a, b) => (b.near || 0) - (a.near || 0) || b.m.a - a.m.a);
+      cand.sort((a, b) => b.near - a.near || b.m.a - a.m.a);
       g.textAlign = 'center';
-      cand.forEach((c) => {
-        const p = proj(c.p);
-        let want = false, r = null;
-        if (onScreen(p, 10)) {
-          if (c.kind === 'event') {
-            g.font = '700 10.5px ' + FONT;
-            const w = g.measureText(c.text).width + 14, hh = 17;
-            r = [p.x - w / 2, p.y - 10 - hh, w, hh];
-          } else {
-            const w = c.kind === 'tag' ? 24 : 17, hh = c.kind === 'tag' ? 15 : 16;
-            r = c.kind === 'tag' ? [p.x - w / 2, p.y - hh / 2, w, hh] : [p.x - w / 2, p.y - hh, w, hh];
-          }
-          // tags thin out with distance so the far track doesn't fill with them; gear
-          // numbers keep a clear gap round each, so a tight complex shows one or two, not a wall
+      for (let q = 0; q < cand.length; q++) {
+        const c = cand[q], r = c.r;
+        let want = false;
+        if (c.on) {
+          // gear numbers keep a clear gap round each, so a tight complex shows one or two, not a wall
           const G = c.kind === 'gear' ? 9 : 0;
-          want = !overlaps([r[0] - G, r[1] - G, r[2] + 2 * G, r[3] + 2 * G]) && (c.kind !== 'tag' || p.w < S.size * 0.9);
+          (PAD[0] = r[0] - G), (PAD[1] = r[1] - G), (PAD[2] = r[2] + 2 * G), (PAD[3] = r[3] + 2 * G);
+          want = !c.far && !overlaps(PAD);
           if (want) taken.push(r);
         }
         c.m.a += ((want ? 1 : 0) - c.m.a) * k;
-        if (c.m.a < 0.02 || !r) return;
+        if (c.m.a < 0.02 || !c.on) continue;
         const L = cmp.laps[c.li];
         g.globalAlpha = c.m.a;
         if (c.kind === 'event') {
@@ -237,29 +262,28 @@
           g.fillStyle = Th.text;
           g.font = '700 10.5px ' + FONT;
           g.fillText(c.text, r[0] + r[2] / 2 + 1.5, r[1] + r[3] / 2 + 0.5);
-          g.globalAlpha = 1;
-          return;
-        }
-        if (c.kind === 'tag') {
-          g.fillStyle = Th.deep;
-          g.fillRect(r[0], r[1], r[2], r[3]);
-          g.strokeStyle = L.color;
-          g.lineWidth = 1.5;
-          g.strokeRect(r[0] + 0.75, r[1] + 0.75, r[2] - 1.5, r[3] - 1.5);
-          g.fillStyle = L.color;
-          g.font = '800 10px ' + FONT;
         } else {
-          g.fillStyle = L.color;
-          g.fillRect(r[0], r[1], r[2], r[3]);
-          g.fillStyle = Th.ink;
-          g.font = '800 11px ' + FONT;
+          if (c.kind === 'tag') {
+            g.fillStyle = Th.deep;
+            g.fillRect(r[0], r[1], r[2], r[3]);
+            g.strokeStyle = L.color;
+            g.lineWidth = 1.5;
+            g.strokeRect(r[0] + 0.75, r[1] + 0.75, r[2] - 1.5, r[3] - 1.5);
+            g.fillStyle = L.color;
+            g.font = '800 10px ' + FONT;
+          } else {
+            g.fillStyle = L.color;
+            g.fillRect(r[0], r[1], r[2], r[3]);
+            g.fillStyle = Th.ink;
+            g.font = '800 11px ' + FONT;
+          }
+          g.fillText(c.text, r[0] + r[2] / 2, r[1] + r[3] / 2 + 0.5);
         }
-        g.fillText(c.text, r[0] + r[2] / 2, r[1] + r[3] / 2 + 0.5);
         g.globalAlpha = 1;
-      });
+      }
 
       // forget labels that haven't been around for a while
-      if (mem.size > 4000) mem.clear();
+      if (mem.size > 4000) mem.clear(), (made = null);
     }
 
     return { draw };

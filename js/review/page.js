@@ -37,7 +37,7 @@
 
   const state = {
     sessions: [], laps: [], refId: null, sel: [], errors: [], warnings: [],
-    opts: { inputs: 'all', lean: false, cars: true, exag: 1, map: true, paint: 'lap', fence: 'inputs', absTint: true, attScale: 1, motion: 3,
+    opts: { inputs: 'all', lean: false, cars: true, exag: 1, map: true, paint: 'lap', fence: 'inputs', absTint: true, attScale: 1, motion: 3, wheels: true,
       markers: new Set(Ly.MARKERS.filter((m) => m.def).map((m) => m.key)) },
     lanes: { on: new Set(Tr.DEFAULT.on), picks: Tr.DEFAULT.picks.slice(), tyreMode: 'temp', tyreBand: 'avg', abs: true, labels: {}, folded: true },
     drawer: false,
@@ -57,7 +57,7 @@
       }
       const o = JSON.parse(localStorage.getItem(LAYERS_KEY) || 'null');
       if (o) {
-        ['lean', 'cars', 'exag', 'map', 'paint', 'fence', 'absTint', 'attScale', 'motion'].forEach((k) => o[k] != null && (state.opts[k] = o[k]));
+        ['lean', 'cars', 'exag', 'map', 'paint', 'fence', 'absTint', 'attScale', 'motion', 'wheels'].forEach((k) => o[k] != null && (state.opts[k] = o[k]));
         if (Array.isArray(o.markers)) state.opts.markers = new Set(o.markers);
       }
     } catch (e) {
@@ -75,7 +75,7 @@
   function saveLayers() {
     try {
       const o = state.opts;
-      localStorage.setItem(LAYERS_KEY, JSON.stringify({ lean: o.lean, cars: o.cars, exag: o.exag, map: o.map, paint: o.paint, fence: o.fence, absTint: o.absTint, attScale: o.attScale, motion: o.motion, markers: [...o.markers] }));
+      localStorage.setItem(LAYERS_KEY, JSON.stringify({ lean: o.lean, cars: o.cars, exag: o.exag, map: o.map, paint: o.paint, fence: o.fence, absTint: o.absTint, attScale: o.attScale, motion: o.motion, wheels: o.wheels, markers: [...o.markers] }));
     } catch (e) {
       /* not kept */
     }
@@ -495,7 +495,7 @@
 
   const HINTS = {
     orbit: 'Drag to orbit · right-drag to pan · wheel to zoom · hover a line to scrub',
-    follow: 'Drag to turn the camera · wheel for distance · scrub on the traces, with ← → or Play',
+    follow: 'Drag to turn the camera · wheel to zoom · scrub on the traces, with ← → or Play',
   };
 
   function viewer() {
@@ -966,6 +966,7 @@
     motion.addEventListener('input', () => ((o.motion = +motion.value), saveLayers(), dirty()));
     D.append(h('h2', null, 'View'),
       check('Cars', 'cars', 'A car for each lap where it was at the reference’s time, with the gap', dirty),
+      check('Wheel data', 'wheels', 'On the cars’ wheels: each tyre’s tread is coloured by its temperature (inner, middle and outer where the file has them): blue below 70 °C, glowing red from 85 °C, brightest at 115 °C. A rim turns rose while that wheel is locking and mint while it spins up. The wheels always turn at their own speed, so a locked one stops', dirty),
       h('label', { class: 'rv-field', title: 'How far the cars’ bodies dive, squat, roll and heave on their wheels. From ride heights when the file has them, else estimated from g. Real movement is a degree or two' }, h('span', null, 'Body motion'), motion),
       mapCheck(),
       h('label', { class: 'rv-field' }, h('span', null, 'Elevation'), elev),
@@ -1025,6 +1026,9 @@
       V.glEl.addEventListener('pointermove', hover);
       V.carMesh = V.R.dynamic('tris');
       V.shadowMesh = V.R.dynamic('tris');
+      // refilled every frame, so kept: a fresh list each time is megabytes of garbage a second
+      V.carVerts = IST.Review.GL.Verts();
+      V.shadowVerts = IST.Review.GL.Verts();
     }
     // capture phase, as on Stats: a modal is still open here, so the Esc that closes it doesn't also leave the page
     V.onKey = onKey;
@@ -1046,7 +1050,8 @@
       const dt = Math.min(0.1, Math.max(0, (ts - last) / 1000));
       last = ts;
       if (state.playing) advance(dt);
-      if (V.dirty || V.cam.mode !== 'orbit' || state.playing || V.cam.animating() || V.fading > 0) draw(dt);
+      // a follow camera that has settled on a still car needs no new frames
+      if (V.dirty || (V.cam.mode !== 'orbit' && V.cam.moving) || state.playing || V.cam.animating() || V.fading > 0) draw(dt);
       V.raf = requestAnimationFrame(loop);
     };
     V.raf = requestAnimationFrame(loop);
@@ -1198,7 +1203,9 @@
       let pose = IST.Review.Rigs.pose(V.scene, k, j), slip = NaN;
       if (attitude) {
         // yaw the car by its slip angle so it points where its nose did, not down its path
-        slip = Ly.nose(L, Math.round(j));
+        // (blended between samples, like the position, so it doesn't tick at speed)
+        const j0 = Math.min(cmp.n - 2, Math.floor(j)), s0 = Ly.nose(L, j0), s1 = Ly.nose(L, j0 + 1);
+        slip = isFinite(s0) && isFinite(s1) ? s0 + (s1 - s0) * (j - j0) : Ly.nose(L, Math.round(j));
         if (isFinite(slip)) {
           const a = Math.max(-80, Math.min(80, (slip * 180) / Math.PI * state.opts.attScale)) * (Math.PI / 180), c = Math.cos(a), s2 = Math.sin(a);
           const F = pose.fwd, Lf = pose.left;
@@ -1220,7 +1227,7 @@
   /**
    * The car's axes on the road (tilted to the slope of its line) and its body's on top
    * (dive, roll and heave from Stance, drawn at the Body motion scale), plus what the
-   * model shows: front wheel angle and brake lights.
+   * model shows: front wheel angle, brake lights and what each wheel is doing.
    */
   function stance(L, k, j, pose) {
     const M = IST.Review.M3.v, P = V.scene.base[k], n = V.cmp.n, kind = kindOf(L), m = IST.Review.Cars.model(kind);
@@ -1232,13 +1239,14 @@
     const p = [pose.p[0], pose.p[1] - V.scene.lift(k) + 0.02, pose.p[2]];
     const road = { p, f, u, l };
     const g = state.opts.motion, lim = (x, m2) => Math.max(-m2, Math.min(m2, x));
-    const st = g ? IST.Review.Stance.at(L, j, kind) : { dive: 0, roll: 0, heave: 0 };
+    const st = g ? IST.Review.Stance.at(L, j, kind, V.cmp.step) : { dive: 0, roll: 0, heave: 0 };
     const dv = lim(st.dive * g, 0.14), rl = lim(st.roll * g, 0.2), hv = lim(st.heave * g, 0.05);
     const cd = Math.cos(dv), sd = Math.sin(dv), cr = Math.cos(rl), sr = Math.sin(rl);
     const bf = M.add(M.scale(f, cd), M.scale(u, -sd)), u1 = M.add(M.scale(u, cd), M.scale(f, sd));
     const body = { p: M.add(p, M.scale(u, hv)), f: bf, l: M.add(M.scale(l, cr), M.scale(u1, sr)), u: M.add(M.scale(u1, cr), M.scale(l, -sr)) };
-    const i = Math.max(0, Math.min(n - 1, Math.round(j)));
-    return { kind, road, body, steer: L.steer ? lim(L.steer[i] / 13, 0.6) : 0, braking: !!L.brake && L.brake[i] > 0.03 };
+    const i = Math.max(0, Math.min(n - 2, Math.floor(j))), r = Math.max(0, Math.min(1, j - i));
+    const steer = L.steer ? lim((L.steer[i] + (L.steer[i + 1] - L.steer[i]) * r) / 13, 0.6) : 0;
+    return { kind, road, body, steer, braking: !!L.brake && L.brake[Math.round(j)] > 0.03, wheels: IST.Review.Stance.wheels(L, j, V.cmp.step, m.radii) };
   }
 
   function draw(dt) {
@@ -1258,17 +1266,21 @@
     } else V.rigKey = null;
     const m = V.cam.matrices(W, H);
     V.vp = m.vp;
+    // where the followed car is drawn: what a drag in the Top camera turns the view round
+    const at = C.length ? M.project(m.vp, C[0].pose.p[0], C[0].pose.p[1], C[0].pose.p[2], W, H) : null;
+    V.cam.pivot = at && at.w > 0 ? [at.x, at.y] : null;
     // close up, the coarse satellite layer is only a blur beside the sharp corridor:
     // stop drawing it (with a gap between the two distances so it doesn't flicker)
     if (m.dist < COARSE_HIDE) V.hideCoarse = true;
     else if (m.dist > COARSE_SHOW) V.hideCoarse = false;
     const items = (V.hideCoarse ? V.scene.items.filter((it) => !it.coarse) : V.scene.items).concat(V.scene.layerItems);
     if (state.opts.cars && C.length) {
-      const Vt = IST.Review.GL.Verts();
-      const Sh = IST.Review.GL.Verts(), Cars = IST.Review.Cars;
+      const Vt = V.carVerts, Sh = V.shadowVerts, Cars = IST.Review.Cars;
+      Vt.reset();
+      Sh.reset();
       C.forEach((c) => {
         const md = Cars.model(c.kind);
-        Cars.emit(Vt, md, c.road, c.body, IST.Review.GL.rgb(V.cmp.laps[c.k].color), { steer: c.steer, brake: c.braking });
+        Cars.emit(Vt, md, c.road, c.body, IST.Review.GL.rgb(V.cmp.laps[c.k].color), { steer: c.steer, brake: c.braking, wheels: c.wheels, tint: state.opts.wheels });
         Cars.shadow(Sh, md, c.road);
       });
       V.carMesh.set(Vt.data());
@@ -1347,4 +1359,5 @@
   IST.Review.open = open;
   IST.Review.close = close;
   IST.Review.state = state; // for dev tools
+  IST.Review.view = () => V; // the live view, for dev tools
 })();

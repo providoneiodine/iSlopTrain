@@ -5,17 +5,20 @@
  *   cam.mode                        'orbit' or a follow mode (see rigs.js)
  *   cam.frame(size, W, H)           orbit: fit the whole track
  *   cam.flyTo(target, dist, ms)     orbit: ease there; cam.fitDist(extent, W, H) sizes it
- *   cam.follow(rig, dt)             follow modes: ease toward a rig { eye, target, up, cut, rate }
+ *   cam.follow(rig, dt)             follow modes: ease toward a rig (rigs.js); cam.moving says it hasn't settled
+ *   cam.pivot                       [x, y] in the element: where the followed car is drawn (the page sets it)
  *   cam.matrices(W, H)              -> { vp, eye, fog, dist (eye to what it looks at, m) }
  *   cam.attach(el, onChange)        returns detach()
  *
  * Orbit: drag to orbit, right / shift-drag to pan, wheel to zoom.
  * Follow modes: drag turns the rig (cam.user.yaw / pitch), wheel scales its
- * distance (cam.user.zoom); rigs.js reads those.
+ * distance (cam.user.zoom); rigs.js reads those. Looking straight down, a
+ * drag turns the view round the car like a dial instead.
  *
- * Following is eased with time-based exponential smoothing (frame-rate
- * independent), so a car scrubbed or played at any rate moves smoothly; a
- * rig with cut: true (a trackside camera switching corners) jumps instead.
+ * Following eases the camera's offset from the car (rig.anchor), not its
+ * place in the world: the car is where the frame puts it and the camera goes
+ * with it, so an uneven frame can't shake the car on screen however fast it
+ * goes. A rig with cut: true (a trackside camera switching corners) jumps.
  */
 (function () {
   'use strict';
@@ -28,7 +31,11 @@
       target: [0, 0, 0], yaw: 0.6, pitch: 0.85, dist: 1000, size: 1000,
       fov: 0.75,
       user: { zoom: 1, yaw: 0, pitch: 0 },
-      view: null, // eased { eye, target, up } in follow modes
+      view: null, // { eye, target, up, fov } in follow modes, from the eased offsets in cam.rel
+      rel: null,
+      moving: false,
+      pivot: null,
+      touched: 0, // s left of answering a drag or the wheel at once
       anim: null,
       frame(size, W, H) {
         cam.size = size;
@@ -50,25 +57,35 @@
         if (mode === cam.mode) return;
         cam.mode = mode;
         cam.user = { zoom: 1, yaw: 0, pitch: 0 };
-        cam.view = null;
+        cam.view = cam.rel = null;
       },
       follow(rig, dt) {
         if (!rig) return;
-        if (!cam.view || rig.cut) {
-          cam.view = { eye: rig.eye.slice(), target: rig.target.slice(), up: (rig.up || [0, 1, 0]).slice() };
-          return;
+        const A = rig.anchor || [0, 0, 0], fixed = !!rig.fixed;
+        const want = { eye: fixed ? rig.eye : M.v.sub(rig.eye, A), target: M.v.sub(rig.target, A), up: rig.up || [0, 1, 0], fov: rig.fov || cam.fov };
+        let s = cam.rel;
+        if (!s || rig.cut || s.fixed !== fixed) {
+          s = cam.rel = { eye: want.eye.slice(), target: want.target.slice(), up: want.up.slice(), fov: want.fov, fixed };
+          cam.moving = true;
+        } else {
+          // a drag or the wheel is answered at once; the car turning is eased
+          const r = rig.rate || {}, fast = cam.touched > 0 ? 30 : 0;
+          cam.touched = Math.max(0, cam.touched - dt);
+          const k = (rate) => 1 - Math.exp(-Math.max(rate, fast) * dt);
+          const far = (a, b) => Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) + Math.abs(a[2] - b[2]);
+          cam.moving = far(s.eye, want.eye) + far(s.target, want.target) > 2e-3 || far(s.up, want.up) > 1e-3 || Math.abs(s.fov - want.fov) > 1e-4 || cam.touched > 0;
+          s.eye = ease(s.eye, want.eye, k(r.eye || 7));
+          s.target = ease(s.target, want.target, k(r.target || 10));
+          s.up = M.v.norm(ease(s.up, want.up, k(r.up || 5)));
+          s.fov += (want.fov - s.fov) * k(r.fov || 6);
         }
-        const r = rig.rate || {};
-        const k = (rate) => 1 - Math.exp(-rate * dt);
-        cam.view.eye = ease(cam.view.eye, rig.eye, k(r.eye || 6));
-        cam.view.target = ease(cam.view.target, rig.target, k(r.target || 12));
-        cam.view.up = M.v.norm(ease(cam.view.up, rig.up || [0, 1, 0], k(r.up || 5)));
+        cam.view = { eye: fixed ? s.eye : M.v.add(A, s.eye), target: M.v.add(A, s.target), up: s.up, fov: s.fov };
       },
       matrices(W, H) {
         const aspect = W / Math.max(1, H);
         if (cam.mode !== 'orbit' && cam.view) {
           const v = cam.view, d = M.v.len(M.v.sub(v.eye, v.target));
-          const vp = M.mul(M.perspective(cam.fov, aspect, 0.3, Math.max(2000, cam.size * 4)), M.lookAt(v.eye, v.target, v.up));
+          const vp = M.mul(M.perspective(v.fov, aspect, 0.3, Math.max(2000, cam.size * 4)), M.lookAt(v.eye, v.target, v.up));
           return { vp, eye: v.eye, dist: d, fog: { near: Math.max(200, d * 4), far: Math.max(200, d * 4) + cam.size * 2 } };
         }
         if (cam.anim) {
@@ -99,8 +116,18 @@
           drag.y = e.clientY;
           drag.moved += Math.abs(dx) + Math.abs(dy);
           if (cam.mode !== 'orbit') {
-            cam.user.yaw -= dx * 0.006;
-            cam.user.pitch = Math.max(-0.6, Math.min(1.2, cam.user.pitch + dy * 0.004));
+            const lim = IST.Review.Rigs.LIMITS[cam.mode] || [-0.2, 1.2];
+            if (lim[0] === lim[1]) {
+              // straight down: turn the view by the angle the pointer sweeps round the car, so the
+              // ground goes with the pointer; near the car that angle is damped, so a drag across it is calm
+              const b = el.getBoundingClientRect(), pv = cam.pivot || [b.width / 2, b.height / 2];
+              const rx = e.clientX - dx - b.left - pv[0], ry = e.clientY - dy - b.top - pv[1];
+              cam.user.yaw += (rx * dy - ry * dx) / Math.max(rx * rx + ry * ry, 70 * 70);
+            } else {
+              cam.user.yaw -= dx * 0.006;
+              cam.user.pitch = Math.max(lim[0], Math.min(lim[1], cam.user.pitch + dy * 0.004));
+            }
+            cam.touched = 0.25;
           } else if (drag.pan) {
             // grab-the-ground: right = (cos yaw, 0, -sin yaw), forward = (-sin yaw, 0, -cos yaw)
             const k = cam.dist * 0.0016, c = Math.cos(cam.yaw), s = Math.sin(cam.yaw);
@@ -117,7 +144,7 @@
           e.preventDefault();
           cam.anim = null;
           const f = Math.exp(e.deltaY * 0.0012);
-          if (cam.mode !== 'orbit') cam.user.zoom = Math.max(0.2, Math.min(8, cam.user.zoom * f));
+          if (cam.mode !== 'orbit') (cam.user.zoom = Math.max(0.2, Math.min(8, cam.user.zoom * f))), (cam.touched = 0.25);
           else cam.dist = Math.max(15, Math.min(cam.size * 3, cam.dist * f));
           onChange();
         };

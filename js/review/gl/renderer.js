@@ -17,7 +17,8 @@
  * lit: 0 flat colour, 1 lit by a fixed sun (so slopes read as shape).
  * blend: alpha-blend and don't write depth (fences). lift: polygon offset so
  * lines drawn on the road win the depth test.
- * GL.Verts() is a growable vertex list, so Scene writes plain geometry.
+ * GL.Verts() is a growable vertex list, so Scene writes plain geometry;
+ * V.reset() empties one for reuse.
  */
 (function () {
   'use strict';
@@ -182,9 +183,12 @@
       dynamic(mode) {
         const buf = gl.createBuffer();
         const m = { buf, mode: MODES[mode], count: 0 };
+        let cap = 0;
         m.set = (data) => {
           gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-          gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
+          // the store is only reallocated when the data outgrows it
+          if (data.length > cap) gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW), (cap = data.length);
+          else gl.bufferSubData(gl.ARRAY_BUFFER, 0, data);
           m.count = data.length / STRIDE;
         };
         meshes.add(m);
@@ -301,6 +305,10 @@
       },
       get length() {
         return n / STRIDE;
+      },
+      /** Empty it, keeping its memory: for a list refilled every frame. */
+      reset() {
+        n = 0;
       },
       data: () => a.subarray(0, n),
     };
