@@ -385,3 +385,47 @@ table.grid.rv-table td:last-child, table.grid.rv-table th:last-child { padding-r
 /* ----------------------------------------------------- track map (floats in the 3D view, top right) */
 .rv-map { position: absolute; right: 10px; max-width: calc(100% - 20px); }
 .rv-map-canvas { display: block; touch-action: none; }
+
+/* Laps panel tabs and the Coaching tab */
+.rv-laps-tabs { display: flex; margin: 0 0 8px; }
+.rv-laps-tabs .seg-b { flex: 1; }
+.rv-co-scope { font-size: var(--fs-small); margin: 0 0 10px; }
+.rv-co-scope-b { appearance: none; border: 0; background: none; padding: 0; font: inherit; color: var(--text2); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--line-strong); }
+.rv-co-scope-b.on { color: var(--butter); text-decoration: none; font-weight: var(--w-bold); }
+.rv-co-scope-b:disabled { color: var(--muted); opacity: .5; cursor: default; }
+.rv-co-scope-b:focus-visible, .rv-co-row-head:focus-visible, .rv-co-drill-btn:focus-visible { outline: 2px solid var(--accent2); outline-offset: 1px; }
+.rv-co-meta { font-size: var(--fs-label); margin: 0 0 8px; }
+.rv-co-head { font-size: 15px; font-weight: var(--w-semi); color: var(--text); line-height: 1.4; margin: 0 0 6px; }
+.rv-co-rows { list-style: none; margin: 10px 0 0; padding: 0; }
+.rv-co-row { border-top: 1px solid var(--line); padding: 10px 0; }
+.rv-co-row-head { appearance: none; border: 1px solid transparent; background: none; color: inherit; font: inherit; width: 100%; text-align: left; cursor: pointer; display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; padding: 4px 6px; margin: -4px -6px 0; box-sizing: content-box; }
+.rv-co-row-head:hover { background: var(--panel2); }
+.rv-co-name { font-size: 13px; font-weight: var(--w-bold); color: var(--text); }
+.rv-co-tag { margin-left: 6px; font-size: var(--fs-label); font-weight: var(--w-body); color: var(--muted); }
+.rv-co-lost { font-size: 13px; font-weight: var(--w-bold); font-variant-numeric: tabular-nums; color: var(--text2); }
+.rv-co-lost.mid { color: var(--rose); opacity: .8; }
+.rv-co-lost.hi { color: var(--rose); }
+.rv-co-diag { grid-column: 1 / -1; font-size: var(--fs-small); color: var(--text2); }
+.rv-co-cue { margin: 6px 0 0; font-size: var(--fs-small); color: var(--text); line-height: 1.45; }
+.rv-co-cue b { color: var(--butter); font-weight: var(--w-bold); }
+.rv-co-why, .rv-co-how { margin-top: 6px; font-size: var(--fs-small); color: var(--muted); }
+.rv-co-why summary, .rv-co-how summary { cursor: pointer; list-style: none; }
+.rv-co-why summary::-webkit-details-marker, .rv-co-how summary::-webkit-details-marker { display: none; }
+.rv-co-why summary::before, .rv-co-how summary::before { content: '▸ '; }
+.rv-co-why[open] summary::before, .rv-co-how[open] summary::before { content: '▾ '; }
+.rv-co-why p, .rv-co-how p { margin: 6px 0 0; line-height: 1.45; color: var(--text2); }
+.rv-co-ev { margin: 6px 0 0; padding-left: 16px; color: var(--text); font-variant-numeric: tabular-nums; }
+.rv-co-src { list-style: none; margin: 6px 0 0; padding: 0; font-size: var(--fs-label); }
+.rv-co-src a { color: var(--muted); }
+.rv-co-src a:hover { color: var(--text); }
+.rv-co-h { margin: 18px 0 6px; }
+.rv-co-drills { list-style: none; margin: 0; padding: 0; font-size: var(--fs-small); }
+.rv-co-drills li { padding: 6px 0; }
+.rv-co-drills li > b { color: var(--text); font-weight: var(--w-bold); }
+.rv-co-drills p { margin: 2px 0 0; color: var(--text2); line-height: 1.45; }
+.rv-co-drill-btn { appearance: none; border: 0; background: none; padding: 0; font: inherit; font-weight: var(--w-bold); color: var(--butter); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.rv-co-how { margin-top: 18px; border-top: 1px solid var(--line); padding-top: 10px; }
+.rv-co-pr { margin-top: 10px; }
+.rv-co-pr > b { color: var(--text2); }
+.rv-co-skel { height: 14px; margin: 8px 0; background: var(--panel2); opacity: .6; }
+.rv-co-skel.short { width: 60%; }

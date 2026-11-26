@@ -48,6 +48,7 @@
     mode: null, // 'one' or 'vs' once picked; null follows how many drivers are loaded
     names: {}, // driver key -> name typed over the file's
     mapFolded: false, // the track map hidden (M)
+    lapsTab: 'laps', coachScope: 'laps', // the Laps panel's tab, and the laps the Coaching tab reads
   };
   // ------------------------------------------------------- remembered choices
   const LANES_KEY = 'ist.review.lanes', LAYERS_KEY = 'ist.review.layers';
@@ -976,7 +977,11 @@
     if (side) side.scrollTop = keep.side;
   }
   function lapListBody(P, ds, vs) {
-    P.append(h('h2', null, 'Laps'));
+    const tabs = seg([['laps', 'Laps'], ['coach', 'Coaching', 'Where the time goes, what to try next session, and drills']], state.lapsTab, (t) => ((state.lapsTab = t), lapList()));
+    tabs.classList.add('rv-laps-tabs');
+    tabs.setAttribute('role', 'tablist');
+    P.append(tabs);
+    if (state.lapsTab === 'coach') return coachTab(P);
     if (ds.length > 1) {
       P.append(h('div', { class: 'rv-mode' }, seg([['one', 'One driver', 'Every lap in one list, to find your own mistakes'], ['vs', 'Vs driver', 'Laps grouped by driver, with the reference in a card in the 3D view']], vs ? 'vs' : 'one', setMode)));
     }
@@ -992,6 +997,51 @@
       const group = h('div', { class: 'rv-drv-group' }, driverHead(d, best));
       d.sessions.forEach((s) => sessionBlock(s, group, best));
       body.append(group);
+    });
+  }
+
+  // ---------------------------------------------------------- coaching tab
+  /** Laps the Coaching tab reads against the reference: the ticked ones, or every complete lap of the driver with the most. */
+  function coachLaps(scope) {
+    const ref = byId(state.refId);
+    if (!ref) return null;
+    if (scope !== 'session') return { ref, others: state.sel.filter((id) => id !== state.refId).map(byId).filter(Boolean) };
+    // a reference from someone else (a Garage 61 lap) is the target, so the laps coached are yours
+    const pool = state.laps.filter((x) => x !== ref && complete(x.lap)), count = {};
+    pool.forEach((x) => (count[keyOf(x)] = (count[keyOf(x)] || 0) + 1));
+    const key = Object.keys(count).sort((p, q) => count[q] - count[p])[0];
+    return { ref, others: pool.filter((x) => keyOf(x) === key).slice(0, 40) };
+  }
+  function coachCmp(scope) {
+    const C = coachLaps(scope);
+    if (!C) return null;
+    const label = (C.others.length ? C.others.length + (C.others.length === 1 ? ' lap' : ' laps') + ' vs ' : '') + 'ref lap ' + C.ref.lap.lapNo + (C.others.some((x) => keyOf(x) !== keyOf(C.ref)) ? ' (' + driverName(keyOf(C.ref)) + ')' : '');
+    if (scope === 'laps' && !state.solo && V.cmp && V.cmp.laps[0].entry === C.ref) return { cmp: V.cmp, label };
+    const key = C.ref.id + '>' + C.others.map((x) => x.id).join(',');
+    if (!V.coach || V.coach.key !== key) {
+      const cmp = Cmp.build(C.ref.lap, C.others.map((x) => x.lap), null, null);
+      if (C.ref.s.turns && C.ref.lap.kind === 'full') cmp.turns = IST.Review.Corners.place(cmp, C.ref.s.turns);
+      V.coach = { key, cmp };
+    }
+    return { cmp: V.coach.cmp, label };
+  }
+  /** An index on a coaching comparison, on the 3D view's grid (another lap's while one is soloed). */
+  const onView = (i, cmp) => (cmp === V.cmp || !V.cmp ? i : Math.round((i * (V.cmp.n - 1)) / Math.max(1, cmp.n - 1)));
+  function coachTab(P) {
+    const box = h('div', { class: 'rv-laps-list rv-co' });
+    P.append(box);
+    // the reference read on its own only when it is yours; someone else's lap is never coached
+    const foreign = (C) => state.laps.some((x) => keyOf(x) !== keyOf(C.ref));
+    const n = (sc) => { const C = coachLaps(sc); return C ? C.others.length || (sc === 'laps' && !foreign(C) ? 1 : 0) : 0; };
+    if (!n(state.coachScope) && n('session')) state.coachScope = 'session';
+    IST.Review.CoachPanel.render(box, {
+      scope: state.coachScope,
+      scopes: [['laps', 'ticked laps', n('laps')], ['session', 'whole session', n('session')]],
+      setScope: (sc) => ((state.coachScope = sc), lapList()),
+      get: coachCmp,
+      jump: (i, cmp) => (setCursor(onView(i, cmp)), mapTick()),
+      preview: (i, cmp) => mapPreview(i < 0 ? -1 : onView(i, cmp)),
+      startDrill: (def) => (close(), IST.App.startDrill(def)),
     });
   }
 
