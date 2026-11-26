@@ -124,7 +124,7 @@
      * like the rest.
      */
     T.TYRES = ['LF', 'RF', 'LR', 'RR'];
-    T.LAP_CHANNELS = ['t', 'x', 'y', 'z', 'speed', 'throttle', 'brake', 'clutch', 'steer', 'gear', 'rpm',
+    T.LAP_CHANNELS = ['t', 'x', 'y', 'z', 'speed', 'throttle', 'brake', 'clutch', 'steer', 'gear', 'rpm', 'pct',
       'yawRate', 'latG', 'longG', 'vx', 'vy', 'absActive', 'absCut', 'tcActive', 'bpF', 'bpR',
       'wsLF', 'wsRF', 'wsLR', 'wsRR', 'tLF', 'tRF', 'tLR', 'tRR',
       'tLF_i', 'tLF_m', 'tLF_o', 'tRF_i', 'tRF_m', 'tRF_o', 'tLR_i', 'tLR_m', 'tLR_o', 'tRR_i', 'tRR_m', 'tRR_o',

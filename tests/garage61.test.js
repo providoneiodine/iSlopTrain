@@ -105,3 +105,20 @@ test('a lap brought over from Garage 61 lands on the same track as an .ibt from 
   assert.ok(Math.abs(s.laps[0].time - L / v) / (L / v) < 0.02);
   assert.match(C.fileName(apiLap), /^G61 0m50\.270 Sam Driver Cadillac V-Series\.R GTP\.csv$/);
 });
+
+test('a Garage 61 lap cut on the samples either side of the line has the same lap time as the .ibt lap it came from', () => {
+  const T = IST.Telemetry.lib();
+  // the first row is most of a sample past the line and the last just short of it, as Garage 61 cuts them
+  const R = 200, L = 2 * Math.PI * R, v = 30, dp = v / 60 / L, p0 = dp * 0.9, rows = Math.floor((1 - p0) / dp) + 1;
+  const lines = ['Speed,LapDistPct,Lat,Lon,Brake,Throttle,RPM,SteeringWheelAngle,Gear'];
+  for (let i = 0; i < rows; i++) {
+    const p = p0 + i * dp, a = p * 2 * Math.PI;
+    const lat = 50.437 + (R * Math.sin(a)) / 111195, lon = 5.971 + (R * (1 - Math.cos(a))) / (111195 * Math.cos((50.437 * Math.PI) / 180));
+    lines.push([v, p.toFixed(8), lat.toFixed(9), lon.toFixed(9), 0, 1, 7000, 0.1, 4].join(','));
+  }
+  const s = T.process('Garage 61 - Sam Driver - Car - Track - 00.41.887 - X.csv', new TextEncoder().encode(lines.join('\n')).buffer, {});
+  assert.equal(s.laps.length, 1);
+  assert.equal(s.laps[0].kind, 'full');
+  assert.ok(Math.abs(s.laps[0].time - L / v) < 0.002, 'lap time ' + s.laps[0].time + ' vs ' + L / v);
+  assert.ok(Math.abs(s.laps[0].len - L) < 0.5);
+});

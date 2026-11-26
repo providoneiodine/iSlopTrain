@@ -233,6 +233,33 @@
         } else if (last >= 0) keys.forEach((k) => (C[k][i] = C[k][last]));
       }
     }
+    /**
+     * A one-lap export cut on the samples either side of the line (Garage 61's) starts just past
+     * it and ends just short of it, so the lap was a sample or so short. Adds a sample on the line
+     * at each end, extrapolated from the lap distance, so its time and grid match the .ibt's lap.
+     */
+    function lineEnds(S) {
+      const C = S.ch, n = S.n, p = C.lapPct;
+      if (C.lap || !p || n < 3 || !(p[0] >= 0 && p[0] < 0.01 && p[n - 1] > 0.99 && p[n - 1] <= 1)) return;
+      for (let i = 1; i < n; i++) if (p[i] < p[i - 1]) return;
+      const r0 = p[1] > p[0] ? p[0] / (p[1] - p[0]) : 0, r1 = p[n - 1] > p[n - 2] ? (1 - p[n - 1]) / (p[n - 1] - p[n - 2]) : 0;
+      if (!(r0 <= 3 && r1 <= 3)) return;
+      const rate = S.rate || 60, step = new Set(T.STEP_CHANNELS.concat(['yaw', 'lap', 'onPit']));
+      if (!C.t) C.t = Float64Array.from({ length: n }, (_, i) => i / rate);
+      for (const k in C) {
+        const a = C[k];
+        if (!a || a.length !== n) continue;
+        const o = new Float64Array(n + 2);
+        o.set(a, 1);
+        o[0] = step.has(k) ? a[0] : a[0] - (a[1] - a[0]) * r0;
+        o[n + 1] = step.has(k) ? a[n - 1] : a[n - 1] + (a[n - 1] - a[n - 2]) * r1;
+        C[k] = o;
+      }
+      C.lapPct[0] = 0;
+      C.lapPct[n + 1] = 1;
+      S.n = n + 2;
+    }
+
     /** Time per sample, never running backwards: a step back in the file's clock counts as one sample. */
     function clock(S) {
       const n = S.n, raw = S.ch.t;
@@ -248,8 +275,9 @@
     T.laps = function (S, opt) {
       opt = opt || {};
       const step = opt.step || 1;
-      const C = S.ch, n = S.n;
       blanks(S);
+      lineEnds(S);
+      const C = S.ch, n = S.n;
       const t = clock(S);
       const warnings = (S.warnings || []).slice();
 
@@ -274,6 +302,17 @@
       if (D.calib) D.calib.notes.forEach((w) => warnings.push(w));
       // iRacing logs the clutch as engagement (1 = pedal up), most tools as the pedal: the pedal, always
       if (C.clutch && median(Array.from(C.clutch.subarray ? C.clutch.subarray(0, Math.min(n, 20000)) : C.clutch.slice(0, 20000))) > 0.5) C.clutch = C.clutch.map((c) => 1 - c);
+      // the sim's own place on the lap, counted on across the line (so it never jumps back mid lap)
+      if (C.lapPct) {
+        const u = new Float64Array(n);
+        let turns = 0;
+        for (let i = 0; i < n; i++) {
+          if (i && C.lapPct[i - 1] - C.lapPct[i] > 0.5) turns++;
+          else if (i && C.lapPct[i] - C.lapPct[i - 1] > 0.5) turns--;
+          u[i] = C.lapPct[i] + turns;
+        }
+        C.pct = u;
+      }
 
       // track length: from the file, or the lap distance channel, or the laps themselves
       let L = S.meta.trackLen || 0;
