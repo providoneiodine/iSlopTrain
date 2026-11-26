@@ -44,6 +44,23 @@
 .rv-gl:active { cursor: grabbing; }
 .rv-gl:focus-visible { outline: 2px solid var(--accent2); outline-offset: -2px; }
 .rv-overlay { pointer-events: none; }
+/* Wet session: two layers of faint streaks, moved by transform only, falling while the replay plays. */
+.rv-rain { position: absolute; inset: 0; overflow: hidden; pointer-events: none; opacity: calc(.1 + .12 * var(--rain, .5)); }
+.rv-rain::before, .rv-rain::after { content: ''; position: absolute; inset: -30% -20%; rotate: 10deg; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cg stroke='%23fff' stroke-linecap='round'%3E%3Cpath d='M14 12v16'/%3E%3Cpath d='M52 96v14'/%3E%3Cpath d='M88 40v18'/%3E%3Cpath d='M120 140v15'/%3E%3Cpath d='M158 70v16'/%3E%3Cpath d='M36 160v13'/%3E%3Cpath d='M104 4v14'/%3E%3Cpath d='M140 118v17'/%3E%3Cpath d='M70 128v12'/%3E%3Cpath d='M172 22v14'/%3E%3C/g%3E%3C/svg%3E"); animation: rv-rain-near .6s linear infinite paused; }
+.rv-rain::after { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='110' height='110'%3E%3Cg stroke='%23fff' stroke-linecap='round'%3E%3Cpath d='M8 20v8'/%3E%3Cpath d='M30 74v7'/%3E%3Cpath d='M52 10v9'/%3E%3Cpath d='M70 58v8'/%3E%3Cpath d='M92 96v7'/%3E%3Cpath d='M100 30v8'/%3E%3Cpath d='M18 100v6'/%3E%3Cpath d='M80 82v7'/%3E%3C/g%3E%3C/svg%3E"); opacity: .6; animation-name: rv-rain-far; animation-duration: 1s; }
+.rv-rain.falling::before, .rv-rain.falling::after { animation-play-state: running; will-change: transform; }
+@keyframes rv-rain-near { to { transform: translateY(180px); } }
+@keyframes rv-rain-far { to { transform: translateY(110px); } }
+@media (prefers-reduced-motion: reduce) { .rv-rain::before, .rv-rain::after { animation: none; } .rv-rain { opacity: calc(.06 + .08 * var(--rain, .5)); } }
+.rv-wet {
+  display: inline-flex; align-items: center; gap: 5px; vertical-align: middle; margin-right: 8px; padding: 2px 8px; white-space: nowrap; cursor: default;
+  font-size: var(--fs-label); font-weight: var(--w-semi); color: var(--sky); background: rgba(31, 35, 42, .85); border: 1px solid rgba(159, 203, 239, .45);
+}
+.rv-wet svg { width: 11px; height: 11px; flex: none; }
+.rv-wet-mark { float: right; margin-left: 8px; padding: 0 7px; font: inherit; font-size: var(--fs-label); font-weight: var(--w-semi); color: var(--muted); background: transparent; border: 1px solid var(--line); cursor: pointer; }
+.rv-wet-mark:hover { color: var(--text2); border-color: var(--line-strong); }
+.rv-wet-mark.on { color: var(--sky); border-color: rgba(159, 203, 239, .45); }
+.rv-wet-mark:focus-visible { outline: 2px solid var(--accent2); outline-offset: 1px; }
 .rv-toolbar { position: absolute; top: 10px; left: 10px; right: 10px; display: flex; gap: 8px; align-items: flex-start; flex-wrap: wrap; pointer-events: none; }
 .rv-toolbar > * { pointer-events: auto; }
 .rv-toolbar-row { display: flex; gap: 8px; align-items: center; }

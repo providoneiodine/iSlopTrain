@@ -51,6 +51,22 @@
   };
   // ------------------------------------------------------- remembered choices
   const LANES_KEY = 'ist.review.lanes', LAYERS_KEY = 'ist.review.layers';
+  // files the player marked wet by hand, for sources with no weather (a Garage 61 site download)
+  const WET_KEY = 'ist.review.wet';
+  const wetMarks = () => {
+    try {
+      return new Set(JSON.parse(localStorage.getItem(WET_KEY) || '[]'));
+    } catch (e) {
+      return new Set();
+    }
+  };
+  function markWet(file, on) {
+    const m = wetMarks();
+    on ? m.add(file) : m.delete(file);
+    try {
+      localStorage.setItem(WET_KEY, JSON.stringify([...m].slice(-200)));
+    } catch (e) { /* private window: the mark lasts until reload */ }
+  }
   function restore() {
     try {
       const l = JSON.parse(localStorage.getItem(LANES_KEY) || 'null');
@@ -683,6 +699,8 @@
     const legend = h('div', { class: 'rv-legend' });
     const gl = h('canvas', { class: 'rv-gl', tabindex: 0, 'aria-label': '3D track view' });
     const overlay = h('canvas', { class: 'rv-overlay', 'aria-hidden': 'true' });
+    const rain = h('div', { class: 'rv-rain hidden', 'aria-hidden': 'true' });
+    const wetChip = h('span', { class: 'rv-wet hidden', role: 'status' });
     const traces = h('canvas', { class: 'rv-traces' });
     const play = h('button', { class: 'btn small', onclick: () => setPlaying(!state.playing), title: 'Play the reference lap (Space)' }, state.playing ? 'Pause' : 'Play');
     const camSeg = seg(IST.Review.Rigs.MODES.map((m, i) => [m[0], m[1], m[2] + ' (' + (i + 1) + ')']), state.camMode || 'orbit', (m) => setCam(m));
@@ -690,11 +708,11 @@
     const pip = h('div', { class: 'rv-pip hidden', role: 'group', 'aria-label': 'Reference lap' });
     const mapCanvas = h('canvas', { class: 'rv-map-canvas', 'aria-label': 'Track map: hover to preview a point, click to move the cursor there' });
     const trackMap = h('div', { class: 'rv-map hidden', role: 'group', 'aria-label': 'Track map' }, mapCanvas);
-    const stage = dropTarget(h('div', { class: 'rv-stage' }, gl, overlay,
+    const stage = dropTarget(h('div', { class: 'rv-stage' }, gl, overlay, rain,
       h('div', { class: 'rv-toolbar' },
         camSeg,
         h('div', { class: 'rv-toolbar-row' }, play, seg([[0.5, '½×'], [1, '1×'], [2, '2×'], [4, '4×']], state.rate, (r) => (state.rate = r))),
-        h('div', { class: 'rv-toolbar-end' }, layersBtn)),
+        h('div', { class: 'rv-toolbar-end' }, wetChip, layersBtn)),
       hint,
       sourcesBar(),
       legend,
@@ -715,7 +733,7 @@
     const lanesBox = h('div', { class: 'rv-lanebar', role: 'toolbar', 'aria-label': 'Trace lanes' });
     const tracesWrap = h('div', { class: 'rv-traces-wrap' }, traces);
     const cornerBar = h('div', { class: 'rv-corners hidden', role: 'toolbar', 'aria-label': 'Time lost or gained per corner' });
-    V = { glEl: gl, overlay, tracesEl: traces, tracesWrap, stage, play, camSeg, hint, pip, trackMap, mapCanvas, inputs, lapsPanel, readout, condPanel, lanesBox, cornerBar, drawer, layersBtn, legend, dirty: true };
+    V = { glEl: gl, overlay, tracesEl: traces, tracesWrap, stage, play, camSeg, hint, pip, trackMap, mapCanvas, inputs, lapsPanel, readout, condPanel, lanesBox, cornerBar, drawer, layersBtn, legend, rain, wetChip, dirty: true };
     return h('div', { class: 'rv-layout' },
       h('div', { class: 'rv-main' }, stage,
         h('div', { class: 'rv-traces-box' }, lanesBox, cornerBar, tracesWrap),
@@ -747,6 +765,7 @@
   function conditions() {
     const P = V.condPanel, cmp = V.cmp;
     const C = IST.Review.Conditions.compare(cmp.laps.map((L) => L.lap.cond));
+    wetCue();
     P.innerHTML = '';
     P.classList.toggle('hidden', !C.rows.length);
     if (!C.rows.length) return;
@@ -763,6 +782,29 @@
     det.append(tb);
     if (C.differs) det.append(h('p', { class: 'hint' }, 'Grip and balance change with conditions, so part of the gap between these laps may be the track, not the driving.'));
     P.append(det);
+  }
+
+  /** Faint rain over the 3D view and a Wet chip when any compared lap ran wet, so odd lines and braking points have a reason. */
+  function wetCue() {
+    const cmp = V.cmp, marks = wetMarks();
+    const marked = cmp.laps.map((L) => marks.has(L.entry.s.file));
+    const W = IST.Review.Conditions.wet(cmp.laps.map((L, k) => (marked[k] ? Object.assign({}, L.lap.cond, { wetness: 0.5 }) : L.lap.cond)));
+    V.rain.classList.toggle('hidden', !W);
+    V.wetChip.classList.toggle('hidden', !W);
+    if (!W) return;
+    V.rain.style.setProperty('--rain', W.level.toFixed(2));
+    V.rain.classList.toggle('falling', state.playing);
+    const n = W.laps.filter(Boolean).length, all = n === W.laps.length;
+    const names = cmp.laps.filter((_, k) => W.laps[k]).map((L) => (vsMode() ? lapTag(L.entry, L.lap.lapNo) : 'lap ' + L.lap.lapNo));
+    V.wetChip.replaceChildren(rainIcon(), h('span', null, all ? (W.rain ? 'Wet · rain' : 'Wet track') : 'Wet · ' + n + ' of ' + W.laps.length + ' laps'));
+    V.wetChip.title = (all ? 'Every lap shown ran on a wet track' : 'Ran wet: ' + names.join(', ')) + '. Lines and braking points may differ from the dry. ' + (marked.some(Boolean) ? 'Includes laps you marked wet.' : 'Details in Conditions.');
+  }
+  function rainIcon() {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 12 12');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.innerHTML = '<path d="M6 1.2C4.6 3.3 3 5.1 3 7a3 3 0 0 0 6 0c0-1.9-1.6-3.7-3-5.8z" fill="currentColor"/>';
+    return svg;
   }
 
   /** Options for the Inputs select: all laps, off, or one lap; keeps the choice if it still exists. */
@@ -854,8 +896,22 @@
     // in-car settings at the start of the first timed lap
     const first = entries.map((x) => x.lap).find(complete) || (entries[0] && entries[0].lap);
     const set = first ? [['absSet', 'ABS ', 0], ['tcSet', 'TC ', 0], ['bb', 'BB ', 1]].filter(([k]) => first[k]).map(([k, n, d]) => n + first[k][0].toFixed(d) + (k === 'bb' ? ' %' : '')).join(' · ') : '';
+    // a file with no weather of its own gets a Wet switch
+    const noWeather = !entries.some((x) => x.lap.cond && (isFinite(x.lap.cond.wetness) || isFinite(x.lap.cond.precip)));
+    let wetBtn = null;
+    if (noWeather) {
+      const on = wetMarks().has(s.file);
+      wetBtn = h('button', { class: 'rv-wet-mark' + (on ? ' on' : ''), 'aria-pressed': String(on), title: 'This file has no weather. Mark it wet to show rain in the 3D view.' }, 'Wet');
+      wetBtn.addEventListener('click', () => {
+        const now = wetBtn.getAttribute('aria-pressed') !== 'true';
+        markWet(s.file, now);
+        wetBtn.setAttribute('aria-pressed', String(now));
+        wetBtn.classList.toggle('on', now);
+        if (V && V.cmp) wetCue();
+      });
+    }
     body.append(h('div', { class: 'rv-file' },
-      h('div', { class: 'rv-file-name', title: s.file }, s.file),
+      h('div', { class: 'rv-file-name', title: s.file }, wetBtn, s.file),
       h('div', { class: 'rv-file-meta muted' }, (meta ? meta + ' · ' : '') + s.format),
       set ? h('div', { class: 'rv-file-meta muted', title: 'In-car settings at the start of the first timed lap' }, set) : null));
     const list = h('ul', { class: 'rv-lap-list' }), rest = h('ul', { class: 'rv-lap-list' });
@@ -1709,6 +1765,7 @@
       state.playT = timeAt(V.cmp.laps[0].t, state.cursorF);
     }
     if (V) V.play.textContent = on ? 'Pause' : 'Play';
+    if (V && V.rain) V.rain.classList.toggle('falling', on);
   }
 
   /** Fractional grid index where times t reach T (t rises along the lap). */

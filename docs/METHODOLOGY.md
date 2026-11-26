@@ -355,6 +355,7 @@ The slip ratio per wheel; the yaw correction for inside and outside wheels is ab
 
 - **Sources.** iRacing `.ibt`: the weekend's sky, air temperature, wind, humidity and rain from the session header, the rubber state of the last session listed, and the track temperature, wetness and sky from the live channels, averaged over each lap (so a track that warms through a stint shows it lap by lap). Garage 61: the conditions it stores for each lap. CSV: key/value rows above the header ("Track temp", "Air temp", "Track usage", "Track wetness", "Wind", "Humidity", "Precipitation", "Clouds") or condition columns. MoTeC `.ld` files carry none.
 - **Flagged as different** when the compared laps spread by more than: track or air temperature 3 °C, wetness or rain 10 points, rubber 15 points, wind 3 m/s, humidity 15 points, or a different sky. **[heuristic]**: chosen as "enough to plausibly move grip or balance", not taken from a study. Rubber given as a label by one tool and a percentage by another is shown but not compared.
+- **Wet session cue.** A lap counts as wet at track wetness of 15 % or more (iRacing "very lightly wet" and up) or rain of 2 % or more. Then faint rain falls over the 3D view while the replay plays (still when paused, a static texture with reduced motion) and a Wet chip names the wet laps. **[heuristic]** A plain Garage 61 site export carries no weather, so only laps sent with the bookmark can show it.
 - The panel only reports. Nothing in the delta, the balance calibration or the events is corrected for conditions.
 
 ### 8.9 Limits

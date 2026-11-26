@@ -7,6 +7,8 @@
  *        the field's tolerance (numbers) or the labels disagree. A field one lap gives
  *        as a number and another as a label (rubber) is shown, not compared.
  *
+ *   IST.Review.Conditions.wet(conds)  -> { level 0..1, laps: [bool], rain } or null when all dry
+ *
  * The tolerances are rules of thumb for "enough to change grip or balance", not
  * thresholds from a study: see docs/METHODOLOGY.md (Lap Viewer · Conditions).
  */
@@ -48,5 +50,19 @@
     return { rows, differs: rows.filter((r) => r.differs).length };
   }
 
-  IST.Review.Conditions = { FIELDS, compare };
+  /** Which laps ran wet: track wetness past "mostly dry", or any real rain. Level is the wettest lap's. */
+  function wet(conds) {
+    let level = 0, rain = false;
+    const laps = conds.map((c) => {
+      const w = c && isFinite(c.wetness) ? c.wetness : 0, p = c && isFinite(c.precip) ? c.precip : 0;
+      const on = w >= WET_MIN || p >= RAIN_MIN;
+      if (on) level = Math.max(level, w, p);
+      if (p >= RAIN_MIN) rain = true;
+      return on;
+    });
+    return laps.some(Boolean) ? { level: Math.min(1, level), laps, rain } : null;
+  }
+  const WET_MIN = 0.15, RAIN_MIN = 0.02;
+
+  IST.Review.Conditions = { FIELDS, compare, wet };
 })();
