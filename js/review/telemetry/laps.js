@@ -272,6 +272,8 @@
       const D = T.derive ? T.derive(S, t) : { ch: {}, calib: null };
       Object.assign(C, D.ch);
       if (D.calib) D.calib.notes.forEach((w) => warnings.push(w));
+      // iRacing logs the clutch as engagement (1 = pedal up), most tools as the pedal: the pedal, always
+      if (C.clutch && median(Array.from(C.clutch.subarray ? C.clutch.subarray(0, Math.min(n, 20000)) : C.clutch.slice(0, 20000))) > 0.5) C.clutch = C.clutch.map((c) => 1 - c);
 
       // track length: from the file, or the lap distance channel, or the laps themselves
       let L = S.meta.trackLen || 0;

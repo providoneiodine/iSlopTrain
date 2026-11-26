@@ -37,7 +37,7 @@
 
   const state = {
     sessions: [], laps: [], refId: null, sel: [], errors: [], warnings: [],
-    opts: { inputs: 'all', lean: false, cars: true, exag: 1, map: true, paint: 'balance', fence: 'inputs', absTint: true, attScale: 1, motion: 1, wheels: true, passthru: false,
+    opts: { inputs: 'all', lean: false, cars: true, exag: 1, map: true, paint: 'balance', fence: 'inputs', absTint: true, attScale: 1, motion: 1, wheels: true, passthru: true,
       markers: new Set(['lock', 'off', 'spin', 'kerb', 'us', 'os']) },
     lanes: { on: new Set(['speed', 'delta', 'throttle', 'brake', 'steer', 'gear']), picks: [], tyreMode: 'temp', tyreBand: 'avg', abs: true, labels: {}, folded: false },
     drawer: false,
@@ -61,7 +61,8 @@
       }
       const o = JSON.parse(localStorage.getItem(LAYERS_KEY) || 'null');
       if (o) {
-        ['lean', 'cars', 'exag', 'map', 'paint', 'fence', 'absTint', 'attScale', 'motion', 'wheels', 'passthru'].forEach((k) => o[k] != null && (state.opts[k] = o[k]));
+        // (Passthru became default on in v2: a choice saved before then is the old default, not a pick)
+        ['lean', 'cars', 'exag', 'map', 'paint', 'fence', 'absTint', 'attScale', 'motion', 'wheels'].concat(o.v >= 2 ? ['passthru'] : []).forEach((k) => o[k] != null && (state.opts[k] = o[k]));
         if (o.mapFolded != null) state.mapFolded = !!o.mapFolded;
         if (Array.isArray(o.markers)) state.opts.markers = new Set(o.markers);
       }
@@ -80,7 +81,7 @@
   function saveLayers() {
     try {
       const o = state.opts;
-      localStorage.setItem(LAYERS_KEY, JSON.stringify({ lean: o.lean, cars: o.cars, exag: o.exag, map: o.map, paint: o.paint, fence: o.fence, absTint: o.absTint, attScale: o.attScale, motion: o.motion, wheels: o.wheels, passthru: o.passthru, markers: [...o.markers], mapFolded: state.mapFolded }));
+      localStorage.setItem(LAYERS_KEY, JSON.stringify({ v: 2, lean: o.lean, cars: o.cars, exag: o.exag, map: o.map, paint: o.paint, fence: o.fence, absTint: o.absTint, attScale: o.attScale, motion: o.motion, wheels: o.wheels, passthru: o.passthru, markers: [...o.markers], mapFolded: state.mapFolded }));
     } catch (e) {
       /* not kept */
     }
@@ -713,10 +714,11 @@
     const condPanel = h('div', { class: 'view-panel rv-cond hidden' });
     const lanesBox = h('div', { class: 'rv-lanebar', role: 'toolbar', 'aria-label': 'Trace lanes' });
     const tracesWrap = h('div', { class: 'rv-traces-wrap' }, traces);
-    V = { glEl: gl, overlay, tracesEl: traces, tracesWrap, stage, play, camSeg, hint, pip, trackMap, mapCanvas, inputs, lapsPanel, readout, condPanel, lanesBox, drawer, layersBtn, legend, dirty: true };
+    const cornerBar = h('div', { class: 'rv-corners hidden', role: 'toolbar', 'aria-label': 'Time lost or gained per corner' });
+    V = { glEl: gl, overlay, tracesEl: traces, tracesWrap, stage, play, camSeg, hint, pip, trackMap, mapCanvas, inputs, lapsPanel, readout, condPanel, lanesBox, cornerBar, drawer, layersBtn, legend, dirty: true };
     return h('div', { class: 'rv-layout' },
       h('div', { class: 'rv-main' }, stage,
-        h('div', { class: 'rv-traces-box' }, lanesBox, tracesWrap),
+        h('div', { class: 'rv-traces-box' }, lanesBox, cornerBar, tracesWrap),
         keyLegend()),
       h('div', { class: 'rv-side' },
         condPanel, lapsPanel, readout,
@@ -906,7 +908,18 @@
 
   function lapList() {
     const P = V.lapsPanel, ds = drivers(), vs = vsMode();
+    // a pick rebuilds the list: it stays scrolled where it was
+    const old = P.querySelector('.rv-laps-list'), side = P.parentElement;
+    const keep = { list: old ? old.scrollTop : 0, side: side ? side.scrollTop : 0 };
+    if (old) state.lapsScroll = keep;
+    else if (state.lapsScroll) Object.assign(keep, state.lapsScroll);
     P.innerHTML = '';
+    lapListBody(P, ds, vs);
+    const list = P.querySelector('.rv-laps-list');
+    if (list) list.scrollTop = keep.list;
+    if (side) side.scrollTop = keep.side;
+  }
+  function lapListBody(P, ds, vs) {
     P.append(h('h2', null, 'Laps'));
     if (ds.length > 1) {
       P.append(h('div', { class: 'rv-mode' }, seg([['one', 'One driver', 'Every lap in one list, to find your own mistakes'], ['vs', 'Vs driver', 'Laps grouped by driver, with the reference in a card in the 3D view']], vs ? 'vs' : 'one', setMode)));
@@ -939,6 +952,7 @@
     conditions();
     readout();
     pipCard();
+    cornerBar();
   }
 
   // ------------------------------------------------------------ versus card
@@ -1038,6 +1052,87 @@
       P.trend.append(part(sec.name, sec, 'Time lost (+) or gained (−) so far on this stretch, ' + span));
       if (sec.prev) P.trend.append(part(sec.prev.name, sec.prev, 'The stretch before, in full'));
     }
+  }
+
+  // ------------------------------------------------------------ corner row
+  /** Severity step of a stretch's time: fixed seconds, so a colour means the same on every lap. */
+  const severity = (x) => {
+    const a = Math.abs(x);
+    if (!(a >= 0.02)) return 'flat';
+    return (x > 0 ? 'bad' : 'good') + (a >= 0.15 ? ' s3' : a >= 0.06 ? ' s2' : ' s1');
+  };
+
+  /**
+   * Above the traces: the battle card's time lost (+) or gained (−) per stretch, for the lap racing
+   * the reference, in track order. Hover previews the stretch on the traces; a click moves the cursor
+   * to its start and zooms the traces to it, and a second click goes back to the whole lap.
+   */
+  function cornerBar() {
+    const el = V.cornerBar, cmp = V.cmp, k = cmp ? rivalIndex() : -1;
+    const S = k > 0 ? Vs.sectors(cmp) : [];
+    el.innerHTML = '';
+    V.corners = null;
+    el.classList.toggle('hidden', !S.length);
+    if (!S.length) return;
+    const L = cmp.laps[k];
+    if (V.cornerOn != null && !S[V.cornerOn]) V.cornerOn = null;
+    const chips = S.map((sec, q) => {
+      const x = L.delta[sec.b] - L.delta[sec.a], on = V.cornerOn === q;
+      const b = h('button', { class: 'rv-corner ' + severity(x) + (on ? ' on' : ''), 'aria-pressed': String(on), tabindex: q === (V.cornerOn || 0) ? 0 : -1,
+        title: sec.name + ': ' + (x >= 0 ? 'lost ' : 'gained ') + Math.abs(x).toFixed(3) + ' s, from the start of braking to the next braking zone. Click to go there',
+        onclick: () => pickCorner(q), onpointerenter: () => V.traces.setPreview(sec.a, sec.b), onpointerleave: () => V.traces.setPreview(V.mapPreview == null ? -1 : V.mapPreview),
+        onfocus: () => V.traces.setPreview(sec.a, sec.b), onblur: () => V.traces.setPreview(-1) },
+        h('span', { class: 'rv-corner-name' }, sec.name), h('b', null, (x >= 0 ? '+' : '−') + Math.abs(x).toFixed(2)));
+      return b;
+    });
+    el.onkeydown = (e) => {
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+      const i = chips.indexOf(document.activeElement);
+      if (i < 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const n = chips[Math.max(0, Math.min(chips.length - 1, i + (e.key === 'ArrowRight' ? 1 : -1)))];
+      chips.forEach((c) => (c.tabIndex = c === n ? 0 : -1));
+      n.focus();
+      n.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    };
+    el.append(h('span', { class: 'rv-corners-who', title: 'Lap ' + L.lap.lapNo + ' against the reference, per stretch' }, h('i', { class: 'rv-swatch', style: 'background:' + L.color }), 'L' + L.lap.lapNo),
+      h('div', { class: 'rv-corners-list' }, chips));
+    V.corners = { S, chips, here: -1 };
+    cornerTick();
+  }
+  function pickCorner(q) {
+    const sec = V.corners && V.corners.S[q];
+    if (!sec) return;
+    const again = V.cornerOn === q;
+    markCorner(again ? null : q);
+    if (again) {
+      V.traces.zoom();
+      if (V.cam.mode === 'orbit') frameAll();
+      return;
+    }
+    setCursor(sec.a);
+    V.traces.zoom(sec.a, sec.b);
+    if (V.cam.mode === 'orbit') frameRange(sec.a, sec.b);
+  }
+  function markCorner(q) {
+    V.cornerOn = q;
+    if (V.corners) V.corners.chips.forEach((c, i) => {
+      c.classList.toggle('on', i === q);
+      c.setAttribute('aria-pressed', String(i === q));
+    });
+  }
+  /** Mark the stretch the cursor is in. */
+  function cornerTick() {
+    const C = V && V.corners;
+    if (!C) return;
+    const f = state.cursorF;
+    let i = -1;
+    if (f >= 0) for (i = C.S.length - 1; i > 0 && f < C.S[i].a; i--);
+    if (i === C.here) return;
+    if (C.chips[C.here]) C.chips[C.here].classList.remove('here');
+    if (C.chips[i]) C.chips[i].classList.add('here');
+    C.here = i;
   }
 
   // -------------------------------------------------------------- track map
@@ -1528,6 +1623,7 @@
     conditions();
     mapStatus();
     pipCard();
+    cornerBar();
     mapCard();
     if (V.R) {
       if (V.scene) V.scene.dispose();
@@ -1581,6 +1677,7 @@
     setCam('orbit');
     V.cam.flyTo([0, 0, 0], V.cam.fitDist(V.scene.size, V.glEl.clientWidth, V.glEl.clientHeight));
     V.range = null;
+    if (V.cornerOn != null) markCorner(null);
     dirty();
   }
 
@@ -1712,6 +1809,7 @@
     V.dirty = false;
     V.fading = Math.max(0, (V.fading || 0) - dt);
     pipTick();
+    cornerTick();
     mapTick();
     const W = V.glEl.clientWidth, H = V.glEl.clientHeight;
     if (!V.R || !V.scene || !W || !H) return;

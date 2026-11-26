@@ -104,6 +104,64 @@
     g.restore();
   }
 
+  const clutchUsed = new WeakMap(); // lap -> whether its clutch pedal ever goes down
+  const PW = 5, PG = 2, HOLD = 0.15; // pedal bar width and gap (px), lock / spin hold (s)
+
+  /** Width the pedal bars take beside the wheel: throttle, brake and, when the lap uses it, clutch. */
+  function pedalCount(L) {
+    if (!L.throttle && !L.brake) return 0;
+    if (L.clutch && !clutchUsed.has(L)) {
+      let used = false;
+      for (let i = 0; i < L.clutch.length && !used; i++) used = L.clutch[i] < 0.95;
+      clutchUsed.set(L, used);
+    }
+    return 2 + (L.clutch && clutchUsed.get(L) ? 1 : 0);
+  }
+
+  /**
+   * Pedal bars beside the wheel, filling from the bottom: throttle mint, brake rose, clutch lilac.
+   * A butter outline and cap mark the pedal past grip (brake lock, throttle wheelspin), held a moment
+   * so a short one still shows; a thin sky or peach strip beside the pressed pedal is under / oversteer.
+   */
+  function pedals(g, L, j, x, top, hgt, m, c, dt) {
+    const n = pedalCount(L);
+    if (!n) return;
+    const wl = c.wheels ? Object.values(c.wheels) : [];
+    const lock = wl.reduce((a, w) => Math.max(a, w.lock || 0), 0), spin = wl.reduce((a, w) => Math.max(a, w.spin || 0), 0);
+    m.lockT = lock > 0.3 ? HOLD : Math.max(0, (m.lockT || 0) - dt);
+    m.spinT = spin > 0.3 ? HOLD : Math.max(0, (m.spinT || 0) - dt);
+    const us = L.us ? L.us[j] : NaN, st = L.balState ? L.balState[j] : 0;
+    const bars = [[L.throttle, Th.mint, m.spinT > 0], [L.brake, Th.rose, m.lockT > 0]];
+    if (n > 2) bars.push([null, Th.lilac, false, 1 - L.clutch[j]]);
+    // the pressed pedal carries the balance strip: the brake on entry, else the throttle
+    const pressed = L.brake && L.brake[j] > 0.05 ? 1 : L.throttle && L.throttle[j] > 0.05 ? 0 : -1;
+    const w = n * PW + (n - 1) * PG + 8;
+    g.fillStyle = Th.deep;
+    g.fillRect(x, top - 4, w, hgt + 8);
+    bars.forEach(([a, col, past, val], q) => {
+      const raw = val != null ? val : a ? a[j] : 0;
+      const v = isFinite(raw) ? Math.max(0, Math.min(1, raw)) : 0, bx = x + 4 + q * (PW + PG), fh = Math.round(v * hgt);
+      g.fillStyle = Th.panel2;
+      g.fillRect(bx, top, PW, hgt);
+      g.fillStyle = col;
+      g.fillRect(bx, top + hgt - fh, PW, fh);
+      if (past) {
+        g.strokeStyle = Th.butter;
+        g.lineWidth = 1;
+        g.strokeRect(bx - 0.5, top - 0.5, PW + 1, hgt + 1);
+        g.fillStyle = Th.butter;
+        g.fillRect(bx, top + hgt - fh - 2, PW, 2);
+      }
+      if (q === pressed && isFinite(us) && Math.abs(us) > 0.5 * DEG) {
+        const strong = us > 0 ? st === 1 : st === -1;
+        g.fillStyle = us > 0 ? Th.sky : Th.peach;
+        g.globalAlpha = strong ? 1 : 0.55;
+        g.fillRect(bx + PW, top + hgt - fh, PG, fh);
+        g.globalAlpha = 1;
+      }
+    });
+  }
+
   function create() {
     const mem = new Map(); // label key -> { a: opacity, y: eased stack offset }
     const slot = (key) => {
@@ -232,7 +290,8 @@
         const sw = g.measureText(sub).width;
         const hh = 34, m = slot('car' + c.k);
         const jw = Math.round(Math.max(0, Math.min(cmp.n - 1, c.j)));
-        const ww = L.steer && isFinite(L.steer[jw]) ? WR * 2 + 14 : 0; // room for the wheel above the chip
+        const hasWheel = !!L.steer && isFinite(L.steer[jw]), np = pedalCount(L);
+        const ww = hasWheel || np ? WR * 2 + 14 : 0; // room for the wheel and pedals above the chip
         // the chip is centred on the car, so its width holds while the digits change: it
         // grows at once and shrinks only when the text is a good deal narrower
         const fit = tw + Math.max(mw, sw) + 16;
@@ -276,9 +335,8 @@
         g.font = '500 11px ' + FONT;
         g.fillStyle = Th.dim;
         g.fillText(sub, x + tw + 8, y + 25);
-        if (ww) {
-          wheel(g, L, jw, x + tw / 2, y - WR - 8, WR);
-        }
+        if (hasWheel) wheel(g, L, jw, x + tw / 2, y - WR - 8, WR);
+        if (np) pedals(g, L, jw, hasWheel ? x + tw / 2 + WR + 8 : x, y - WR * 2 - 6, WR * 2 - 4, m, c, f.dt || 0.016);
       });
 
       // ---- event pips, and the fading labels: event chips, lap tags along the lines and gear numbers

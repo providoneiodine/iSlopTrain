@@ -48,6 +48,7 @@
       lapPct: ['lapdistpct', 'lapdistancepct', 'lappct', 'lapfraction', 'normalizedcarposition', 'splinepos'],
       speed: ['speed', 'groundspeed', 'vehiclespeed', 'carspeed', 'speedkmh', 'speedkph', 'speedmph', 'speedms', 'gpsspeed', 'velocity'],
       throttle: ['throttle', 'throttlepos', 'throttleposition', 'throttlepedal', 'gas', 'accelerator', 'pedalthrottle', 'tps'],
+      clutch: ['clutch', 'clutchpos', 'clutchposition', 'clutchpedal', 'pedalclutch'],
       brake: ['brake', 'brakepos', 'brakeposition', 'brakepedal', 'pedalbrake', 'brakepedalpos', 'brakepressure', 'brakepressfront'],
       steer: ['steeringwheelangle', 'steeringangle', 'steerangle', 'steer', 'steering', 'steeringwheel', 'steeringpos'],
       gear: ['gear', 'currentgear', 'gearpos'],
@@ -123,7 +124,7 @@
      * like the rest.
      */
     T.TYRES = ['LF', 'RF', 'LR', 'RR'];
-    T.LAP_CHANNELS = ['t', 'x', 'y', 'z', 'speed', 'throttle', 'brake', 'steer', 'gear', 'rpm',
+    T.LAP_CHANNELS = ['t', 'x', 'y', 'z', 'speed', 'throttle', 'brake', 'clutch', 'steer', 'gear', 'rpm',
       'yawRate', 'latG', 'longG', 'vx', 'vy', 'absActive', 'absCut', 'tcActive', 'bpF', 'bpR',
       'wsLF', 'wsRF', 'wsLR', 'wsRR', 'tLF', 'tRF', 'tLR', 'tRR',
       'tLF_i', 'tLF_m', 'tLF_o', 'tRF_i', 'tRF_m', 'tRF_o', 'tLR_i', 'tLR_m', 'tLR_o', 'tRR_i', 'tRR_m', 'tRR_o',
@@ -183,7 +184,7 @@
       if (key === 'speed') {
         if (/km\/?h|kph|kmh/.test(u)) k = 1 / 3.6;
         else if (/mph/.test(u)) k = 0.44704;
-      } else if (key === 'throttle' || key === 'brake') {
+      } else if (key === 'throttle' || key === 'brake' || key === 'clutch') {
         if (u === '%' || /pct|percent/.test(u)) k = 0.01;
         else if (!u || u === 'raw') k = maxAbs(a) > 1.5 ? (maxAbs(a) > 101 ? 1 / maxAbs(a) : 0.01) : 1;
         else if (maxAbs(a) > 1.5) k = 1 / maxAbs(a); // a pressure (bar, psi, kPa): show it as a share of the peak

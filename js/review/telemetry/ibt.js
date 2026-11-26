@@ -21,7 +21,7 @@
     const SIZE = [1, 1, 4, 4, 4, 8]; // char, bool, int, bitfield, float, double
     const WANT = {
       t: 'SessionTime', lap: 'Lap', lapDist: 'LapDist', lapPct: 'LapDistPct', speed: 'Speed',
-      throttle: 'Throttle', brake: 'Brake', steer: 'SteeringWheelAngle', gear: 'Gear', rpm: 'RPM',
+      throttle: 'Throttle', brake: 'Brake', clutch: 'Clutch', steer: 'SteeringWheelAngle', gear: 'Gear', rpm: 'RPM',
       lat: 'Lat', lon: 'Lon', alt: 'Alt', yaw: 'YawNorth', yawRate: 'YawRate', latG: 'LatAccel', onPit: 'OnPitRoad',
       vx: 'VelocityX', vy: 'VelocityY', longG: 'LongAccel', vertG: 'VertAccel', roll: 'Roll', pitch: 'Pitch',
       absActive: 'BrakeABSactive', absCut: 'BrakeABScutPct', bpF: 'LFbrakeLinePress', bpR: 'LRbrakeLinePress',

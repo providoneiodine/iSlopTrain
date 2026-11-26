@@ -150,6 +150,28 @@
 .rv-lanes-n { min-width: 18px; padding: 1px 5px; text-align: center; letter-spacing: 0; font-variant-numeric: tabular-nums; background: var(--panel2); color: var(--text); }
 .rv-lanes-toggle.on .rv-lanes-n { background: rgba(31, 35, 42, .18); color: var(--ink); }
 .rv-lanes-sum { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-small); color: var(--text2); }
+/* per-corner time row: losses rose, gains mint, stronger fill = more time */
+.rv-corners { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 6px 0 8px; background: var(--panel); border-bottom: 1px solid var(--line); }
+.rv-corners-who { flex: none; display: inline-flex; align-items: center; font-size: var(--fs-label); font-weight: var(--w-bold); color: var(--text2); font-variant-numeric: tabular-nums; }
+.rv-corners-list { flex: 1; min-width: 0; display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; padding: 3px 2px; }
+.rv-corners-list::-webkit-scrollbar { display: none; }
+.rv-corner {
+  appearance: none; flex: 1 0 auto; display: inline-flex; align-items: baseline; justify-content: center; gap: 5px; padding: 3px 7px; cursor: pointer;
+  font: inherit; font-size: var(--fs-label); line-height: 1.1; white-space: nowrap; font-variant-numeric: tabular-nums;
+  background: var(--panel2); color: var(--text2); border: 1px solid var(--line-strong); box-shadow: var(--shadow-sm);
+}
+.rv-corner b { font-weight: var(--w-bold); }
+.rv-corner-name { font-weight: var(--w-semi); }
+.rv-corner.bad.s1 { background: color-mix(in srgb, var(--rose) 18%, var(--panel)); color: var(--text); }
+.rv-corner.bad.s2 { background: color-mix(in srgb, var(--rose) 38%, var(--panel)); color: var(--text); }
+.rv-corner.bad.s3 { background: var(--rose); border-color: var(--rose); color: var(--ink); }
+.rv-corner.good.s1 { background: color-mix(in srgb, var(--mint) 15%, var(--panel)); color: var(--text); }
+.rv-corner.good.s2 { background: color-mix(in srgb, var(--mint) 30%, var(--panel)); color: var(--text); }
+.rv-corner.good.s3 { background: var(--mint); border-color: var(--mint); color: var(--ink); }
+.rv-corner:hover { border-color: var(--text2); }
+.rv-corner.here { box-shadow: inset 0 -2px 0 var(--text), var(--shadow-sm); }
+.rv-corner.on { outline: 2px solid var(--butter); outline-offset: -2px; }
+.rv-corner:focus-visible { outline: 2px solid var(--accent2); outline-offset: 2px; }
 .rv-lanebar .rv-presets { flex: none; box-shadow: none; padding: 2px; }
 .rv-lanebar .rv-presets .seg-b { font-size: var(--fs-label); padding: 4px 9px; }
 
