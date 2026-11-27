@@ -104,24 +104,29 @@
     g.restore();
   }
 
-  const clutchUsed = new WeakMap(); // lap -> whether its clutch pedal ever goes down
+  const clutchUsed = new WeakMap(); // lap -> whether its clutch moves at all in the lap
   const PW = 5, PG = 2, HOLD = 0.15; // pedal bar width and gap (px), lock / spin hold (s)
+  const BAL_FULL = 20 * DEG, BAL_W = 54; // balance gauge full scale (wheel lock), its label's width (px)
+  const PHASE = ['', 'braking', 'mid-corner', 'on throttle'];
+  const BAL_LAT = 2.5, BAL_MIN = 2 * DEG, BAL_SHOW = 1.5 * DEG, BAL_TAU = 0.12; // lateral m/s², raw and shown thresholds, easing (s)
 
-  /** Width the pedal bars take beside the wheel: throttle, brake and, when the lap uses it, clutch. */
+  /** How many pedal bars: throttle and brake, plus the clutch only when it moves during the lap. */
   function pedalCount(L) {
     if (!L.throttle && !L.brake) return 0;
     if (L.clutch && !clutchUsed.has(L)) {
-      let used = false;
-      for (let i = 0; i < L.clutch.length && !used; i++) used = L.clutch[i] < 0.95;
-      clutchUsed.set(L, used);
+      let lo = Infinity, hi = -Infinity;
+      for (let i = 0; i < L.clutch.length; i++) if (isFinite(L.clutch[i])) (lo = Math.min(lo, L.clutch[i])), (hi = Math.max(hi, L.clutch[i]));
+      clutchUsed.set(L, hi - lo > 0.05);
     }
     return 2 + (L.clutch && clutchUsed.get(L) ? 1 : 0);
   }
+  /** Width of the pedal block: the bars, then the balance gauge and its label when the lap has balance. */
+  const pedalWidth = (L, n) => n * PW + (n - 1) * PG + 8 + (L.us ? 6 + PW + 4 + BAL_W : 0);
 
   /**
-   * Pedal bars beside the wheel, filling from the bottom: throttle mint, brake rose, clutch lilac.
-   * A butter outline and cap mark the pedal past grip (brake lock, throttle wheelspin), held a moment
-   * so a short one still shows; a thin sky or peach strip beside the pressed pedal is under / oversteer.
+   * Pedal bars beside the wheel, filling from the bottom: throttle mint, brake rose, clutch lilac. A butter
+   * outline and cap mark a pedal past grip (lockup, wheelspin). Then a centre-zero balance gauge (up sky =
+   * understeer, down peach = oversteer, full at 20° of wheel) labelled with its size and the phase it happens in.
    */
   function pedals(g, L, j, x, top, hgt, m, c, dt) {
     const n = pedalCount(L);
@@ -130,14 +135,10 @@
     const lock = wl.reduce((a, w) => Math.max(a, w.lock || 0), 0), spin = wl.reduce((a, w) => Math.max(a, w.spin || 0), 0);
     m.lockT = lock > 0.3 ? HOLD : Math.max(0, (m.lockT || 0) - dt);
     m.spinT = spin > 0.3 ? HOLD : Math.max(0, (m.spinT || 0) - dt);
-    const us = L.us ? L.us[j] : NaN, st = L.balState ? L.balState[j] : 0;
     const bars = [[L.throttle, Th.mint, m.spinT > 0], [L.brake, Th.rose, m.lockT > 0]];
     if (n > 2) bars.push([null, Th.lilac, false, 1 - L.clutch[j]]);
-    // the pressed pedal carries the balance strip: the brake on entry, else the throttle
-    const pressed = L.brake && L.brake[j] > 0.05 ? 1 : L.throttle && L.throttle[j] > 0.05 ? 0 : -1;
-    const w = n * PW + (n - 1) * PG + 8;
     g.fillStyle = Th.deep;
-    g.fillRect(x, top - 4, w, hgt + 8);
+    g.fillRect(x, top - 4, pedalWidth(L, n), hgt + 8);
     bars.forEach(([a, col, past, val], q) => {
       const raw = val != null ? val : a ? a[j] : 0;
       const v = isFinite(raw) ? Math.max(0, Math.min(1, raw)) : 0, bx = x + 4 + q * (PW + PG), fh = Math.round(v * hgt);
@@ -152,14 +153,38 @@
         g.fillStyle = Th.butter;
         g.fillRect(bx, top + hgt - fh - 2, PW, 2);
       }
-      if (q === pressed && isFinite(us) && Math.abs(us) > 0.5 * DEG) {
-        const strong = us > 0 ? st === 1 : st === -1;
-        g.fillStyle = us > 0 ? Th.sky : Th.peach;
-        g.globalAlpha = strong ? 1 : 0.55;
-        g.fillRect(bx + PW, top + hgt - fh, PG, fh);
-        g.globalAlpha = 1;
-      }
     });
+    if (!L.us) return;
+    const usRaw = L.us[j], st = L.balState ? L.balState[j] : 0, gx = x + 4 + n * (PW + PG) + 6, mid = top + hgt / 2;
+    // only while cornering (past BAL_LAT) and clear of noise, then eased so it can't flicker
+    const real = isFinite(usRaw) && (!L.latG || Math.abs(L.latG[j]) > BAL_LAT) && (st !== 0 || Math.abs(usRaw) > BAL_MIN);
+    m.bal = (m.bal || 0) + ((real ? usRaw : 0) - (m.bal || 0)) * (1 - Math.exp(-dt / BAL_TAU));
+    const us = m.bal;
+    g.fillStyle = Th.panel2;
+    g.fillRect(gx, top, PW, hgt);
+    g.fillStyle = Th.dim;
+    g.fillRect(gx - 1, Math.round(mid), PW + 2, 1);
+    const on = Math.abs(us) > BAL_SHOW;
+    if (on) {
+      const strong = us > 0 ? st === 1 : st === -1, len = Math.min(1, Math.abs(us) / BAL_FULL) * (hgt / 2);
+      g.globalAlpha = strong ? 1 : 0.6;
+      g.fillStyle = us > 0 ? Th.sky : Th.peach;
+      if (us > 0) g.fillRect(gx, mid - len, PW, len);
+      else g.fillRect(gx, mid, PW, len);
+      g.globalAlpha = 1;
+    }
+    // the label: what and how much, then where in the corner
+    const lx = gx + PW + 4;
+    g.textAlign = 'left';
+    g.font = '800 10.5px ' + FONT;
+    g.fillStyle = on ? (us > 0 ? Th.sky : Th.peach) : Th.dim;
+    g.fillText(on ? (us > 0 ? 'US ' : 'OS ') + Math.round(Math.abs(us) / DEG) + '°' : 'Neutral', lx, mid - 6);
+    const ph = L.phase ? PHASE[Math.round(L.phase[j])] : L.brake && L.brake[j] > 0.05 ? 'braking' : L.throttle && L.throttle[j] > 0.2 ? 'on throttle' : '';
+    if (on && ph) {
+      g.font = '500 10px ' + FONT;
+      g.fillStyle = Th.dim;
+      g.fillText(ph, lx, mid + 7);
+    }
   }
 
   function create() {
@@ -303,12 +328,13 @@
         const bx = beside ? roof.x + 26 : roof.x - w / 2, by = beside ? roof.y - hh / 2 : roof.y - 18 - hh;
         const dir = -1;
         let off = 0;
-        while (off < 5 && overlaps([bx, by + dir * off * (hh + ww + 4) - ww, w, hh + ww])) off++;
+        const aw = np ? Math.max(w, (hasWheel ? tw / 2 + WR + 8 : 0) + pedalWidth(L, np)) : w; // the pedal block can reach past the chip
+        while (off < 5 && overlaps([bx, by + dir * off * (hh + ww + 4) - ww, aw, hh + ww])) off++;
         const want = off * (hh + ww + 4);
         m.y = m.used === frameNo - 1 ? m.y + (want - m.y) * k : want;
         m.used = frameNo;
         const x = bx, y = by + dir * m.y;
-        taken.push([x, y - ww, w, hh + ww]);
+        taken.push([x, y - ww, aw, hh + ww]);
         // leader
         g.strokeStyle = L.color;
         g.lineWidth = 1.5;
