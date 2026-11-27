@@ -69,6 +69,40 @@ test('the bridge finds the layout loaded in the viewer', () => {
   assert.equal(C.matchTrack('', tracks).best, null);
 });
 
+test('"Find similar laps" lists only faster laps within the slider, fastest first, unclean last', () => {
+  const ref = { lapTime: 140, trackTemp: 30 };
+  const laps = [
+    { id: 'slower', lapTime: 140.3, trackTemp: 30 },
+    { id: 'tooFast', lapTime: 137.9, trackTemp: 30 },
+    { id: 'hot', lapTime: 139.8, trackTemp: 45 },
+    { id: 'close', lapTime: 139.5, trackTemp: 31 },
+    { id: 'unclean', lapTime: 139.9, trackTemp: 30, clean: false },
+    { id: 'hidden', lapTime: 139.9, canViewTelemetry: false },
+    { id: 'noTemp', lapTime: 139.0 },
+  ];
+  assert.deepEqual(C.faster(laps, ref, 2).map((l) => l.id), ['noTemp', 'close', 'hot', 'unclean']);
+  assert.deepEqual(C.faster(laps, ref, 0.6).map((l) => l.id), ['close', 'hot', 'unclean']);
+  assert.equal(C.faster(laps, {}, 2).length, 0);
+  assert.equal(C.quickerMax(140), 7);
+  assert.equal(C.quickerMax(60), 3);
+});
+
+test('a lap from the site\'s own search reads like an API lap, so the same columns and CSV rows work', () => {
+  const x = { id: 'L1', lap_time: 135.31, start_time: '2026-11-22T17:30:58Z', clean: true, track_temp: 18.3, weather_air_temp: 18.3,
+    weather_relative_humidity: 0.07, weather_precipitation: 0, weather_cloud_cover: 4, driver_rating: 4713, fuel_level: 9.1,
+    driver: { slug: 'robin-example-3', firstname: 'Robin', lastname: 'Example' }, sectors: [{ sector_time: 37.86, incomplete: false }, { sector_time: 1, incomplete: true }],
+    can_view_telemetry: true, have_samples: true };
+  const l = C.faster([C.fromInternal(x, { name: 'Spa' }, { name: 'Cup' })], { lapTime: 136 }, 1)[0];
+  assert.equal(l.internal, true);
+  assert.equal(C.driverName(l.driver), 'Robin Example');
+  assert.equal(l.rating, 4713);
+  assert.equal(l.sectors[1], null);
+  assert.match(C.withMeta('Speed\n1\n', l), /"Track temp","18\.3"/);
+  assert.equal(C.fromInternal(Object.assign({}, x, { have_samples: false })).canViewTelemetry, false);
+  // Garage 61 omits the flag, rather than setting it false, on laps it won't share
+  assert.equal(C.fromInternal(Object.assign({}, x, { can_view_telemetry: undefined })).canViewTelemetry, false);
+});
+
 test('a lap brought over from Garage 61 lands on the same track as an .ibt from there, with its telemetry', () => {
   const T = IST.Telemetry.lib();
   const apiLap = {

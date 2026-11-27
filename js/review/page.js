@@ -501,6 +501,9 @@
   function openGarage61() {
     const s = state.sessions[0];
     const ctx = s ? { track: s.meta.track || '', car: s.meta.car || '' } : {};
+    // the stint's best complete lap, for the bookmark's "Find similar laps"
+    const best = s && state.laps.filter((x) => x.s === s && complete(x.lap)).sort((a, b) => a.lap.time - b.lap.time)[0];
+    if (best) Object.assign(ctx, { lapTime: best.lap.time, trackTemp: best.lap.cond && best.lap.cond.trackTemp, airTemp: best.lap.cond && best.lap.cond.airTemp });
     const p = IST.Review.Garage61.panel(ctx, (files) => {
       IST.App.closeModal();
       if (root().classList.contains('hidden')) return; // left the page meanwhile

@@ -22,6 +22,9 @@
  *     on a 401, or after 10 minutes idle. Nothing is written to storage.
  *   - Only public endpoints, with the token as a Bearer header and no cookies
  *     (credentials: 'omit'). Read-only: GET /tracks, /cars, /laps, /laps/{id}/csv.
+ *   - "Find similar laps" uses the site's own /api/internal search and CSV export with
+ *     the signed-in session, since unapproved API apps only see their own team's laps.
+ *     Same queue and spacing; at most SIM_PAGES searches per click.
  *   - Calls run one at a time, at least MIN_GAP apart, only on a click. Retry-After
  *     is honoured (also on success when a bucket is empty); a 429 waits and retries
  *     once, then stops. Lists are fetched once per panel; at most MAX_SEND laps per send.
@@ -45,7 +48,7 @@
    */
   function bridge(W, testOnly) {
     'use strict';
-    var PROTO = 1, MAX_SEND = 5, MIN_GAP = 1100, IDLE = 10 * 60 * 1000;
+    var PROTO = 1, MAX_SEND = 5, MIN_GAP = 1100, IDLE = 10 * 60 * 1000, SIM_PAGES = 5, SIM_LIMIT = 100, ROWS = 15;
     var norm = function (s) {
       return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
     };
@@ -108,6 +111,51 @@
         var m = Math.floor(s / 60), r = s - m * 60;
         return m + ':' + (r < 10 ? '0' : '') + r.toFixed(3);
       },
+      /**
+       * Other drivers' laps up to `quicker` seconds faster than yours (ref: { lapTime }),
+       * fastest first, with unclean or off-track laps after the clean ones.
+       */
+      faster: function (laps, ref, quicker) {
+        var t = ref && ref.lapTime;
+        if (!(t > 0) || !(quicker > 0)) return [];
+        return (laps || []).filter(function (l) {
+          return l && l.lapTime > 0 && l.lapTime < t && t - l.lapTime <= quicker + 1e-9 && l.canViewTelemetry !== false;
+        }).map(function (l) {
+          return { l: l, k: (l.clean === false || l.offtrack ? 1000 : 0) + l.lapTime };
+        }).sort(function (a, b) {
+          return a.k - b.k;
+        }).map(function (x) {
+          return x.l;
+        });
+      },
+      /** A lap from the site's internal search, in the public API's shape (plus a few extras). */
+      fromInternal: function (x, track, car) {
+        var d = x.driver || {};
+        return {
+          id: x.id, internal: true, lapTime: x.lap_time, startTime: x.start_time, clean: x.clean,
+          // the search leaves can_view_telemetry out (not false) on laps whose CSV it refuses
+          canViewTelemetry: x.can_view_telemetry === true && x.have_samples !== false,
+          trackTemp: x.track_temp, airTemp: x.weather_air_temp, windVel: x.weather_wind_vel, relativeHumidity: x.weather_relative_humidity,
+          precipitation: x.weather_precipitation, clouds: x.weather_cloud_cover,
+          driver: { firstName: d.firstname || '', lastName: d.lastname || '', slug: d.slug || '', nickName: d.firstname || d.lastname ? '' : x.driver_name || '' },
+          rating: x.driver_rating, fuel: x.fuel_level, season: x.season,
+          sectors: (x.sectors || []).map(function (q) {
+            return q && !q.incomplete ? q.sector_time : null;
+          }),
+          track: track, car: car,
+        };
+      },
+      /** The slider's range in seconds for a lap time: 5 % of it, between 1 and 10 s. */
+      quickerMax: function (t) {
+        return Math.max(1, Math.min(10, Math.round(t * 0.05)));
+      },
+      /** How long ago a lap was driven, short ("3 d", "5 mo"). */
+      age: function (iso, now) {
+        var ms = (now || Date.now()) - Date.parse(iso);
+        if (!isFinite(ms) || ms < 0) return '';
+        var d = ms / 864e5;
+        return d < 1 ? 'today' : d < 45 ? Math.round(d) + ' d' : d < 730 ? Math.round(d / 30.4) + ' mo' : Math.round(d / 365) + ' y';
+      },
       /** File name the viewer lists the lap under. */
       fileName: function (lap) {
         var s = 'G61 ' + core.lapTime(lap.lapTime).replace(':', 'm') + ' ' + core.driverName(lap.driver) + (lap.car && lap.car.name ? ' ' + lap.car.name : '');
@@ -143,10 +191,10 @@
 
     // ------------------------------------------------------------ state (closure only)
     var token = null, appOrigin = null, nonce = null, ctx = {};
-    var cache = { tracks: null, cars: null, mine: null, team: null };
-    var track = null, car = null, tab = 'mine', picked = {}, busy = false;
+    var cache = { tracks: null, cars: null, mine: null, team: null, similar: null };
+    var track = null, car = null, tab = 'mine', picked = {}, busy = false, quicker = 0, pg = 0;
     var nextAt = 0, idleT = 0, queue = Promise.resolve(), asFiles = false, deafT = 0;
-    var opener = null;
+    var opener = null, me = null;
     try {
       opener = W.opener && !W.opener.closed ? W.opener : null;
     } catch (e) {
@@ -170,9 +218,11 @@
     function attempt(path, asText, tries) {
       if (!token) return Promise.reject(new Error('Not connected.'));
       return sleep(Math.max(0, nextAt - Date.now())).then(function () {
-        return fetch('/api/v1' + path, {
-          headers: { Authorization: 'Bearer ' + token, Accept: asText ? 'text/csv' : 'application/json' },
-          credentials: 'omit', cache: 'no-store', referrerPolicy: 'no-referrer',
+        // /internal/ is the site's own API: the signed-in session, no token
+        var own = path.indexOf('/internal/') === 0, accept = asText ? 'text/csv' : 'application/json';
+        return fetch('/api' + (own ? '' : '/v1') + path, {
+          headers: own ? { Accept: accept } : { Authorization: 'Bearer ' + token, Accept: accept },
+          credentials: own ? 'include' : 'omit', cache: 'no-store', referrerPolicy: 'no-referrer',
         });
       }).then(function (res) {
         var get = function (k) {
@@ -184,9 +234,15 @@
           if (tries < 1) return attempt(path, asText, tries + 1);
           throw new Error('Garage 61 is rate limiting these requests. Try again in ' + Math.ceil(wait / 1000) + ' s.');
         }
+        if (res.status === 401 && path.indexOf('/internal/') === 0) throw new Error('Sign in to Garage 61 in this tab to search other drivers’ laps.');
         if (res.status === 401) {
           token = null;
           throw new Error('Garage 61 rejected the token. Check it on My applications.');
+        }
+        if (res.status === 403 && path.indexOf('/internal/') === 0) {
+          var no = new Error('Garage 61 won’t share this lap’s telemetry.');
+          no.refused = true;
+          throw no;
         }
         if (res.status === 403) throw new Error('This token has no access to driving data. The app needs the driving_data permission, approved by Garage 61.');
         if (!res.ok) throw new Error('Garage 61 answered ' + res.status + ' for ' + path.split('?')[0] + '.');
@@ -203,7 +259,12 @@
       appOrigin = e.origin;
       nonce = m.nonce;
       clearTimeout(deafT);
-      ctx = { track: typeof m.track === 'string' ? m.track.slice(0, 200) : '', car: typeof m.car === 'string' ? m.car.slice(0, 200) : '' };
+      var num = function (v) {
+        return typeof v === 'number' && isFinite(v) ? v : null;
+      };
+      ctx = { track: typeof m.track === 'string' ? m.track.slice(0, 200) : '', car: typeof m.car === 'string' ? m.car.slice(0, 200) : '',
+        lapTime: num(m.lapTime), trackTemp: num(m.trackTemp), airTemp: num(m.airTemp) };
+      if (ctx.lapTime) quicker = Math.min(1.5, core.quickerMax(ctx.lapTime));
       render();
     }
     function toApp(msg) {
@@ -236,22 +297,26 @@
 
     // ------------------------------------------------------------ panel (shadow DOM, textContent only)
     var host = W.document.createElement('div');
-    host.style.cssText = 'position:fixed;top:12px;right:12px;z-index:2147483647;';
+    // centred over a dimmed page: this tab is only open to pick laps
+    host.style.cssText = 'position:fixed;inset:0;z-index:2147483647;display:grid;place-items:center;padding:24px;background:rgba(12,14,18,.6);';
     var root = host.attachShadow({ mode: 'closed' });
     var style = W.document.createElement('style');
     style.textContent = [
-      '*{box-sizing:border-box;font:13px/1.4 system-ui,sans-serif}',
-      '.p{width:420px;max-height:calc(100vh - 24px);overflow:auto;background:#272c34;color:#eef0f4;border:1px solid #5d6675;border-top:4px solid #f6d98f;box-shadow:6px 6px 0 rgba(0,0,0,.35);padding:14px 16px}',
-      '.hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}.hd b{font-size:15px}',
-      '.x{background:none;border:0;color:#a1a9b7;font-size:18px;cursor:pointer}',
-      '.m{color:#a1a9b7;font-size:12px;margin:6px 0}.e{color:#f2a7b5}',
-      'input,select{width:100%;background:#1f232a;color:#eef0f4;border:1px solid #4a525f;padding:7px 8px;margin:4px 0}',
-      'button.b{background:#3c434f;color:#eef0f4;border:1px solid #5d6675;padding:7px 12px;cursor:pointer;margin:6px 6px 0 0}',
+      '*{box-sizing:border-box;font:14px/1.45 system-ui,sans-serif}',
+      '.p{width:min(760px,100%);max-height:calc(100vh - 48px);overflow:auto;background:#272c34;color:#eef0f4;border:1px solid #5d6675;border-top:4px solid #f6d98f;box-shadow:8px 8px 0 rgba(0,0,0,.35);padding:22px 26px}',
+      '.hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}.hd b{font-size:19px}',
+      '.x{background:none;border:0;color:#a1a9b7;font-size:24px;line-height:1;cursor:pointer;padding:4px 8px}',
+      '.m{color:#a1a9b7;font-size:13px;margin:8px 0}.e{color:#f2a7b5}',
+      'input,select{width:100%;background:#1f232a;color:#eef0f4;border:1px solid #4a525f;padding:9px 10px;margin:4px 0}',
+      'button.b{background:#3c434f;color:#eef0f4;border:1px solid #5d6675;padding:9px 16px;cursor:pointer;margin:8px 8px 0 0}',
       'button.pr{background:#f6d98f;color:#1f232a;border-color:#f6d98f;font-weight:700}',
       'button:disabled{opacity:.45;cursor:default}',
-      '.tabs{display:flex;gap:4px;margin:8px 0}.tabs button{flex:1;margin:0}.tabs .on{border-color:#f6d98f;color:#f6d98f}',
-      'table{width:100%;border-collapse:collapse;margin-top:4px}td{padding:4px 4px;border-top:1px solid #3c434f;vertical-align:middle}',
+      '.tabs{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 8px}.tabs button{flex:1 1 140px;margin:0}.tabs .on{border-color:#f6d98f;color:#f6d98f}',
+      'table{width:100%;border-collapse:collapse;margin-top:4px;color:inherit}td{padding:8px 6px;border-top:1px solid #3c434f;vertical-align:middle}td.d{font-variant-numeric:tabular-nums;color:#a1a9b7}',
       'td.t{font-variant-numeric:tabular-nums;font-weight:600}tr.off{opacity:.4}tr.best td.t{color:#f6d98f}',
+      'th{color:#a1a9b7;font-size:12px;font-weight:400;text-align:left;padding:4px 6px}tr.warn td.t{color:#a1a9b7}',
+      '.sl{margin:10px 0 2px}.sl b{display:block;font-weight:600;margin-bottom:4px}.sl input{accent-color:#f6d98f;padding:0;border:0;background:none}',
+      '.pg{display:flex;align-items:center;gap:10px}.pg button{margin:8px 0 0}.pg span{margin-top:8px}',
       'a{color:#f6d98f}',
     ].join('');
     var panel = W.document.createElement('div');
@@ -289,7 +354,7 @@
 
     function dispose(note) {
       token = null;
-      cache = { tracks: null, cars: null, mine: null, team: null };
+      cache = { tracks: null, cars: null, mine: null, team: null, similar: null };
       picked = {};
       clearTimeout(idleT);
       clearTimeout(deafT);
@@ -314,7 +379,7 @@
       } else if (!nonce) {
         panel.append(el('p', { className: 'm', text: 'Waiting for the iSlopTrain tab…' }));
       } else if (ctx.track) {
-        panel.append(el('p', { className: 'm', text: 'Loaded in iSlopTrain: ' + ctx.track + (ctx.car ? ' · ' + ctx.car : '') }));
+        panel.append(el('p', { className: 'm', text: 'Loaded in iSlopTrain: ' + ctx.track + (ctx.car ? ' · ' + ctx.car : '') + (ctx.lapTime ? ' · best ' + core.lapTime(ctx.lapTime) : '') }));
       }
       if (!token) renderToken();
       else if (!track) renderTrack();
@@ -393,15 +458,20 @@
     function pickTrack(t) {
       track = t;
       touch();
-      loadTab('mine');
+      // with a lap loaded in iSlopTrain, a faster reference is what you're usually after
+      loadTab(ctx.lapTime ? 'similar' : 'mine');
     }
 
     function loadTab(which) {
+      // your own laps are already in iSlopTrain, so a reference pick starts empty
+      if (which !== tab) pg = 0;
+      if (which === 'similar' && tab !== 'similar') picked = {};
       tab = which;
       if (cache[which]) return render();
       busy = true;
       setStatus('Finding laps…');
-      var q = '?tracks=' + track.id + (car ? '&cars=' + car.id : '') + (which === 'mine' ? '&drivers=me&group=none&limit=50' : '&group=driver&limit=20');
+      if (which === 'similar') return loadSimilar();
+      var q = '?tracks=' + track.id + (car ? '&cars=' + car.id : '') + (which === 'mine' ? '&drivers=me&group=none&limit=50' : which === 'similar' ? '&group=driver&limit=100' : '&group=driver&limit=20');
       api('/laps' + q).then(function (r) {
         var items = ((r && r.items) || []).slice().sort(function (a, b) {
           return (a.lapTime || 1e9) - (b.lapTime || 1e9);
@@ -420,11 +490,47 @@
       }).catch(fail);
     }
 
+    /**
+     * Other drivers' best laps from the site's search, page by page until the laps get
+     * slower than yours (the search lists the fastest first) or SIM_PAGES is reached.
+     */
+    function loadSimilar() {
+      var got = [], seen = {}, page = 0;
+      var who = me ? Promise.resolve(me) : api('/me').then(function (m) {
+        return (me = m || {});
+      }, function () {
+        return (me = {});
+      });
+      var next = function () {
+        var q = '/internal/laps?clean=1&tracks=' + track.id + (car ? '&cars=' + car.id : '') + '&weight_penalty_min=0&power_adjust_max=0&age=-1&limit=' + SIM_LIMIT + '&offset=' + page * SIM_LIMIT;
+        setStatus('Searching other drivers’ laps' + (page ? ' (page ' + (page + 1) + ')' : '') + '…');
+        return api(q).then(function (r) {
+          var items = (r && r.items) || [], fresh = 0;
+          items.forEach(function (x) {
+            if (!x || !x.id || seen[x.id]) return;
+            seen[x.id] = 1;
+            fresh++;
+            if (!(me.slug && x.driver && x.driver.slug === me.slug)) got.push(core.fromInternal(x, track, car));
+          });
+          page++;
+          var slowest = items.length ? items[items.length - 1].lap_time : 0;
+          // stop when a page adds nothing new (no paging), is short, or already passes your time
+          if (fresh && items.length >= SIM_LIMIT && slowest < ctx.lapTime && page < SIM_PAGES) return next();
+        });
+      };
+      who.then(next).then(function () {
+        cache.similar = got;
+        busy = false;
+        statusText = '';
+        render();
+      }).catch(fail);
+    }
+
     function renderLaps() {
       panel.append(el('p', { className: 'm', text: core.trackLabel(track) + (car ? ' · ' + car.name : ' · any car') }));
       if (car) panel.append(el('button', { className: 'b', text: 'Show every car', on: { click: function () {
         car = null;
-        cache.mine = cache.team = null;
+        cache.mine = cache.team = cache.similar = null;
         loadTab(tab);
       } } }));
       panel.append(el('div', { className: 'tabs' }, [
@@ -434,29 +540,97 @@
         el('button', { className: 'b' + (tab === 'team' ? ' on' : ''), text: 'Best per driver', disabled: busy, on: { click: function () {
           loadTab('team');
         } } }),
+        el('button', { className: 'b' + (tab === 'similar' ? ' on' : ''), text: 'Find similar laps', disabled: busy || !ctx.lapTime,
+          title: ctx.lapTime ? 'Other drivers’ laps a little faster than your ' + core.lapTime(ctx.lapTime) : 'Load a lap in iSlopTrain first', on: { click: function () {
+            loadTab('similar');
+          } } }),
       ]));
-      var items = cache[tab] || [];
+      var sim = tab === 'similar' && ctx.lapTime > 0;
       var n = Object.keys(picked).length;
-      var tb = el('table');
-      items.forEach(function (l, i) {
-        var can = l.canViewTelemetry !== false;
-        var box = el('input', { type: 'checkbox', checked: !!picked[l.id], disabled: !can || (!picked[l.id] && n >= MAX_SEND), on: { change: function () {
-          if (box.checked) picked[l.id] = l;
-          else delete picked[l.id];
+      var tb = el('table'), pager = el('div', { className: 'pg' });
+      var fill = function () {
+        tb.textContent = '';
+        var all = sim ? core.faster(cache.similar, ctx, quicker) : cache[tab] || [];
+        var pages = Math.max(1, Math.ceil(all.length / ROWS));
+        if (pg >= pages) pg = pages - 1;
+        var items = all.slice(pg * ROWS, pg * ROWS + ROWS);
+        if (sim) tb.append(el('tr', { className: 'h' }, ['', 'Lap', 'Faster', 'Driver', 'iRating', 'Track', 'Air', 'Fuel', 'Driven', ''].map(function (t) {
+          return el('th', { text: t });
+        })));
+        items.forEach(function (l, i) {
+          var can = l.canViewTelemetry !== false;
+          var box = el('input', { type: 'checkbox', checked: !!picked[l.id], disabled: !can || (!picked[l.id] && n >= MAX_SEND), on: { change: function () {
+            if (box.checked) picked[l.id] = l;
+            else delete picked[l.id];
+            touch();
+            render();
+          } } });
+          box.style.width = 'auto';
+          i += pg * ROWS;
+          var flag = l.clean === false ? 'unclean' : l.offtrack ? 'off track' : l.precipitation > 0 ? 'rain' : '';
+          if (!sim) {
+            var when = l.startTime ? new Date(l.startTime).toLocaleDateString() : '';
+            tb.append(el('tr', { className: (can ? '' : 'off') + (i === 0 ? ' best' : ''), title: can ? '' : 'Telemetry not visible for this lap' }, [
+              el('td', null, [box]),
+              el('td', { className: 't', text: core.lapTime(l.lapTime) }),
+              el('td', { text: tab === 'team' ? core.driverName(l.driver) : when }),
+              el('td', { className: 'm', text: (l.car && l.car.name) || '' }),
+              el('td', { className: 'm', text: flag === 'rain' ? '' : flag }),
+            ]));
+            return;
+          }
+          var tt = typeof l.trackTemp === 'number' ? l.trackTemp : null, at = typeof l.airTemp === 'number' ? l.airTemp : null;
+          var dT = tt != null && ctx.trackTemp != null ? tt - ctx.trackTemp : null;
+          var secs = (l.sectors || []).map(function (v, k) {
+            return 'S' + (k + 1) + ' ' + (v > 0 ? v.toFixed(3) : '–');
+          }).join('  ');
+          tb.append(el('tr', { className: flag ? 'warn' : '', title: secs }, [
+            el('td', null, [box]),
+            el('td', { className: 't', text: core.lapTime(l.lapTime) }),
+            el('td', { className: 'd', text: '−' + (ctx.lapTime - l.lapTime).toFixed(3) }),
+            el('td', { text: core.driverName(l.driver) }),
+            el('td', { className: 'm', text: l.rating > 0 ? String(l.rating) : '–' }),
+            el('td', { className: 'm' + (dT != null && Math.abs(dT) > 3 ? ' e' : ''), title: dT != null ? (dT >= 0 ? '+' : '') + dT.toFixed(1) + ' °C vs yours' : '', text: tt != null ? tt.toFixed(0) + ' °C' : '–' }),
+            el('td', { className: 'm', text: at != null ? at.toFixed(0) + ' °C' : '–' }),
+            el('td', { className: 'm', title: 'Fuel in the tank at the start of the lap: more is heavier and slower', text: l.fuel > 0 ? l.fuel.toFixed(1) + ' L' : '–' }),
+            el('td', { className: 'm', title: l.startTime ? new Date(l.startTime).toLocaleString() : '', text: l.startTime ? core.age(l.startTime) : '–' }),
+            el('td', { className: 'm' + (flag ? ' e' : ''), text: flag }),
+          ]));
+        });
+        if (sim && cache.similar && !items.length) tb.append(el('tr', null, [el('td', { className: 'm', colSpan: 10, text: 'No other drivers within ' + quicker.toFixed(1) + ' s of your lap here. Drag the slider for more.' })]));
+        pager.textContent = '';
+        if (pages > 1) {
+          var go = function (d) {
+            return function () {
+              pg += d;
+              touch();
+              fill();
+            };
+          };
+          pager.append(el('button', { className: 'b', text: '‹ Faster', disabled: pg === 0, on: { click: go(-1) } }),
+            el('span', { className: 'm', text: (pg * ROWS + 1) + '–' + Math.min(all.length, pg * ROWS + ROWS) + ' of ' + all.length }),
+            el('button', { className: 'b', text: 'Slower ›', disabled: pg >= pages - 1, on: { click: go(1) } }));
+        }
+      };
+      if (sim) {
+        var max = core.quickerMax(ctx.lapTime);
+        var lbl = el('b', { text: '' });
+        var setLbl = function () {
+          lbl.textContent = 'Up to ' + quicker.toFixed(1) + ' s faster than your ' + core.lapTime(ctx.lapTime);
+        };
+        setLbl();
+        var range = el('input', { type: 'range', min: '0.1', max: String(max), step: '0.1', value: String(quicker), 'aria-label': 'Seconds faster than your lap', on: { input: function () {
+          quicker = +range.value;
+          pg = 0;
+          setLbl();
           touch();
-          render();
+          fill();
         } } });
-        box.style.width = 'auto';
-        var when = l.startTime ? new Date(l.startTime).toLocaleDateString() : '';
-        tb.append(el('tr', { className: (can ? '' : 'off') + (i === 0 ? ' best' : ''), title: can ? '' : 'Telemetry not visible for this lap' }, [
-          el('td', null, [box]),
-          el('td', { className: 't', text: core.lapTime(l.lapTime) }),
-          el('td', { text: tab === 'team' ? core.driverName(l.driver) : when }),
-          el('td', { className: 'm', text: (l.car && l.car.name) || '' }),
-          el('td', { className: 'm', text: l.clean === false ? 'unclean' : l.offtrack ? 'off' : '' }),
-        ]));
-      });
-      panel.append(tb);
+        panel.append(el('div', { className: 'sl' }, [lbl, range]));
+        panel.append(el('p', { className: 'm', text: 'Other drivers’ best clean laps, fastest first. Track temperature more than 3 °C from yours' + (ctx.trackTemp != null ? ' (' + ctx.trackTemp.toFixed(0) + ' °C)' : '') + ' is marked, and a lot more or less fuel than you ran changes the pace. Hover a row for its sectors.' }));
+      }
+      fill();
+      panel.append(tb, pager);
       var live = !!(opener && nonce), s = n + ' lap' + (n === 1 ? '' : 's');
       panel.append(el('button', { className: 'b pr', disabled: busy || !n || !live, text: 'Send ' + s, on: { click: send } }));
       if (!live) panel.append(el('button', { className: 'b', disabled: busy || !n, text: 'Save ' + s + ' as CSV files', on: { click: function () {
@@ -474,16 +648,28 @@
       var live = !!(opener && nonce);
       if (!live && !asFiles) return;
       busy = true;
-      var i = 0;
+      var i = 0, skipped = [];
       var next = function () {
         if (i >= laps.length) {
-          if (live) toApp({ type: 'done', count: laps.length });
-          dispose(laps.length + ' lap(s) ' + (live ? 'sent' : 'saved') + '. The token was forgotten.');
+          var n = laps.length - skipped.length;
+          // a refused lap is skipped, not fatal; if every lap was refused, stay open to pick others
+          if (!n) {
+            busy = false;
+            skipped.forEach(function (l) {
+              delete picked[l.id];
+            });
+            return setStatus('Garage 61 won’t share telemetry for ' + skipped.map(function (l) {
+              return core.driverName(l.driver);
+            }).join(', ') + '. Pick other laps.', true);
+          }
+          if (live) toApp({ type: 'done', count: n });
+          dispose(n + ' lap(s) ' + (live ? 'sent' : 'saved') + (skipped.length ? ', ' + skipped.length + ' refused by Garage 61' : '') + '. The token was forgotten.');
           return;
         }
         var l = laps[i];
         setStatus('Fetching lap ' + (i + 1) + ' of ' + laps.length + '…');
-        api('/laps/' + encodeURIComponent(l.id) + '/csv', true).then(function (csv) {
+        api((l.internal ? '/internal' : '') + '/laps/' + encodeURIComponent(l.id) + '/csv', true).then(function (csv) {
+          if (l.internal && !/speed|lapdistpct/i.test(String(csv).slice(0, 4000))) throw new Error('Garage 61 sent ' + core.driverName(l.driver) + '’s lap in a format iSlopTrain doesn’t read.');
           var text = core.withMeta(csv, l), name = core.fileName(l);
           if (live) {
             if (!toApp({ type: 'lap', name: name, csv: text })) throw new Error('The iSlopTrain tab was closed.');
@@ -498,7 +684,12 @@
           }
           i++;
           next();
-        }).catch(fail);
+        }).catch(function (err) {
+          if (!err || !err.refused) return fail(err);
+          skipped.push(l);
+          i++;
+          next();
+        });
       };
       next();
     }
@@ -587,7 +778,7 @@
       if (!m) return;
       if (m.type === 'hello') {
         if (m.v !== PROTO) return say('That bookmark is from another version of iSlopTrain. Drag the button above to your bookmarks bar again.', true);
-        win.postMessage({ type: 'ist-g61-ctx', v: PROTO, nonce, track: ctx.track || '', car: ctx.car || '' }, G61);
+        win.postMessage({ type: 'ist-g61-ctx', v: PROTO, nonce, track: ctx.track || '', car: ctx.car || '', lapTime: ctx.lapTime || 0, trackTemp: ctx.trackTemp, airTemp: ctx.airTemp }, G61);
         say('Connected to the Garage 61 tab. Pick laps there.');
       } else if (m.type === 'lap') {
         files.push(new File([m.csv], m.name, { type: 'text/csv' }));
