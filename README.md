@@ -1,5 +1,7 @@
-# iSlopTrain: I got tired of all the setup shops charging for slopapps that u have to download, so I slopped together one u can use anywhere
+# iSlopTrain
+I got tired of people charging money for low effort vibecoded sim apps.
 
+https://providoneiodine.github.io/iSlopTrain/
 > [!WARNING]
 > ## ⚠️ This project is vibecoded
 >
