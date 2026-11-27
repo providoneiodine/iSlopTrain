@@ -189,6 +189,24 @@
 .rv-corner.here { box-shadow: inset 0 -2px 0 var(--text), var(--shadow-sm); }
 .rv-corner.on { outline: 2px solid var(--butter); outline-offset: -2px; }
 .rv-corner:focus-visible { outline: 2px solid var(--accent2); outline-offset: 2px; }
+/* corner comparison: the looped chip, and one sentence on what differs from the reference */
+.rv-corner.loop { outline: 2px solid var(--butter); outline-offset: -2px; }
+.rv-focus { display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 4px 6px 4px 10px; background: color-mix(in srgb, var(--butter) 7%, var(--panel)); border-bottom: 1px solid var(--line); }
+.rv-focus-loop { flex: none; align-self: flex-start; display: inline-flex; margin-top: 2px; color: var(--butter); }
+.rv-focus-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.rv-focus-fix, .rv-focus-cue { max-width: 75ch; }
+.rv-focus-text { margin: 0; font-size: var(--fs-label); color: var(--text2); line-height: 1.35; font-variant-numeric: tabular-nums; }
+.rv-focus-text .rv-swatch { vertical-align: -1px; }
+.rv-focus-text b { font-weight: var(--w-bold); color: var(--text); }
+.rv-focus-text b.bad { color: var(--rose); }
+.rv-focus-text b.good { color: var(--mint); }
+.rv-focus-text .us { color: var(--sky); font-weight: var(--w-semi); }
+.rv-focus-text .os { color: var(--peach); font-weight: var(--w-semi); }
+.rv-focus-fix { margin: 0; font-size: var(--fs-label); color: var(--text2); line-height: 1.35; }
+.rv-focus-fix > b { color: var(--text); font-weight: var(--w-semi); }
+.rv-focus-cue { margin: 0; font-size: var(--fs-label); line-height: 1.35; color: var(--text); }
+.rv-focus-cue > b { color: var(--butter); font-weight: var(--w-bold); margin-right: 4px; }
+.rv-focus .btn { flex: none; }
 .rv-lanebar .rv-presets { flex: none; box-shadow: none; padding: 2px; }
 .rv-lanebar .rv-presets .seg-b { font-size: var(--fs-label); padding: 4px 9px; }
 

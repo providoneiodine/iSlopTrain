@@ -293,12 +293,13 @@
         if (!onScreen(roof, 60)) return;
         const isRef = c.k === 0;
         const tag = 'L' + L.lap.lapNo;
+        const dl = L.delta[i] - (f.zero >= 0 ? L.delta[f.zero] : 0); // a corner comparison counts from its loop's start
         let main, sub;
         if (isRef) {
           main = 'REF';
           sub = Math.round(L.speed[i] * 3.6) + ' km/h' + (L.gear ? ' · G' + Math.round(L.gear[i]) : '');
         } else {
-          const d = L.delta[i];
+          const d = dl;
           main = (d >= 0 ? '+' : '−') + Math.abs(d).toFixed(3) + 's';
           sub = Math.abs(c.gapM) < 0.5 ? 'level' : Math.abs(c.gapM).toFixed(1) + ' m ' + (c.gapM > 0 ? 'behind' : 'ahead');
         }
@@ -356,7 +357,7 @@
         g.fillText(tag, x + tw / 2, y + hh / 2 + 0.5);
         g.textAlign = 'left';
         g.font = '800 12.5px ' + FONT;
-        g.fillStyle = isRef ? Th.butter : L.delta[i] > 0.0005 ? Th.rose : L.delta[i] < -0.0005 ? Th.mint : Th.text;
+        g.fillStyle = isRef ? Th.butter : dl > 0.0005 ? Th.rose : dl < -0.0005 ? Th.mint : Th.text;
         g.fillText(main, x + tw + 8, y + 12);
         g.font = '500 11px ' + FONT;
         g.fillStyle = Th.dim;

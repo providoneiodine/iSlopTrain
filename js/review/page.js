@@ -29,7 +29,7 @@
 (function () {
   'use strict';
   const U = IST.util, h = U.h, Th = IST.Theme, M = IST.Review.M3;
-  const Cmp = IST.Review.Compare, Tr = IST.Review.Traces, Ly = IST.Review.Layers, Vs = IST.Review.Versus;
+  const Cmp = IST.Review.Compare, Tr = IST.Review.Traces, Ly = IST.Review.Layers, Vs = IST.Review.Versus, Fo = IST.Review.Focus;
   const COLORS = [Th.butter, Th.sky, Th.lilac, Th.peach, Th.text];
   const MAX_LAPS = COLORS.length;
   const ACCEPT = '.ibt,.ld,.ldx,.csv,.tsv,.txt';
@@ -734,10 +734,11 @@
     const lanesBox = h('div', { class: 'rv-lanebar', role: 'toolbar', 'aria-label': 'Trace lanes' });
     const tracesWrap = h('div', { class: 'rv-traces-wrap' }, traces);
     const cornerBar = h('div', { class: 'rv-corners hidden', role: 'toolbar', 'aria-label': 'Time lost or gained per corner' });
-    V = { glEl: gl, overlay, tracesEl: traces, tracesWrap, stage, play, camSeg, hint, pip, trackMap, mapCanvas, inputs, lapsPanel, readout, condPanel, lanesBox, cornerBar, drawer, layersBtn, legend, rain, wetChip, dirty: true };
+    const focusBar = h('div', { class: 'rv-focus hidden', role: 'status', 'aria-live': 'polite' });
+    V = { glEl: gl, overlay, tracesEl: traces, tracesWrap, stage, play, camSeg, hint, pip, trackMap, mapCanvas, inputs, lapsPanel, readout, condPanel, lanesBox, cornerBar, focusBar, drawer, layersBtn, legend, rain, wetChip, dirty: true };
     return h('div', { class: 'rv-layout' },
       h('div', { class: 'rv-main' }, stage,
-        h('div', { class: 'rv-traces-box' }, lanesBox, cornerBar, tracesWrap),
+        h('div', { class: 'rv-traces-box' }, lanesBox, cornerBar, focusBar, tracesWrap),
         keyLegend()),
       h('div', { class: 'rv-side' },
         condPanel, lapsPanel, readout,
@@ -755,7 +756,7 @@
     const zoom = 'Drag across the traces to zoom both views to that stretch · shift-drag to pan · wheel to zoom · double-click for the whole lap';
     return h('div', { class: 'rv-traces-hint rv-keys', 'aria-label': 'Keyboard shortcuts' },
       key(['Space'], 'play'), key(['1–' + n], 'camera'), key(['C'], 'next camera'), key(['L'], 'layers'), key(['M'], 'map'),
-      key(['←', '→'], '10 m, with Shift 100 m'), key(['Esc'], 'close'),
+      key(['←', '→'], '10 m, with Shift 100 m'), key(['Shift'], 'click a corner: loop it'), key(['Esc'], 'close'),
       h('span', { class: 'rv-keys-zoom', title: zoom }, 'Traces: drag to zoom · double-click for the whole lap'));
   }
 
@@ -1137,7 +1138,7 @@
   function pipRow(P) {
     const at = state.cursorF >= 0, b = Vs.battle(V.cmp, P.k, at ? state.cursorF : V.cmp.n - 1);
     if (!b) return;
-    const d = b.delta, text = (d >= 0 ? '+' : '−') + Math.abs(d).toFixed(3);
+    const d = b.delta - (V.focus ? V.cmp.laps[P.k].delta[V.focus.w.a0] : 0), text = (d >= 0 ? '+' : '−') + Math.abs(d).toFixed(3);
     if (text !== P.text) {
       P.text = P.delta.textContent = text;
       P.delta.className = 'rv-pip-delta ' + (d > 0.005 ? 'bad' : d < -0.005 ? 'good' : 'flat');
@@ -1185,8 +1186,8 @@
     const chips = S.map((sec, q) => {
       const x = L.delta[sec.b] - L.delta[sec.a], on = V.cornerOn === q;
       const b = h('button', { class: 'rv-corner ' + severity(x) + (on ? ' on' : ''), 'aria-pressed': String(on), tabindex: q === (V.cornerOn || 0) ? 0 : -1,
-        title: sec.name + ': ' + (x >= 0 ? 'lost ' : 'gained ') + Math.abs(x).toFixed(3) + ' s, from the start of braking to the next braking zone. Click to go there',
-        onclick: () => pickCorner(q), onpointerenter: () => V.traces.setPreview(sec.a, sec.b), onpointerleave: () => V.traces.setPreview(V.mapPreview == null ? -1 : V.mapPreview),
+        title: sec.name + ': ' + (x >= 0 ? 'lost ' : 'gained ') + Math.abs(x).toFixed(3) + ' s, from the start of braking to the next braking zone. Click to go there; Shift-click to loop it against the reference',
+        onclick: (e) => (e.shiftKey ? toggleFocus(q) : pickCorner(q)), onpointerenter: () => V.traces.setPreview(sec.a, sec.b), onpointerleave: () => V.traces.setPreview(V.mapPreview == null ? -1 : V.mapPreview),
         onfocus: () => V.traces.setPreview(sec.a, sec.b), onblur: () => V.traces.setPreview(-1) },
         h('span', { class: 'rv-corner-name' }, sec.name), h('b', null, (x >= 0 ? '+' : '−') + Math.abs(x).toFixed(2)));
       return b;
@@ -1206,10 +1207,19 @@
       h('div', { class: 'rv-corners-list' }, chips));
     V.corners = { S, chips, here: -1 };
     cornerTick();
+    // a new comparison keeps the loop on the same corner when it still exists
+    const F = V.focus;
+    if (F) {
+      const q = S.findIndex((x) => x.name === F.sec.name);
+      V.focus = null;
+      if (q >= 0) setFocus(q, true);
+      else clearFocus();
+    }
   }
   function pickCorner(q) {
     const sec = V.corners && V.corners.S[q];
     if (!sec) return;
+    if (V.focus) clearFocus(true);
     const again = V.cornerOn === q;
     markCorner(again ? null : q);
     if (again) {
@@ -1239,6 +1249,124 @@
     if (C.chips[C.here]) C.chips[C.here].classList.remove('here');
     if (C.chips[i]) C.chips[i].classList.add('here');
     C.here = i;
+  }
+
+  // ------------------------------------------------------ corner comparison
+  /**
+   * Shift-click on a corner chip: loop that corner with every lap's clock restarted just before the
+   * first of them brakes or lifts, so the cars start level and the time each loses is this corner's alone.
+   */
+  function toggleFocus(q) {
+    if (V.focus && V.focus.q === q) clearFocus();
+    else setFocus(q);
+  }
+  function setFocus(q, keep) {
+    const sec = V.corners && V.corners.S[q], k = rivalIndex();
+    if (!sec || k < 1) return;
+    const w = Fo.span(V.cmp, sec);
+    V.focus = { q, sec, w, k };
+    markCorner(null);
+    V.corners.chips.forEach((c, i) => c.classList.toggle('loop', i === q));
+    V.traces.focus({ a0: w.a0, b1: w.b1, k });
+    focusBar();
+    if (!keep) {
+      if (V.cam.mode === 'orbit') frameRange(w.a0, w.b1);
+      setCursor(w.a0);
+      setPlaying(true);
+    }
+    readout();
+    dirty();
+  }
+  function clearFocus(quiet) {
+    if (!V.focus) return;
+    V.focus = null;
+    V.loopHold = 0;
+    if (V.corners) V.corners.chips.forEach((c) => c.classList.remove('loop'));
+    V.traces.focus(null);
+    focusBar();
+    if (!quiet) {
+      setPlaying(false);
+      if (V.cam.mode === 'orbit') frameAll();
+    }
+    readout();
+    dirty();
+  }
+  const fmtS = (x) => (x >= 0 ? '+' : '−') + Math.abs(x).toFixed(2) + ' s';
+  const WHERE = { entry: 'on entry', mid: 'mid-corner', exit: 'on exit' };
+  const LINE_TITLE = { setup: 'Line set up by the turn before', entryWidth: 'Road left unused on the way in', apex: 'Wide of the apex', exitWidth: 'Exit left unused' };
+  /** "more oversteer on entry and mid-corner": phases that lean the same way share one phrase. */
+  function balPhrase(bal) {
+    const big = (bal || []).filter((p) => Math.abs(p.diff) >= 1.5), groups = [], out = [];
+    big.forEach((p) => {
+      const us = p.diff > 0, last = groups[groups.length - 1];
+      if (last && last.us === us) last.ps.push(p);
+      else groups.push({ us, ps: [p] });
+    });
+    const list = (xs) => xs.map((x, i) => (i ? (i === xs.length - 1 ? ' and ' : ', ') : '') + x).join('');
+    groups.forEach((gr, i) => {
+      if (i) out.push(' but ');
+      const tip = gr.ps.map((p) => (p.diff > 0 ? '+' : '−') + Math.abs(p.diff).toFixed(1) + '° ' + WHERE[p.phase]).join(', ');
+      out.push(h('span', { class: gr.us ? 'us' : 'os', title: 'Average extra steering lock against the reference, degrees of wheel: ' + tip }, 'more ' + (gr.us ? 'understeer' : 'oversteer')),
+        ' ' + list(gr.ps.map((p, j) => (j && gr.ps[0].phase === 'entry' && p.phase !== 'mid' ? p.phase : WHERE[p.phase]))));
+    });
+    return out;
+  }
+  /** A looping arrow, drawn so it matches the page's stroke icons. */
+  function loopIcon() {
+    const el = h('span', { class: 'rv-focus-loop', 'aria-hidden': 'true' });
+    el.innerHTML = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M12.2 1.6v2.8H9.4"/></svg>';
+    return el;
+  }
+  /** The costliest habit the Coaching analysis finds on this lap in the looped corner, against the reference only. */
+  function focusHabit(cmp, F, where) {
+    const A = IST.Review.Coaching.analyse(cmp, [0, F.k], [F.k]), PT = IST.Review.CoachKB.PATTERNS;
+    let top = null;
+    // a habit in the half of the corner where most time went comes first
+    const rank = (f) => f.cost + (PT[f.id].phase === where ? 10 : 0);
+    A.sec.forEach((c, j) => {
+      if (c.a < F.sec.a || c.a >= F.sec.b) return;
+      A.laps[F.k][j].found.forEach((f) => (!top || rank(f) > rank(top)) && (top = f));
+    });
+    return top && top.cost > 0.02 ? top : null;
+  }
+  /**
+   * The looped corner in two lines: where the time went (entry or exit), then the habit behind it
+   * with the cue to try, from the Coaching tab's patterns. With no habit found, the balance is the clue.
+   */
+  function focusBar() {
+    const el = V.focusBar, F = V.focus;
+    el.innerHTML = '';
+    el.classList.toggle('hidden', !F);
+    if (!F) return;
+    const cmp = V.cmp, R = cmp.laps[0], L = cmp.laps[F.k], x = Fo.lost(cmp, F.k, F.w, F.w.b1), gap = Fo.brakeGap(cmp, F.k, F.w);
+    let iMin = F.w.a;
+    for (let i = F.w.a; i <= F.w.b1; i++) if (R.speed[i] < R.speed[iMin]) iMin = i;
+    const inn = Fo.lost(cmp, F.k, F.w, iMin), out = x - inn;
+    const head = [h('b', { class: x > 0.005 ? 'bad' : x < -0.005 ? 'good' : '' }, x > 0.005 ? 'loses ' + x.toFixed(2) + ' s' : x < -0.005 ? 'gains ' + (-x).toFixed(2) + ' s' : 'matches the reference'), ' through ' + F.sec.name];
+    if (x > 0.03) head.push(Math.abs(inn - out) < 0.3 * x ? ', in and out alike' : inn > out ? ', most of it on the way in' : ', most of it on the way out', ' (' + fmtS(inn) + ' to the apex, ' + fmtS(out) + ' after)');
+    if (Math.abs(gap) >= 3) head.push('. Brakes ' + Math.round(Math.abs(gap)) + ' m ' + (gap > 0 ? 'later' : 'earlier'));
+    const bal = Fo.balance(cmp, F.k, F.w), bp = balPhrase(bal);
+    const habit = x > 0.03 && R.brake && R.throttle ? focusHabit(cmp, F, inn > out ? 'entry' : 'exit') : null, P = habit && IST.Review.CoachKB.PATTERNS[habit.id];
+    let fix = null, cue = null, ln = null;
+    if (P) {
+      // only the balance from the same half of the corner backs the habit up
+      const near = { entry: ['entry', 'mid'], exit: ['mid', 'exit'] }[P.phase];
+      const hb = balPhrase((bal || []).filter((b) => !near || near.includes(b.phase)));
+      fix = h('p', { class: 'rv-focus-fix' }, h('b', null, P.title + '. '), habit.ev ? habit.ev.replace(/\bref lap\b/g, 'ref') : '', hb.length ? ', with ' : '', ...hb, '.');
+      cue = h('p', { class: 'rv-focus-cue' }, h('b', null, 'Try '), P.cue);
+    } else if (x > 0.03 && (ln = Fo.line(cmp, F.k, F.w))) {
+      // no pedal habit, but the line drifts from the reference's where the time went
+      fix = h('p', { class: 'rv-focus-fix' }, h('b', null, LINE_TITLE[ln.id] + '. '), ln.ev + '.');
+      cue = h('p', { class: 'rv-focus-cue' }, h('b', null, 'Try '), ln.cue);
+    } else if (x > 0.03) {
+      fix = h('p', { class: 'rv-focus-fix' }, 'No pedal or line habit stands out here', bp.length ? '; the car had ' : '', ...bp,
+        bp.length ? '. Watch the Balance vs ref lane for where it starts.' : bal ? '. The difference is in the line or the speed carried: compare the Speed lane.' : '. Balance isn’t in both files.');
+    }
+    el.append(
+      loopIcon(),
+      h('div', { class: 'rv-focus-body' },
+        h('p', { class: 'rv-focus-text' }, h('i', { class: 'rv-swatch', style: 'background:' + L.color }), lapTag(L.entry, L.lap.lapNo) + ' ', ...head, '.'), fix, cue),
+      h('button', { class: 'btn small', title: 'Back to the whole lap (Esc)', onclick: () => clearFocus() }, 'Whole lap'));
   }
 
   // -------------------------------------------------------------- track map
@@ -1304,6 +1432,7 @@
 
   function readout() {
     const P = V.readout, cmp = V.cmp;
+    const dAt = (L, i) => L.delta[i] - (V.focus ? L.delta[V.focus.w.a0] : 0); // from the loop's start in a corner comparison
     P.innerHTML = '';
     const i = state.cursor;
     P.append(h('h2', null, 'At cursor' + (i >= 0 ? ' · ' + Math.round(i * cmp.step) + ' m' : '')));
@@ -1316,7 +1445,7 @@
       h('td', null, L.brake ? Math.round(L.brake[i] * 100) : '–'),
       h('td', null, L.gear ? Math.round(L.gear[i]) : '–'),
       onMap ? h('td', { title: 'From the track centre' }, Math.abs(L.off[i]) < 0.05 ? '0.0' : Math.abs(L.off[i]).toFixed(1) + (L.off[i] > 0 ? ' L' : ' R')) : null,
-      h('td', { class: 'delta ' + (L === cmp.laps[0] ? 'flat' : L.delta[i] > 0.005 ? 'bad' : L.delta[i] < -0.005 ? 'good' : 'flat') }, L === cmp.laps[0] ? (state.solo ? '–' : 'ref') : U.signedSec(L.delta[i]).replace(' s', '')));
+      h('td', { class: 'delta ' + (L === cmp.laps[0] ? 'flat' : dAt(L, i) > 0.005 ? 'bad' : dAt(L, i) < -0.005 ? 'good' : 'flat') }, L === cmp.laps[0] ? (state.solo ? '–' : 'ref') : U.signedSec(dAt(L, i)).replace(' s', '')));
     P.append(h('table', { class: 'grid rv-table' },
       h('thead', null, h('tr', null, [['Lap'], ['km/h', 'Speed'], ['Thr', 'Throttle pedal, %'], ['Brk', 'Brake pedal, %'], ['G', 'Gear']]
         .concat(onMap ? [['Ctr m', 'Distance from the track centre, metres, to the left (L) or right (R)']] : [], [['Δ s', 'Time behind (+) or ahead (−) of the reference lap at this point, seconds']])
@@ -1418,7 +1547,7 @@
     // the foldout
     const rows = GROUPS.map(([g, name]) => {
       const chips = [];
-      Tr.LANES.filter((l) => l.group === g && !l.virtual).forEach((l) => {
+      Tr.LANES.filter((l) => l.group === g && !l.virtual && !l.focus).forEach((l) => {
         chips.push(chip(l.key, l.label, l.title, L.on.has(l.key), () => {
           L.on.has(l.key) ? L.on.delete(l.key) : L.on.add(l.key);
           lanesChanged();
@@ -1666,7 +1795,7 @@
     V.texCache = new Map(); // map tile textures, kept across scene rebuilds (freed with the GL context)
     V.cam = IST.Review.Camera.create();
     V.ov = IST.Review.Overlay.create();
-    V.traces = IST.Review.Traces.create(V.tracesEl, { onCursor: setCursor, onRange: frameRange, onReset: frameAll, fit: () => (V ? V.tracesWrap.clientHeight - 2 : 0) });
+    V.traces = IST.Review.Traces.create(V.tracesEl, { onCursor: setCursor, onRange: frameRange, onReset: () => (V && V.focus ? clearFocus() : frameAll()), fit: () => (V ? V.tracesWrap.clientHeight - 2 : 0) });
     V.map = IST.Review.TrackMap.create(V.mapCanvas, { onPreview: mapPreview, onPick: (i) => setCursor(i) });
     if (!V.R) {
       V.stage.append(h('div', { class: 'rv-nogl' }, 'WebGL isn’t available in this browser, so the 3D view is off. The traces still work.'));
@@ -1812,6 +1941,7 @@
     state.playing = on;
     if (on && V && V.cmp) {
       if (state.cursor < 0 || state.cursor >= V.cmp.n - 1) state.cursor = state.cursorF = 0;
+      if (V.focus && (state.cursor < V.focus.w.a0 || state.cursor >= V.focus.w.b1)) state.cursor = state.cursorF = V.focus.w.a0;
       state.playT = timeAt(V.cmp.laps[0].t, state.cursorF);
     }
     if (V) V.play.textContent = on ? 'Pause' : 'Play';
@@ -1840,6 +1970,15 @@
     const ref = V.cmp.laps[0];
     state.playT += dt * state.rate;
     if (state.playT >= ref.lap.time) state.playT = 0;
+    if (V.focus) {
+      // hold a moment at the end of the corner so the final gaps can be read, then go round again
+      const t0 = ref.t[V.focus.w.a0], t1 = ref.t[V.focus.w.b1];
+      if (state.playT < t0) state.playT = t0;
+      if (state.playT >= t1) {
+        state.playT = t1;
+        if ((V.loopHold = (V.loopHold || 0) + dt) > 0.8) (V.loopHold = 0), (state.playT = t0);
+      }
+    }
     // the 3D view follows the exact time; the traces and readout take whole metres
     state.cursorF = indexAt(ref.t, state.playT);
     const i = Math.round(state.cursorF);
@@ -1857,7 +1996,7 @@
   function cars() {
     const cmp = V.cmp, f = Math.max(0, state.cursorF), T = timeAt(cmp.laps[0].t, f), attitude = attitudeOn();
     return cmp.laps.map((L, k) => {
-      const j = k ? indexAt(L.t, T) : f;
+      const j = k ? indexAt(L.t, V.focus ? Fo.timeOn(cmp, k, V.focus.w, T) : T) : f;
       const travel = IST.Review.Rigs.pose(V.scene, k, j);
       let pose = travel, slip = NaN;
       if (attitude) {
@@ -1967,6 +2106,7 @@
     V.ov.draw(g, W, H, {
       vp: m.vp, scene: V.scene, cmp: V.cmp, cursorF: state.cursorF, cars: state.opts.cars ? C : [], gaps: C.map((c) => c.gapM), range: V.range,
       gears: markerOn('gears'), tags: markerOn('tags'), attitude: attitudeOn(), fences: V.fences, markers: V.markerKinds, chipsBeside: V.cam.mode === 'top', dt,
+      zero: V.focus ? V.focus.w.a0 : -1,
     });
   }
 
@@ -2009,7 +2149,8 @@
       setCursor(Math.max(0, Math.min(V.cmp.n - 1, Math.max(0, state.cursor) + d)));
     } else if (e.code === 'Escape') {
       if (V.map && V.map.cancel()) return;
-      if (V.lanesOpen) setLanesOpen(false);
+      if (V.focus) clearFocus();
+      else if (V.lanesOpen) setLanesOpen(false);
       else if (state.drawer) setDrawer(false);
       else close();
     }

@@ -10,6 +10,8 @@
  *   tr.setPreview(i, j?) a dashed second cursor (where a click on the track map will go), or -1;
  *                        with j, a second dashed line there and the stretch between shaded
  *   tr.zoom(a, b)        show indices a..b (no arguments: the whole lap)
+ *   tr.focus(f)          corner comparison { a0, b1, k } or null: shows a0..b1, the delta counted
+ *                        from a0, and a Balance vs ref lane (shaded for lap k)
  *   tr.draw()            redraw (sizes itself to the canvas's CSS width)
  *   tr.destroy()
  *   Traces.LANES         the lane catalogue, in display order
@@ -57,13 +59,16 @@
   // [key, group, label, unit, title, extra]
   const LANES = [
     { key: 'speed', group: 'driving', label: 'Speed', unit: 'km/h', h: 120, needs: ['speed'], series: (L) => map(L.speed, (v) => v * 3.6), fmt: r0, title: 'Speed in km/h' },
-    { key: 'delta', group: 'driving', label: 'Delta', unit: 's', h: 84, centre: true, minSpan: 0.1, needs: ['delta'], cmp: true, series: (L) => L.delta, fmt: signed(2), title: 'Time behind (+) or ahead (−) of the reference at that point, in seconds' },
+    { key: 'delta', group: 'driving', label: 'Delta', unit: 's', h: 84, centre: true, minSpan: 0.1, needs: ['delta'], cmp: true, series: (L, c, F) => (F ? map(L.delta, (v) => v - L.delta[F.a0]) : L.delta), fmt: signed(2), title: 'Time behind (+) or ahead (−) of the reference at that point, in seconds' },
     { key: 'throttle', group: 'driving', label: 'Throttle', unit: '%', h: 58, lo: 0, hi: 100, needs: ['throttle'], series: (L) => map(L.throttle, (v) => v * 100), fmt: r0, title: 'Throttle pedal, %. Grey where the reference lap coasts (neither pedal)' },
     { key: 'brake', group: 'driving', label: 'Brake', unit: '%', h: 58, lo: 0, hi: 100, needs: ['brake'], series: (L) => map(L.brake, (v) => v * 100), fmt: r0, title: 'Brake pedal, %. With ABS on the lane: shaded where ABS acts, dashed for the share of force it removed' },
     { key: 'steer', group: 'driving', label: 'Steering', unit: '°', h: 58, centre: true, needs: ['steer'], series: (L) => map(L.steer, (v) => v * DEG), fmt: r0, title: 'Steering-wheel angle in degrees, + left' },
     { key: 'gear', group: 'driving', label: 'Gear', unit: '', h: 50, step: true, needs: ['gear'], series: (L, c) => holdGear(L.gear, c && c.step), fmt: r0, title: 'Gear' },
     { key: 'rpm', group: 'driving', label: 'RPM', unit: 'rpm', h: 58, needs: ['rpm'], series: (L) => L.rpm, fmt: r0, title: 'Engine speed, rpm' },
     { key: 'balance', group: 'car', label: 'Balance', unit: '° wheel', h: 70, centre: true, needs: ['us'], series: (L) => map(L.us, (v) => v * DEG), fmt: signed(1), title: 'Steering lock beyond what the car’s yaw needed, in degrees of wheel: + understeer, − oversteer. Zero through the car’s own linear range' },
+    { key: 'balDiff', group: 'car', label: 'Balance vs ref', unit: '° wheel', h: 70, centre: true, minSpan: 3, maxSpan: 12, focus: true, needs: ['us'], cmp: true,
+      series: (L, c) => (L === c.laps[0] || !c.laps[0].us ? null : map(L.us, (v, i) => (v - c.laps[0].us[i]) * DEG)), fmt: signed(1),
+      title: 'Balance against the reference at the same spot, in degrees of wheel: + more understeer than the reference, − more oversteer. Corner comparison only' },
     { key: 'yaw', group: 'car', label: 'Yaw rate', unit: '°/s', h: 70, centre: true, needs: ['yawRate'], series: (L) => map(L.yawRate, (v, i) => v * DEG * (L.latG ? sgn(L.latG[i]) : 1)), fmt: r0, title: 'How fast the car rotates, °/s, signed by the turn so left and right corners both read upward' },
     { key: 'beta', group: 'car', label: 'Sideslip', unit: '°', h: 70, centre: true, minSpan: 2, needs: ['beta'], series: (L) => map(L.beta, (v) => v * DEG), fmt: r1, title: 'Body slip angle, °: how far the car points into the corner beyond where it travels. Signed by the turn' },
     { key: 'latG', group: 'car', label: 'Lateral g', unit: 'g', h: 70, centre: true, minSpan: 0.5, needs: ['latG'], series: (L) => map(L.latG, (v) => v / G0), fmt: (v) => v.toFixed(2), title: 'Cornering force in g, + left' },
@@ -82,7 +87,7 @@
     basic: { on: BASIC, picks: [] },
     handling: { on: ['speed', 'delta', 'throttle', 'brake', 'steer', 'balance', 'yaw', 'beta', 'latG'], picks: [] },
     tyres: { on: ['speed', 'delta', 'brake', 'slip'], picks: ['front', 'rear'] },
-    all: { on: LANES.filter((l) => !l.virtual).map((l) => l.key), picks: ['front', 'rear'] },
+    all: { on: LANES.filter((l) => !l.virtual && !l.focus).map((l) => l.key), picks: ['front', 'rear'] },
   };
   const DEFAULT = { on: new Set(BASIC.concat(['balance'])), picks: [], tyreMode: 'temp', tyreBand: 'avg', abs: true, labels: {} };
 
@@ -118,16 +123,16 @@
   }
 
   /** The lanes to draw for this comparison and config, in catalogue order. */
-  function lanesFor(cmp, cfg) {
+  function lanesFor(cmp, cfg, F) {
     const out = [];
     LANES.forEach((l) => {
       if (l.virtual) {
         if (l.key === 'tyres') Object.keys(PICKS).forEach((p) => cfg.picks.indexOf(p) >= 0 && out.push(tyreLane(p, cfg)));
         return;
       }
-      if (cfg.on.has(l.key)) out.push(l);
+      if (l.focus ? F : cfg.on.has(l.key)) out.push(l);
     });
-    return out.filter((l) => (l.key === 'delta' ? cmp.laps.length > 1 : has(cmp, l.needs)));
+    return out.filter((l) => (l.cmp ? cmp.laps.length > 1 : true) && (l.key === 'delta' || has(cmp, l.needs)) && (l.key !== 'balDiff' || !!cmp.laps[0].us));
   }
 
   const AXIS = 22, PADL = 10, PADR = 10, MIN_LANE = 30;
@@ -139,6 +144,7 @@
     const out = canvas.getContext('2d');
     const layer = document.createElement('canvas');
     const g = layer.getContext('2d');
+    let F = null; // corner comparison: { a0, b1, k }, the delta counted from a0 and the Balance vs ref lane shown
     let cmp = null, cursor = -1, preview = -1, previewEnd = -1, v0 = 0, v1 = 1, W = 0, H = 0, dpr = 1, panes = [], heads = [], axisY = 0, k = 1;
     let cfg = Object.assign({}, DEFAULT, { on: new Set(DEFAULT.on) });
     const st = { drag: null };
@@ -148,14 +154,14 @@
       let m = cache.get(L);
       if (!m) cache.set(L, (m = new Map()));
       if (!m.has(p.key)) {
-        const s = p.multi ? p.multi(L) : [{ arr: p.series(L, cmp) }];
+        const s = p.multi ? p.multi(L) : [{ arr: p.series(L, cmp, F) }];
         m.set(p.key, s.filter((x) => x.arr));
       }
       return m.get(p.key);
     }
 
     function layout() {
-      panes = cmp ? lanesFor(cmp, cfg) : [];
+      panes = cmp ? lanesFor(cmp, cfg, F) : [];
       // o.fit(): the height the page gives the traces. Lanes stretch or squeeze toward it
       // (within readable limits); past that the strip scrolls in its box
       const nat = panes.reduce((s, p) => s + p.h, 0), fit = o.fit ? o.fit() : 0;
@@ -202,7 +208,7 @@
       });
       if (!isFinite(lo)) return [0, 1];
       if (p.centre) {
-        const m = Math.max(Math.abs(lo), Math.abs(hi), p.minSpan || 5);
+        const m = Math.min(p.maxSpan || Infinity, Math.max(Math.abs(lo), Math.abs(hi), p.minSpan || 5));
         return [-m, m];
       }
       if (p.step) return [Math.max(0, lo - 0.5), hi + 0.5];
@@ -314,6 +320,13 @@
             shade(a, b, every, arr.arr, (i) => arr.arr[i] < 0, yOf, yOf(0), alpha(Th.peach, 0.38));
           }
         }
+        if (p.key === 'balDiff' && F && cmp.laps[F.k]) {
+          const s = seriesOf(p, cmp.laps[F.k])[0];
+          if (s) {
+            shade(a, b, every, s.arr, (i) => s.arr[i] > 0, yOf, yOf(0), alpha(Th.sky, 0.34));
+            shade(a, b, every, s.arr, (i) => s.arr[i] < 0, yOf, yOf(0), alpha(Th.peach, 0.38));
+          }
+        }
         // draw comparisons first, the reference on top
         for (let k = cmp.laps.length - 1; k >= 0; k--) {
           const L = cmp.laps[k];
@@ -413,9 +426,9 @@
       heads.forEach(({ p, y, x }) => {
         for (let k = cmp.laps.length - 1; k >= 0; k--) {
           const L = cmp.laps[k], s = seriesOf(p, L)[0];
-          if (!s) continue;
-          const v = s.arr[cursor];
-          const txt = p.key === 'delta' && k === 0 ? 'ref' : isFinite(v) ? p.fmt(v) : '–';
+          if (!s && !(p.key === 'balDiff' && k === 0)) continue;
+          const v = s ? s.arr[cursor] : NaN;
+          const txt = (p.key === 'delta' || p.key === 'balDiff') && k === 0 ? 'ref' : isFinite(v) ? p.fmt(v) : '–';
           out.fillStyle = L.color;
           out.fillText(txt, x, y + 13);
           x -= out.measureText(txt).width + 12;
@@ -542,9 +555,18 @@
           vals: cmp.laps.map((L, k) => {
             const s = seriesOf(p, L)[0];
             const v = s ? s.arr[i] : NaN;
-            return p.key === 'delta' && k === 0 ? 'ref' : isFinite(v) ? String(p.fmt(v)) : '–';
+            return (p.key === 'delta' || p.key === 'balDiff') && k === 0 ? 'ref' : isFinite(v) ? String(p.fmt(v)) : '–';
           }),
         }));
+      },
+      /** Corner comparison on ({ a0, b1, k }: shows a0..b1) or off (null: the whole lap). */
+      focus(f) {
+        F = f || null;
+        cache = new WeakMap();
+        if (!cmp) return;
+        v0 = F ? F.a0 : 0;
+        v1 = F ? F.b1 : cmp.n - 1;
+        draw();
       },
       setLanes(lanes) {
         cfg = lanes;
