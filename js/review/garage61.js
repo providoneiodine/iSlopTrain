@@ -145,7 +145,7 @@
     var token = null, appOrigin = null, nonce = null, ctx = {};
     var cache = { tracks: null, cars: null, mine: null, team: null };
     var track = null, car = null, tab = 'mine', picked = {}, busy = false;
-    var nextAt = 0, idleT = 0, queue = Promise.resolve();
+    var nextAt = 0, idleT = 0, queue = Promise.resolve(), asFiles = false, deafT = 0;
     var opener = null;
     try {
       opener = W.opener && !W.opener.closed ? W.opener : null;
@@ -202,6 +202,7 @@
       if (m.v !== PROTO) return setStatus('This bookmark is out of date. Drag the new one from iSlopTrain to your bookmarks bar.', true);
       appOrigin = e.origin;
       nonce = m.nonce;
+      clearTimeout(deafT);
       ctx = { track: typeof m.track === 'string' ? m.track.slice(0, 200) : '', car: typeof m.car === 'string' ? m.car.slice(0, 200) : '' };
       render();
     }
@@ -227,6 +228,10 @@
       } catch (err) {
         opener = null;
       }
+      // the viewer only answers while its Garage 61 panel is waiting for this tab
+      deafT = setTimeout(function () {
+        if (!nonce) setStatus('iSlopTrain isn’t listening. There, open Import from Garage 61 and press Open Garage 61, then click the bookmark again.', true);
+      }, 4000);
     }
 
     // ------------------------------------------------------------ panel (shadow DOM, textContent only)
@@ -287,6 +292,7 @@
       cache = { tracks: null, cars: null, mine: null, team: null };
       picked = {};
       clearTimeout(idleT);
+      clearTimeout(deafT);
       W.removeEventListener('message', onMsg);
       host.remove();
       delete W.__istG61;
@@ -303,7 +309,8 @@
         } } }),
       ]));
       if (!opener) {
-        panel.append(el('p', { className: 'm', text: 'Not opened from iSlopTrain, so laps will be saved as CSV files instead. Drop them on the Lap Viewer.' }));
+        // usually a sign-in page (Discord, Google…) cut this tab off from the one that opened it
+        panel.append(el('p', { className: 'm e', text: 'This tab isn’t linked to iSlopTrain, so laps can’t go straight there. Signing in here cuts the link. You’re signed in now, so go back to iSlopTrain, press Open Garage 61 (in Import from Garage 61), and click the bookmark in the tab it opens.' }));
       } else if (!nonce) {
         panel.append(el('p', { className: 'm', text: 'Waiting for the iSlopTrain tab…' }));
       } else if (ctx.track) {
@@ -450,7 +457,12 @@
         ]));
       });
       panel.append(tb);
-      panel.append(el('button', { className: 'b pr', disabled: busy || !n, text: (opener && nonce ? 'Send ' : 'Save ') + n + ' lap' + (n === 1 ? '' : 's'), on: { click: send } }));
+      var live = !!(opener && nonce), s = n + ' lap' + (n === 1 ? '' : 's');
+      panel.append(el('button', { className: 'b pr', disabled: busy || !n || !live, text: 'Send ' + s, on: { click: send } }));
+      if (!live) panel.append(el('button', { className: 'b', disabled: busy || !n, text: 'Save ' + s + ' as CSV files', on: { click: function () {
+        asFiles = true;
+        send();
+      } } }));
       panel.append(el('p', { className: 'm', text: 'Up to ' + MAX_SEND + ' laps per send. Each lap is one request, spaced out to go easy on Garage 61.' }));
     }
 
@@ -459,8 +471,9 @@
         return picked[k];
       }).slice(0, MAX_SEND);
       if (!laps.length || busy) return;
-      busy = true;
       var live = !!(opener && nonce);
+      if (!live && !asFiles) return;
+      busy = true;
       var i = 0;
       var next = function () {
         if (i >= laps.length) {
@@ -559,14 +572,14 @@
       handle = null;
       nonce = null;
     }
-    function finish(note) {
+    function finish(note, err) {
       const got = files;
       files = [];
       stop();
       if (win && !win.closed) win.close();
       win = null;
       if (got.length) onFiles(got);
-      else if (note) say(note);
+      else if (note) say(note, err);
     }
     function onMessage(e) {
       if (!handle) return;
@@ -592,7 +605,7 @@
       window.addEventListener('message', onMessage);
       // the tab being closed is checked here, with no network call
       poll = setInterval(() => {
-        if (!win || win.closed) finish(files.length ? null : 'The Garage 61 tab was closed.');
+        if (!win || win.closed) finish(files.length ? null : 'Lost the Garage 61 tab: it was closed, or signing in there cut the link. If you’re signed in now, press Open Garage 61 again.', true);
       }, 1000);
       say('Garage 61 is open in a new tab. Sign in if asked, then click the iSlopTrain bookmark there.');
     }
@@ -639,7 +652,7 @@
         h('li', null, 'Drag this to your bookmarks bar (once): ', mark),
         h('li', null, 'Get a personal access token from ', h('a', { href: G61 + '/developer/applications', target: '_blank', rel: 'noopener noreferrer' }, 'My applications'),
           ' on Garage 61. Your API application needs the ', h('code', null, 'driving_data'), ' permission, which Garage 61 approves.'),
-        h('li', null, h('button', { class: 'btn', onclick: connect }, 'Open Garage 61'), ' then click the bookmark there, paste the token, and pick laps.')),
+        h('li', null, 'Sign in to Garage 61 first if you aren’t (signing in inside the tab below cuts its link here). Then ', h('button', { class: 'btn', onclick: connect }, 'Open Garage 61'), ', click the bookmark there, paste the token, and pick laps.')),
       status,
       h('p', { class: 'muted small' },
         'The token stays on garage61.net: iSlopTrain never sees it, and the bookmark forgets it when its panel closes. ' +
@@ -651,7 +664,11 @@
       h('h2', null, 'Import from Garage 61'),
       h('p', { class: 'muted' }, 'Bring in laps from your Garage 61 account, yours or a teammate’s, to compare here.'),
       h('ol', { class: 'g61-steps' },
-        h('li', null, h('a', { href: G61 + '/app', target: '_blank', rel: 'noopener noreferrer' }, 'Open Garage 61'), ' and sign in.'),
+        // opened by connect() rather than a plain link, so the tab stays linked if the bookmark is used there later
+        h('li', null, h('a', { href: G61 + '/app', onclick: (e) => {
+          e.preventDefault();
+          connect();
+        } }, 'Open Garage 61'), ' and sign in.'),
         h('li', null, 'Find the lap you want' + (ctx.track ? ' at ' + ctx.track : '') + ', open its telemetry, and export it as CSV. Repeat for each lap you want to compare.'),
         h('li', null, 'Drop the files below.')),
       drop,

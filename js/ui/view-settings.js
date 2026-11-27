@@ -234,7 +234,7 @@
         const vis = IST.View.board(R, nb.pos, nb.x, { cockpit: V.cockpit ? cockpit : null, seat: IST.View.seat(V), steer: scene.steer });
         if (pv.mask && vis.rect) {
           const r = vis.rect;
-          g.strokeStyle = vis.why ? '#f09ca6' : '#a6e3c4';
+          g.strokeStyle = vis.why ? IST.Theme.rose : IST.Theme.mint;
           g.lineWidth = 2;
           g.strokeRect(r[0] - 3, r[1] - 3, r[2] - r[0] + 6, r[3] - r[1] + 6);
         }

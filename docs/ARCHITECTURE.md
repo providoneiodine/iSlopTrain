@@ -95,6 +95,8 @@ Reach for these before writing a loop over `ctx.history` or a new counter:
 
 A telemetry viewer, kept apart from the drills. Nothing outside the folder depends on it except three lines in `app.js` (screen, tab, card buttons) and `css/review.css`.
 
+How iRacing records telemetry, the `.ibt` layout and the live-session options are in [IRACING-TELEMETRY.md](IRACING-TELEMETRY.md).
+
 | Path | Role |
 |---|---|
 | `telemetry/common.js` | `IST.Telemetry`: the factory registry, channel aliases, unit conversion, the common session record, `T.LAP_CHANNELS` (every channel a lap carries) and `T.STEP_CHANNELS` (resampled by nearest, never blended) |
@@ -121,7 +123,7 @@ A telemetry viewer, kept apart from the drills. Nothing outside the folder depen
 | `trackmap.js` | the track map in the 3D view's top right, floating with no panel (M hides it): the circuit north up, corner numbers (the circuit's from `corners.js`, else the app's from braking zones), the complex the reference is in, the cars, and hover / click to preview and jump the cursor (the preview shows dashed in the traces) |
 | `overlay.js` | the 2D labels over the 3D view: car chips with the gap and a steering wheel showing extra or missing lock, cursor posts, event pips and chips, lap tags, gear numbers; labels fade rather than pop |
 | `page.js` | `IST.Review.open()`: the page, lap list, lanes box, Layers drawer, cursor readout, and the glue between them |
-| `watch.js` | the Review card's folder watch: polls a picked telemetry folder (Chrome/Edge, File System Access API) for new `.ibt` files, waits until a file stops growing, then offers it to `IST.Review.open({ files })`. The folder handle and the names already seen are kept in IndexedDB |
+| `watch.js` | the Review card's folder watch: polls a picked telemetry folder (Chrome/Edge, File System Access API) for new `.ibt` files, waits until a file stops growing, then offers it to `IST.Review.open({ files })`. In Stint mode it loads the file straight away (`stint: true`), and the Coaching tab gets a "this stint" scope with a lap-by-lap summary against the reference. The folder handle and the names already seen are kept in IndexedDB |
 
 **Telemetry files are factories.** Each file in `telemetry/` (except `loader.js`) registers `function (T) { … }` with `IST.Telemetry.def`, and may use nothing outside its own body: `loader.js` stringifies them into a Blob Worker so a 100 MB `.ibt` parses off the main thread and it still works from `file://`. The tests run the same source in a bare sandbox to keep that true. To add a format, add a factory that sets `T.formats.<name> = { label, exts, sniff, parse }` returning `T.session(...)`, and a `<script>` before `laps.js`.
 

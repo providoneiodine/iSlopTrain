@@ -30,7 +30,7 @@
   'use strict';
   const U = IST.util, h = U.h, Th = IST.Theme, M = IST.Review.M3;
   const Cmp = IST.Review.Compare, Tr = IST.Review.Traces, Ly = IST.Review.Layers, Vs = IST.Review.Versus, Fo = IST.Review.Focus;
-  const COLORS = [Th.butter, Th.sky, Th.lilac, Th.peach, Th.text];
+  const COLORS = Th.laps;
   const MAX_LAPS = COLORS.length;
   const ACCEPT = '.ibt,.ld,.ldx,.csv,.tsv,.txt';
   const COARSE_HIDE = 350, COARSE_SHOW = 450; // m from the camera to what it looks at
@@ -49,6 +49,7 @@
     names: {}, // driver key -> name typed over the file's
     mapFolded: false, // the track map hidden (M)
     lapsTab: 'laps', coachScope: 'laps', // the Laps panel's tab, and the laps the Coaching tab reads
+    stint: null, // { sessions } from the folder watch's Stint mode: the latest stint, coached against the reference
   };
   // ------------------------------------------------------- remembered choices
   const LANES_KEY = 'ist.review.lanes', LAYERS_KEY = 'ist.review.layers';
@@ -127,7 +128,7 @@
   // bumped by Clear and Done: a load still reading when either happens is dropped when it
   // finishes, so it can't reappear (or ask about another track) on a page that moved on
   let loadGen = 0, loadSeq = 0;
-  async function loadFiles(files) {
+  async function loadFiles(files, stint) {
     state.undo = null;
     const gen = loadGen, seq = ++loadSeq;
     state.loading = { p: 0, label: 'Starting' };
@@ -167,10 +168,21 @@
     const other = fresh.filter((s) => !sameTrack(s, base));
     const before = drivers().length;
     fresh.forEach(keepHeights);
-    fresh.filter((s) => sameTrack(s, base)).forEach(addSession);
+    const added = fresh.filter((s) => sameTrack(s, base));
+    added.forEach(addSession);
     findHeights();
     if (before < 2 && drivers().length > 1 && !state.mode) pickRival();
+    if (stint && added.length) {
+      // a new stint replaces the last one; the reference set before it stays
+      state.stint = { sessions: added };
+      state.lapsTab = 'coach';
+      state.coachScope = 'stint';
+    }
     render();
+    if (stint && added.length) {
+      const n = stintLaps().length;
+      flash(n ? 'Stint loaded: ' + n + (n === 1 ? ' lap' : ' laps') + ' against the reference' : 'Stint loaded: no complete laps in it');
+    }
     if (dups.length) flash('Already loaded: ' + dups.join(', '));
     if (other.length) askNewSession(other);
   }
@@ -430,7 +442,7 @@
     render();
     if (o.pick) picker();
     else if (o.demo) loadDemo();
-    else if (o.files) loadFiles(o.files);
+    else if (o.files) loadFiles(o.files, o.stint);
   }
 
   function close() {
@@ -479,6 +491,7 @@
       h('div', null, h('span', { class: 'tag rv-tag' }, 'Telemetry'), h('h1', null, 'Lap Viewer')),
       h('div', { class: 'view-head-actions' },
         has ? h('button', { class: 'btn ghost', onclick: clearWithUndo, title: 'Forget every loaded file (you can undo it)' }, 'Clear') : null,
+        IST.Review.Watch && IST.Review.Watch.control ? IST.Review.Watch.control() : null,
         h('button', { class: 'btn', onclick: openGarage61, title: 'Import laps from your Garage 61 account' }, 'Garage 61'),
         h('button', { class: 'btn', onclick: picker }, has ? 'Add files' : 'Open files'),
         h('button', { class: 'btn primary', onclick: close }, 'Done')));
@@ -497,6 +510,7 @@
   }
 
   function clearAll() {
+    state.stint = null;
     loadGen++;
     Object.assign(state, { loading: null, sessions: [], laps: [], refId: null, sel: [], errors: [], warnings: [], cursor: -1, cursorF: -1, playing: false, partialsOpen: new Set(), solo: null, mode: null, undo: null });
     originRef = null;
@@ -828,11 +842,11 @@
    * Lap status glyphs, drawn to the right of the lap number: marshal flags for what
    * happened on track, line icons for the pit lane. Clean laps carry none.
    */
-  const OFF_RED = '#e0737f', PIT_BLUE = Th.sky, POLE = '#c9cfd9', GREY = Th.dim;
+  const OFF_RED = Th.off, PIT_BLUE = Th.sky, POLE = '#c9cfd9', GREY = Th.dim;
   const pole = '<path d="M2 1V11.5" stroke="' + POLE + '" stroke-width="1.2"/>';
   const ICON = {
     off: pole + '<rect x="2.6" y="1" width="8.4" height="6" fill="' + OFF_RED + '"/>',
-    crash: pole + '<rect x="2.6" y="1" width="8.4" height="6" fill="#15171c"/><circle cx="6.8" cy="4" r="2.3" fill="#ff7a3d"/>',
+    crash: pole + '<rect x="2.6" y="1" width="8.4" height="6" fill="#15171c"/><circle cx="6.8" cy="4" r="2.3" fill="' + Th.crash + '"/>',
     reset: '<path d="M9.8 6A3.8 3.8 0 1 1 6 2.2H9" fill="none" stroke="' + Th.lilac + '" stroke-width="1.5" stroke-linecap="square"/><path d="M7.4 .7L9.6 2.2L7.4 3.9Z" fill="' + Th.lilac + '"/>',
     pitOut: '<path d="M5 2H2V10H5M5.5 6H10.5M8.5 3.5L11 6L8.5 8.5" fill="none" stroke="' + PIT_BLUE + '" stroke-width="1.5" stroke-linecap="square"/>',
     pitIn: '<path d="M7 2H10V10H7M1 6H6.5M4.5 3.5L7 6L4.5 8.5" fill="none" stroke="' + PIT_BLUE + '" stroke-width="1.5" stroke-linecap="square"/>',
@@ -852,12 +866,13 @@
     const offs = count('off'), hits = count('crash');
     if (offs) out.push(icon('off', offs === 1 ? 'Off track once' : 'Off track ' + offs + ' times', offs));
     if (hits) out.push(icon('crash', hits === 1 ? 'Contact: an impact on this lap' : hits + ' impacts on this lap', hits));
-    if (lap.reset) out.push(icon('reset', 'The car was moved during this lap: a reset, a tow or a session change'));
+    if (lap.reset || lap.tow) out.push(icon('reset', lap.tow ? 'Towed back to the pits during this lap' : 'The car was moved during this lap: a reset, a tow or a session change'));
     if (lap.kind === 'out') out.push(icon('pitOut', 'Out lap, leaving the pits'));
     else if (lap.kind === 'in') out.push(icon('pitIn', 'In lap, to the pits'));
     else if (lap.pit) out.push(icon('pitIn', 'Through the pit lane'));
     // "cut short" only when nothing else already says why the lap isn't a whole one
     if (lap.kind === 'partial' && !out.length) out.push(icon('part', 'Part lap: cut short'));
+    if (lap.inc) out.push(h('span', { class: 'rv-lap-inc', title: lap.inc + 'x: incident points iRacing gave on this lap' }, lap.inc + 'x'));
     return out.length ? h('span', { class: 'rv-lap-ics' }, out) : null;
   }
 
@@ -877,7 +892,7 @@
       h('i', { class: 'rv-swatch', style: on || state.solo === x.id ? 'background:' + lapColor(x.id) : '' }),
       h('span', { class: 'rv-lap-no' }, 'Lap ' + x.lap.lapNo),
       away ? h('span', { class: 'rv-lap-away' }, 'in 3D view') : lapIcons(x.lap),
-      h('span', { class: 'rv-lap-time' }, Cmp.fmtLap(x.lap.time)),
+      h('span', { class: 'rv-lap-time', title: x.lap.fuel ? x.lap.fuel.toFixed(2) + ' L of fuel used' : null }, Cmp.fmtLap(x.lap.time)),
       pip || away ? null : h('span', { class: 'rv-lap-d' + (d === 0 ? ' best' : '') }, isFinite(d) ? (d === 0 ? 'best' : '+' + d.toFixed(3)) : ''));
     main.addEventListener('click', (e) => {
       if (!e.shiftKey) return;
@@ -1006,12 +1021,43 @@
   function coachLaps(scope) {
     const ref = byId(state.refId);
     if (!ref) return null;
+    if (scope === 'stint') return { ref, others: stintLaps().filter((x) => x !== ref && complete(x.lap)) };
     if (scope !== 'session') return { ref, others: state.sel.filter((id) => id !== state.refId).map(byId).filter(Boolean) };
     // a reference from someone else (a Garage 61 lap) is the target, so the laps coached are yours
     const pool = state.laps.filter((x) => x !== ref && complete(x.lap)), count = {};
     pool.forEach((x) => (count[keyOf(x)] = (count[keyOf(x)] || 0) + 1));
     const key = Object.keys(count).sort((p, q) => count[q] - count[p])[0];
     return { ref, others: pool.filter((x) => keyOf(x) === key).slice(0, 40) };
+  }
+  /** Every lap of the latest stint, in the order driven. */
+  const stintLaps = () => (state.stint ? state.laps.filter((x) => state.stint.sessions.includes(x.s)) : []);
+  /**
+   * The stint at a glance, above its coaching: each lap's time against the reference, incidents,
+   * and how close together the complete laps were. A click shows that lap against the reference.
+   */
+  function stintSummary() {
+    const ref = byId(state.refId), laps = stintLaps();
+    if (!ref || !laps.length) return null;
+    const full = laps.filter((x) => x !== ref && complete(x.lap));
+    const times = full.map((x) => x.lap.time), inc = laps.reduce((a, x) => a + (x.lap.inc || 0), 0);
+    const mean = times.length ? times.reduce((a, b) => a + b, 0) / times.length : NaN;
+    const sd = times.length >= 3 ? Math.sqrt(times.reduce((a, t) => a + (t - mean) * (t - mean), 0) / (times.length - 1)) : NaN;
+    const d = (x) => (x >= 0 ? '+' : '−') + Math.abs(x).toFixed(2);
+    const facts = [];
+    if (times.length) facts.push('best ' + d(Math.min.apply(null, times) - ref.lap.time) + ' s', 'average ' + d(mean - ref.lap.time) + ' s');
+    if (isFinite(sd)) facts.push('laps within ±' + sd.toFixed(2) + ' s');
+    if (laps.some((x) => x.lap.inc != null)) facts.push(inc ? inc + 'x incidents' : 'no incidents');
+    const kind = { out: 'out lap', in: 'in lap', partial: 'part lap' };
+    return h('div', { class: 'rv-stint' },
+      h('p', { class: 'rv-stint-head' }, h('b', null, 'This stint vs ref lap ' + ref.lap.lapNo + ' (' + Cmp.fmtLap(ref.lap.time) + ')'), facts.length ? ': ' + facts.join(', ') : ''),
+      h('ol', { class: 'rv-stint-laps' }, laps.map((x) => {
+        const L = x.lap, ok = complete(L) && x !== ref, gap = L.time - ref.lap.time;
+        return h('li', null, h('button', { class: 'rv-stint-lap' + (state.sel.includes(x.id) && x !== ref ? ' on' : ''), disabled: x === ref ? true : null, title: 'Show lap ' + L.lapNo + ' against the reference', onclick: () => versus(x.id) },
+          h('span', { class: 'rv-stint-no' }, 'L' + L.lapNo),
+          h('span', { class: 'rv-stint-time' }, ok ? Cmp.fmtLap(L.time) : x === ref ? 'reference' : L.kind !== 'full' ? kind[L.kind] || '' : 'pit lap'),
+          h('span', { class: 'rv-stint-gap' + (ok ? (gap > 0.005 ? ' bad' : gap < -0.005 ? ' good' : '') : '') }, ok ? d(gap) : ''),
+          h('span', { class: 'rv-stint-inc' + (L.inc ? ' bad' : '') }, L.inc ? L.inc + 'x' : '')));
+      })));
   }
   function coachCmp(scope) {
     const C = coachLaps(scope);
@@ -1037,7 +1083,8 @@
     if (!n(state.coachScope) && n('session')) state.coachScope = 'session';
     IST.Review.CoachPanel.render(box, {
       scope: state.coachScope,
-      scopes: [['laps', 'ticked laps', n('laps')], ['session', 'whole session', n('session')]],
+      scopes: [['laps', 'ticked laps', n('laps')], ['session', 'whole session', n('session')]].concat(state.stint ? [['stint', 'this stint', n('stint')]] : []),
+      lead: (sc) => (sc === 'stint' ? stintSummary() : null),
       setScope: (sc) => ((state.coachScope = sc), lapList()),
       get: coachCmp,
       jump: (i, cmp) => (setCursor(onView(i, cmp)), mapTick()),
@@ -1702,7 +1749,7 @@
     // 1. line colour
     D.append(h('h2', null, 'Line colour'),
       h('div', { class: 'rv-radios' }, Ly.PAINTS.map((d) => radio('rv-paint', d, cur(Ly.PAINTS, o.paint, paintOk), paintOk(d.key), (k) => ((o.paint = k), layersChanged()),
-        d.legend ? d.legend.css : 'linear-gradient(90deg, ' + Th.butter + ' 33%, ' + Th.sky + ' 33% 66%, ' + Th.lilac + ' 66%)'))));
+        d.legend ? d.legend.css : 'linear-gradient(90deg, ' + Th.laps[0] + ' 33%, ' + Th.laps[1] + ' 33% 66%, ' + Th.laps[2] + ' 66%)'))));
     // 2. fence
     const absOk = hasCh(cmp, 'absActive');
     const absBox = h('input', { type: 'checkbox', checked: o.absTint, disabled: absOk ? null : true });
@@ -1734,8 +1781,8 @@
     // balance cues on the cars' info cards: each can go if it's too much to read
     if (hasCh(cmp, 'us')) {
       D.append(h('h2', null, 'Info card'),
-        check('Lock pointer', 'cardGhost', 'With more lock than the car turned for, a hollow sky pointer on the wheel marks the lock it was turning to', dirty),
-        check('Steering arc', 'cardArc', 'Beside the pedals: the path your lock asks for (dashed) and the path the car drove (solid), sky when running wide, peach when turning in more', dirty),
+        check('Lock pointer', 'cardGhost', 'With more lock than the car turned for, a hollow ' + Th.names.sky + ' pointer on the wheel marks the lock it was turning to', dirty),
+        check('Steering arc', 'cardArc', 'Beside the pedals: the path your lock asks for (dashed) and the path the car drove (solid), ' + Th.names.sky + ' when running wide, ' + Th.names.peach + ' when turning in more', dirty),
         check('Attention outline', 'cardCue', 'When the balance goes off, outline what was in use: the brake, the throttle, or the wheel mid-corner', dirty));
     }
     // 4. view
@@ -1779,9 +1826,9 @@
         let big = 0.05;
         for (let i = 0; i < V.cmp.n; i++) big = Math.max(big, Math.abs(L.delta[i]));
         const end = L.delta[V.cmp.n - 1];
-        E.append(h('span', { class: 'rv-legend-grad', title: 'Fence height: Lap ' + L.lap.lapNo + '’s gap to the reference, full height = ' + big.toFixed(3) + ' s. Fill: gaining (mint) or losing (rose) time there' },
+        E.append(h('span', { class: 'rv-legend-grad', title: 'Fence height: Lap ' + L.lap.lapNo + '’s gap to the reference, full height = ' + big.toFixed(3) + ' s. Fill: gaining (' + Th.names.mint + ') or losing (' + Th.names.rose + ') time there' },
           h('b', null, 'L' + L.lap.lapNo + ' gap 0–' + big.toFixed(2) + ' s · gaining'),
-          h('i', { class: 'rv-grad wide', style: 'background:linear-gradient(90deg, ' + Th.mint + ', #a1a9b7, ' + Th.rose + ')' }), h('b', null, 'losing')),
+          h('i', { class: 'rv-grad wide', style: 'background:linear-gradient(90deg, ' + Th.mint + ', ' + Th.neutral + ', ' + Th.rose + ')' }), h('b', null, 'losing')),
           h('span', { class: 'rv-legend-note' }, (end >= 0 ? '+' : '−') + Math.abs(end).toFixed(3) + ' s at the line'));
         if (V.cmp.laps.length > 2 && state.opts.inputs === 'all') {
           E.append(h('span', { class: 'rv-legend-note', title: 'With 3 or more laps the Delta fence shows one: pick which in Layers → Whose' }, 'one lap at a time: choose in Whose'));
@@ -1792,7 +1839,7 @@
     if (markerOn('gears')) E.append(item('rv-key-gear', 'Gear change'));
     if (attitudeOn()) {
       E.append(h('span', { class: 'rv-legend-grad', title: 'Attitude wedges: slip angle against this session’s usual at that lateral g' + (o.attScale > 1 ? ' (drawn ×' + o.attScale + ')' : '') },
-        h('b', null, 'Less rotation'), h('i', { class: 'rv-grad wide', style: 'background:linear-gradient(90deg, ' + Th.sky + ', #a1a9b7 35% 50%, ' + Th.peach + ' 75%, ' + Th.rose + ')' }), h('b', null, 'More')));
+        h('b', null, 'Less rotation'), h('i', { class: 'rv-grad wide', style: 'background:linear-gradient(90deg, ' + Th.sky + ', ' + Th.neutral + ' 35% 50%, ' + Th.peach + ' 75%, ' + Th.rose + ')' }), h('b', null, 'More')));
     }
   }
 

@@ -42,7 +42,7 @@
   'use strict';
   const GL = IST.Review.GL, Th = IST.Theme, Ly = IST.Review.Layers;
   const DEG = Math.PI / 180;
-  const C_THR = GL.rgb(Th.hit), C_BRK = GL.rgb(Th.miss), C_ABS = GL.rgb('#8a1a14'), OUTLINE = GL.rgb('#111317');
+  const C_THR = GL.rgb(Th.hit), C_BRK = GL.rgb(Th.miss), C_ABS = GL.rgb(Th.missDark), OUTLINE = GL.rgb('#111317');
   const C_US = GL.rgb(Th.sky), C_OS = GL.rgb(Th.peach), C_ROSE = GL.rgb(Th.rose), C_BUT = GL.rgb(Th.butter);
 
   function build(R, cmp, opt) {
@@ -282,7 +282,7 @@
           for (let i = 0; i < n; i += 5) g.push(Math.abs(L.gain[i]));
           g.sort((a, b) => a - b);
           const gs = Math.max(0.004, g[Math.floor(g.length * 0.9)] || 0);
-          const NEU = Ly.rgb('#a1a9b7'), MINT = Ly.rgb(Th.mint);
+          const NEU = Ly.rgb(Th.neutral), MINT = Ly.rgb(Th.mint);
           fence((i) => Math.abs(L.delta[i]) / big, (i) => {
             const v = L.gain[i], t = Math.min(1, Math.abs(v) / gs);
             return [Ly.mix(NEU, v < 0 ? MINT : C_ROSE, t), 0.6 + 0.4 * t];

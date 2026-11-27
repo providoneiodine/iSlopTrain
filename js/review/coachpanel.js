@@ -50,7 +50,7 @@
       IST.Review.CoachKB.PRINCIPLES.map(([t, text, src]) => h('div', { class: 'rv-co-pr' }, h('b', null, t), h('p', null, text), sources(src))));
   }
 
-  /** The tab's body into el. api: { scope, setScope, scopes: [[id, label, n]], get(scope) -> { cmp, label }, jump, preview, startDrill }. */
+  /** The tab's body into el. api: { scope, setScope, scopes: [[id, label, n]], get(scope) -> { cmp, label }, lead(scope) -> element or null, jump, preview, startDrill }. */
   function render(el, api) {
     el.innerHTML = '';
     const scopeLine = h('div', { class: 'rv-co-scope', role: 'group', 'aria-label': 'Laps the advice is based on' },
@@ -64,6 +64,8 @@
       if (!body.isConnected) return;
       const R = api.get(api.scope);
       body.innerHTML = '';
+      const lead = api.lead && api.lead(api.scope);
+      if (lead) body.append(lead);
       if (!R || !R.cmp) return body.append(h('p', { class: 'hint' }, 'Pick a reference lap to coach against.'));
       let rep = made.get(R.cmp);
       if (!rep) made.set(R.cmp, (rep = IST.Review.Coaching.report(R.cmp)));

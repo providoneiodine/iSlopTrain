@@ -6,11 +6,11 @@
  *     edgesOn(cx, cy, n, step) -> { l, r, q } | null: stored edges on the centre (edges.js)
  *   IST.Review.Compare.fmtLap(s)         1:42.315
  *
- * Every lap is sampled on the reference lap's distance grid by fraction of
- * lap (point k of the reference sits at k / (n - 1) of each lap), so the same
- * corner is at the same index even when lines differ in length. The delta at
- * k is that lap's time to there minus the reference's, so at the line it
- * equals the lap-time difference.
+ * Every lap is sampled on the reference lap's distance grid by place on the
+ * track: the sim's own lap fraction (iRacing's LapDistPct) when both laps have
+ * it, which ignores how long each driver's line is, else fraction of the lap's
+ * own distance. The delta at k is that lap's time to there minus the
+ * reference's, so at the line it equals the lap-time difference.
  *
  * Comparison:
  *   { n, step, len, laps: [{ lap, color, t, x, y, z, speed, throttle, brake,
@@ -58,7 +58,7 @@
       out[k] = o;
     });
     // the end of the lap is the lap time, exactly
-    if (!m) out.t[n - 1] = lap.time;
+    if (!m || m.whole) out.t[n - 1] = lap.time;
     return out;
   }
   /**
@@ -101,6 +101,36 @@
     at.fill(at[start], 0, start);
     at.fill(at[end], end);
     return { at, start, end };
+  }
+
+  /**
+   * Two whole laps lined up by the sim's place on the track rather than by distance driven: a wider
+   * line through a hairpin covers more metres, so equal distance put the cars metres apart and bent
+   * the delta there. -> { at, start: 0, end: n - 1, whole: true } or null without a usable lap fraction.
+   */
+  function byTrack(ref, lap, n) {
+    const q = (l) => {
+      const p = l.pct;
+      if (!p || l.n < 2) return null;
+      const p0 = p[0], span = p[l.n - 1] - p0;
+      if (!(span > 0.97 && span < 1.03)) return null;
+      const o = new Float64Array(l.n);
+      for (let i = 0, top = 0; i < l.n; i++) o[i] = top = Math.max(top, (p[i] - p0) / span);
+      o[l.n - 1] = 1;
+      return o;
+    };
+    if (ref.kind !== 'full' || lap.kind !== 'full' || ref.n !== n) return null;
+    const qr = q(ref), ql = q(lap);
+    if (!qr || !ql) return null;
+    const at = new Float32Array(n), last = lap.n - 1;
+    for (let i = 0, j = 0; i < n; i++) {
+      while (j < last - 1 && ql[j + 1] < qr[i]) j++;
+      const d = ql[j + 1] - ql[j];
+      at[i] = Math.min(last, j + (d > 0 ? Math.max(0, Math.min(1, (qr[i] - ql[j]) / d)) : 0));
+    }
+    at[0] = 0;
+    at[n - 1] = last;
+    return { at, start: 0, end: n - 1, whole: true };
   }
 
   // the map centre under a reference lap only changes with the lap or the map: keep it
@@ -150,12 +180,12 @@
     const all = [ref].concat(laps.filter((l) => l !== ref));
     const n = ref.n, step = ref.len / (n - 1);
     const out = all.map((lap, i) => {
-      const m = lap === ref ? null : place(ref, lap, n);
+      const m = lap === ref ? null : byTrack(ref, lap, n) || place(ref, lap, n);
       const s = lap === ref ? Object.assign({}, ...KEYS.map((k) => ({ [k]: lap[k] }))) : sampleOn(lap, n, m);
       s.start = m ? m.start : 0;
       s.end = m ? m.end : n - 1;
       // (its clock set to the reference's where it joins, so the two cars are there together)
-      if (m) for (let i = 0, t0 = s.t[m.start] - ref.t[m.start]; i < n; i++) s.t[i] -= t0;
+      if (m && !m.whole) for (let i = 0, t0 = s.t[m.start] - ref.t[m.start]; i < n; i++) s.t[i] -= t0;
       if (lap === ref) {
         s.t = Float32Array.from(lap.t);
         s.t[n - 1] = lap.time;

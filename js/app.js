@@ -287,6 +287,14 @@
     const curJuice = IST.Storage.getPref('juice', 'full');
     const juice = h('select', null, [['full', 'Full (effects + sounds)'], ['silent', 'Silent (effects, no sounds)'], ['off', 'Off (no in-drill effects)']].map((o) => h('option', { value: o[0], selected: o[0] === curJuice }, o[1])));
     juice.addEventListener('change', () => IST.Storage.setPref('juice', juice.value));
+    const P = IST.Palette, cvdHint = h('span', { class: 'hint' }, P.MODES.find((m) => m.id === P.current()).hint);
+    const reload = h('button', { class: 'btn small hidden', onclick: () => location.reload() }, 'Reload to repaint');
+    const cvd = h('select', null, P.MODES.map((m) => h('option', { value: m.id, selected: m.id === P.current() }, m.label)));
+    cvd.addEventListener('change', () => {
+      IST.Storage.setPref('cvd', P.apply(cvd.value));
+      cvdHint.textContent = P.MODES.find((m) => m.id === P.current()).hint + ' The page updates now; canvases and the Lap Viewer repaint on reload.';
+      reload.classList.remove('hidden');
+    });
     const file = h('input', { type: 'file', accept: 'application/json,.json', class: 'hidden' });
     file.addEventListener('change', () => {
       const f = file.files[0];
@@ -318,6 +326,7 @@
       h('label', { class: 'field' }, h('span', { class: 'field-l' }, 'Auto fullscreen on drill start'), fs),
       h('label', { class: 'field' }, h('span', { class: 'field-l' }, 'Game feel'), juice,
         h('span', { class: 'hint' }, 'Chains, scores, sounds and celebrations. "Summary only" feedback hides them during a drill either way.')),
+      h('label', { class: 'field' }, h('span', { class: 'field-l' }, 'Colour vision'), cvd, cvdHint, reload),
       h('h3', null, 'History'),
       h('p', { class: 'muted' }, 'Stored in this browser only.'),
       h('div', { class: 'modal-actions' },

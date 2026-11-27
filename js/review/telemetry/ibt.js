@@ -21,14 +21,14 @@
     const SIZE = [1, 1, 4, 4, 4, 8]; // char, bool, int, bitfield, float, double
     const WANT = {
       t: 'SessionTime', lap: 'Lap', lapDist: 'LapDist', lapPct: 'LapDistPct', speed: 'Speed',
-      throttle: 'Throttle', brake: 'Brake', clutch: 'Clutch', steer: 'SteeringWheelAngle', gear: 'Gear', rpm: 'RPM',
+      throttle: 'ThrottleRaw', brake: 'BrakeRaw', clutch: 'Clutch', steer: 'SteeringWheelAngle', gear: 'Gear', rpm: 'RPM',
       lat: 'Lat', lon: 'Lon', alt: 'Alt', yaw: 'YawNorth', yawRate: 'YawRate', latG: 'LatAccel', onPit: 'OnPitRoad',
       vx: 'VelocityX', vy: 'VelocityY', longG: 'LongAccel', vertG: 'VertAccel', roll: 'Roll', pitch: 'Pitch',
       absActive: 'BrakeABSactive', absCut: 'BrakeABScutPct', bpF: 'LFbrakeLinePress', bpR: 'LRbrakeLinePress',
       wsLF: 'LFspeed', wsRF: 'RFspeed', wsLR: 'LRspeed', wsRR: 'RRspeed',
       pLF: 'LFpressure', pRF: 'RFpressure', pLR: 'LRpressure', pRR: 'RRpressure',
       steerTq: 'SteeringWheelTorque', surface: 'PlayerTrackSurface', material: 'PlayerTrackSurfaceMaterial',
-      bb: 'dcBrakeBias', absSet: 'dcABS', tcSet: 'dcTractionControl',
+      inc: 'PlayerCarMyIncidentCount', tow: 'PlayerCarTowTime', fuel: 'FuelLevel', bb: 'dcBrakeBias', absSet: 'dcABS', tcSet: 'dcTractionControl',
       rhLF: 'LFrideHeight', rhRF: 'RFrideHeight', rhLR: 'LRrideHeight', rhRR: 'RRrideHeight',
       cTrack: 'TrackTempCrew', cAir: 'AirTemp', cWet: 'TrackWetness', cPrecip: 'Precipitation', cWind: 'WindVel', cHum: 'RelativeHumidity', cSkies: 'Skies',
     };
@@ -36,7 +36,8 @@
     // LastTempsOMI for left tyres, IMO for right): left tyres L = outer, right tyres L = inner.
     ['LF', 'LR'].forEach((w) => Object.assign(WANT, { ['t' + w + '_o']: w + 'tempL', ['t' + w + '_m']: w + 'tempM', ['t' + w + '_i']: w + 'tempR' }));
     ['RF', 'RR'].forEach((w) => Object.assign(WANT, { ['t' + w + '_i']: w + 'tempL', ['t' + w + '_m']: w + 'tempM', ['t' + w + '_o']: w + 'tempR' }));
-    const FALLBACK = { yaw: 'Yaw', cTrack: 'TrackTemp' };
+    // the pedals as pressed, not as the car got them (auto-blips on downshifts, the brake held in the pit stall)
+    const FALLBACK = { yaw: 'Yaw', cTrack: 'TrackTemp', throttle: 'Throttle', brake: 'Brake' };
 
     /** The weekend's conditions from the session YAML (WeekendInfo, and the last session's rubber). */
     function conditions(info) {

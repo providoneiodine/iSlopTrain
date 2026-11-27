@@ -101,7 +101,7 @@
       scene.phaseDots(g, q, V, I, { hollow: true });
       scene.phaseDots(g, q, V, L, {});
       g.restore();
-      Sym.text(g, 'green: ideal   orange: your line   faint: as drawn', 28, top + mapH - 12, { size: 11, color: COL.dim });
+      Sym.text(g, IST.Theme.names.ideal + ': ideal   ' + IST.Theme.names.pick + ': your line   faint: as drawn', 28, top + mapH - 12, { size: 11, color: COL.dim });
       // verdict list
       const lx = wide ? 16 + mapW + gap : 16, ly = wide ? top : top + mapH + gap, lw = wide ? W - 32 - mapW - gap : W - 32;
       box(g, lx, ly, lw, listH);

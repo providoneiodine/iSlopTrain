@@ -442,7 +442,7 @@
         ],
         mark: rp.cur && rp.hold > 0 && (rp.cur.kind === 'contact' || rp.cur.kind === 'squeeze' || rp.cur.kind === 'cut' || rp.cur.kind === 'hard') ? markAt(o, p, rp.cur.kind) : null,
       });
-      if (best !== o && map[2] >= 420) Sym.text(g, 'Dotted green: your line for the best call', map[0] + map[2] - 12, map[1] + map[3] - 12, { align: 'right', size: 11, weight: 620, color: COL.dim });
+      if (best !== o && map[2] >= 420) Sym.text(g, 'Dotted ' + IST.Theme.names.mint + ': your line for the best call', map[0] + map[2] - 12, map[1] + map[3] - 12, { align: 'right', size: 11, weight: 620, color: COL.dim });
       const i1 = Math.min(R.n - 1, p.i + 8);
       scene.renderPOV(g, q, pov[0], pov[1], pov[2], pov[3], ts, {
         sF: p.sF, lF: p.lF, vF: p.vF, sS: p.sS, lS: p.lS, vS: p.vS, xs, fp: o.fp, sp: o.sp, strip: true,

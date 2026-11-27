@@ -41,8 +41,9 @@ function drive(rate, reset) {
  * noFix: that many samples at the start with Lat, Lon and Alt all 0, as iRacing writes before the car is placed.
  * alt: (p) -> the Alt channel, m (100 when left out). reset: see drive.
  * tweak: (samples) -> edits them before writing. A sample marked blank is written with no place on the track (position, lap, distance, speed 0).
+ * extra: more [name, type, unit, (p) -> value] channels.
  */
-function writeIbt(rate, noFix, alt, reset, tweak) {
+function writeIbt(rate, noFix, alt, reset, tweak, extra) {
   const S = drive(rate, reset);
   if (tweak) tweak(S);
   const lat0 = 50.43, lon0 = 5.97, ky = 6371008.8 * (Math.PI / 180), kx = ky * Math.cos((lat0 * Math.PI) / 180);
@@ -56,7 +57,7 @@ function writeIbt(rate, noFix, alt, reset, tweak) {
     ['RFtempL', 4, 'C', () => 81], ['RFtempM', 4, 'C', () => 86], ['RFtempR', 4, 'C', () => 91],
     // the track warms 4 degC a lap; wetness on iRacing's 0..7 scale (1 = dry)
     ['TrackTempCrew', 4, 'C', (p) => 30 + 4 * p.lap], ['TrackWetness', 2, '', () => 1],
-  ];
+  ].concat(extra || []);
   const SIZE = [1, 1, 4, 4, 4, 8];
   let off = 0;
   const vars = VARS.map(([name, type, unit, get]) => {
@@ -291,6 +292,21 @@ test('iRacing .ibt: laps, times, units and the GPS line come out as recorded', (
   assert.equal(l.tRF_i[mid], 81, 'right tyre: the left column is the inner edge');
   assert.equal(l.tRF_o[mid], 91, 'right tyre: the right column is the outer edge');
   assert.ok(Math.abs(l.tLF[mid] - 85) < 1e-6, 'tyre mean of inner, middle and outer');
+});
+
+test('iRacing .ibt: the pedals are the driver’s, and incidents land on the lap iRacing gave them', () => {
+  const T = load().Telemetry.lib();
+  // the car's throttle reads full (an auto-blip) while the driver's foot is off; 2x given halfway round lap 2
+  const r = T.process('session.ibt', writeIbt(60, 0, null, false, null, [
+    ['ThrottleRaw', 4, '%', (p) => p.thr * 0.5], ['BrakeRaw', 4, '%', (p) => p.brk],
+    ['PlayerCarMyIncidentCount', 2, '', (p) => (p.lap > 2 || (p.lap === 2 && p.s > L / 2) ? 2 : 0)],
+  ]));
+  const full = r.laps.filter((l) => l.kind === 'full');
+  const top = Math.max.apply(null, Array.from(full[0].throttle));
+  assert.ok(top > 0 && top <= 0.5 + 1e-6, 'throttle read from ThrottleRaw (max ' + top + ')');
+  const lap2 = r.laps.find((l) => l.lapNo === 2);
+  assert.equal(lap2.inc, 2, 'lap 2 carries the 2x');
+  assert.ok(r.laps.filter((l) => l !== lap2).every((l) => !l.inc), 'no other lap does');
 });
 
 test('MoTeC .ld + .ldx: mixed channel rates, unit conversion, laps from the beacons', () => {

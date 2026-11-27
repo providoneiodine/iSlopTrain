@@ -371,6 +371,11 @@
           for (let i = Math.ceil(s.a); i <= Math.floor(s.b); i++) if (C.onPit[i] > 0.5) (pit = true), (i = n);
           lap.pit = pit;
         }
+        // incidents (iRacing's x count) picked up between the lap's ends
+        const i0 = Math.max(0, Math.ceil(s.a)), i1 = Math.min(n - 1, Math.floor(s.b));
+        if (C.inc) lap.inc = Math.max(0, Math.round(C.inc[i1] - C.inc[i0]));
+        if (C.tow) for (let i = i0; i <= i1 && !lap.tow; i++) lap.tow = C.tow[i] > 0;
+        if (C.fuel && C.fuel[i0] > C.fuel[i1]) lap.fuel = C.fuel[i0] - C.fuel[i1];
         if (kind === 'full' && P.source === 'reckoned') closeLoop(lap);
         lap.cond = lapConditions(S, s);
         lap.events = T.events ? T.events(lap) : [];

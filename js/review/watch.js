@@ -2,6 +2,7 @@
  * Folder watch: while the app is open, polls a user-picked telemetry folder and offers new .ibt files to the Lap Viewer.
  * Chrome/Edge only (File System Access API); the handle is kept in IndexedDB so a reload needs one click to resume.
  * A file is offered only once its size stops changing, since iRacing writes it for the whole stint.
+ * Stint mode loads each one straight into the Lap Viewer, where it is coached against the reference.
  */
 (function () {
   'use strict';
@@ -49,6 +50,7 @@
   if (typeof window === 'undefined' || typeof window.showDirectoryPicker !== 'function' || typeof indexedDB === 'undefined') return;
 
   const U = IST.util, h = U.h;
+  IST.Review.Watch.control = () => h('span', { class: 'rv-head-stint' }, control());
   // ------------------------------------------------------------ handle store
   const DB = 'ist-watch', STORE = 'kv';
   function db() {
@@ -74,6 +76,23 @@
   // ------------------------------------------------------------------ state
   const W = { dir: null, status: 'off', track: null, timer: 0, busy: false, pending: [], err: '' };
   // status: off (no folder), paused (saved folder, needs a click), on, error
+  const STINT_KEY = 'ist.review.stint';
+  let stint = false;
+  try {
+    stint = localStorage.getItem(STINT_KEY) === '1';
+  } catch (e) { /* blocked storage: off */ }
+  function setStint(on) {
+    stint = !!on;
+    try {
+      localStorage.setItem(STINT_KEY, stint ? '1' : '0');
+    } catch (e) { /* lasts until reload */ }
+    sync();
+  }
+  /** New files: straight into the viewer in Stint mode (once any drill is over), else offered. */
+  function arrive() {
+    if (stint && W.status === 'on' && W.pending.length && !inDrill()) load(W.pending.slice());
+    else prompt();
+  }
 
   async function start(dir, known) {
     stop();
@@ -111,7 +130,7 @@
         const e = entries.find((x) => x.name === n);
         if (e) W.pending.push(e);
       });
-      if (ready.length) prompt();
+      if (ready.length) arrive();
     } catch (e) {
       // folder moved, deleted or permission withdrawn
       stop();
@@ -167,12 +186,25 @@
       }
     }
     if (!files.length) return;
-    IST.Review.open({ files });
+    IST.Review.open({ files, stint });
   }
 
   // --------------------------------------------------------------- the card
   const mb = (n) => (n / 1048576).toFixed(n < 10485760 ? 1 : 0) + ' MB';
+  const STINT_TIP = 'Each time you leave the car, iRacing saves the stint: it loads here on its own and the Coaching tab reads it against your reference lap';
+  /** Stint mode's on/off, for the menu card and the Lap Viewer's header. */
+  function control() {
+    const on = stint && W.status === 'on';
+    const go = async () => {
+      if (on) return setStint(false);
+      if (W.status !== 'on') await (W.dir ? resume() : pick());
+      if (W.status === 'on') setStint(true);
+    };
+    return h('button', { class: 'btn rv-stint-ctl' + (on ? ' on' : ''), 'aria-pressed': String(on), onclick: go, title: on ? 'Listening to ' + W.dir.name + '. Click to stop loading stints on their own' : STINT_TIP + (W.dir ? '' : ' (pick Documents\\iRacing\\telemetry)') },
+      h('span', { class: 'rv-watch-dot' + (on ? ' on' : ''), 'aria-hidden': 'true' }), on ? 'Stint mode on' : 'Stint mode');
+  }
   function sync() {
+    document.querySelectorAll('.rv-head-stint').forEach((el) => el.replaceChildren(control()));
     const card = document.getElementById('review-card');
     if (!card) return;
     let box = card.querySelector('.rv-watch');
@@ -182,7 +214,8 @@
     if (W.status === 'on') {
       box.append(
         h('span', { class: 'rv-watch-dot on', 'aria-hidden': 'true' }),
-        h('span', { class: 'rv-watch-text' }, 'Watching ', h('b', null, name), ' for new laps'),
+        h('span', { class: 'rv-watch-text' }, 'Watching ', h('b', null, name), stint ? ': each stint loads on its own' : ' for new laps'),
+        h('label', { class: 'rv-watch-stint', title: STINT_TIP }, h('input', { type: 'checkbox', checked: stint, onchange: (e) => setStint(e.target.checked) }), 'Stint mode'),
         h('button', { class: 'btn small ghost', onclick: pick, title: 'Watch a different folder' }, 'Change'),
         h('button', { class: 'btn small ghost', onclick: forget }, 'Stop'));
     } else if (W.status === 'paused' || W.status === 'error') {
@@ -222,7 +255,7 @@
         h('button', { class: 'btn ghost small', onclick: () => ((W.pending = []), prompt()) }, 'Dismiss')));
   }
   // show what waited out a drill once the menu or results are back
-  new MutationObserver(() => W.pending.length && prompt()).observe(document.getElementById('screen-drill'), { attributes: true, attributeFilter: ['class'] });
+  new MutationObserver(() => W.pending.length && arrive()).observe(document.getElementById('screen-drill'), { attributes: true, attributeFilter: ['class'] });
 
   // ------------------------------------------------------------------- boot
   (async () => {

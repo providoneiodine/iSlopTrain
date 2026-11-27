@@ -21,7 +21,7 @@
   // the app's palette (IST.Theme), plus what each colour means in this drill; the two
   // line colours are stronger than the pastels so they read on the map and on the road
   const TH = IST.Theme;
-  const COL = Object.assign({}, TH, { ideal: '#5fd38a', pick: '#ff8a4d', quiz: TH.gold, bad: '#ff6b5e', drawn: '#ffffff', map: TH.deep });
+  const COL = Object.assign({}, TH, { ideal: TH.ideal, pick: TH.pick, quiz: TH.gold, bad: '#ff6b5e', drawn: '#ffffff', map: TH.deep });
   const PH = {
     brake: { label: 'Braking', short: 'B', color: COL.bad },
     turnin: { label: 'Turn-in', short: 'T', color: TH.butter },

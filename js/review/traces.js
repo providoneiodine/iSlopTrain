@@ -59,7 +59,7 @@
   // [key, group, label, unit, title, extra]
   const LANES = [
     { key: 'speed', group: 'driving', label: 'Speed', unit: 'km/h', h: 120, needs: ['speed'], series: (L) => map(L.speed, (v) => v * 3.6), fmt: r0, title: 'Speed in km/h' },
-    { key: 'delta', group: 'driving', label: 'Delta', unit: 's', h: 84, centre: true, minSpan: 0.1, needs: ['delta'], cmp: true, series: (L, c, F) => (F ? map(L.delta, (v) => v - L.delta[F.a0]) : L.delta), fmt: signed(2), title: 'Time behind (+) or ahead (−) of the reference at that point, in seconds' },
+    { key: 'delta', group: 'driving', label: 'Delta', unit: 's', h: 150, zero: true, grid: true, minSpan: 0.1, needs: ['delta'], cmp: true, series: (L, c, F) => (F ? map(L.delta, (v) => v - L.delta[F.a0]) : L.delta), fmt: signed(2), title: 'Time behind (+) or ahead (−) of the reference at that point, in seconds. Background: rose where that lap is losing time, mint where it is gaining (one lap at a time)' },
     { key: 'throttle', group: 'driving', label: 'Throttle', unit: '%', h: 58, lo: 0, hi: 100, needs: ['throttle'], series: (L) => map(L.throttle, (v) => v * 100), fmt: r0, title: 'Throttle pedal, %. Grey where the reference lap coasts (neither pedal)' },
     { key: 'brake', group: 'driving', label: 'Brake', unit: '%', h: 58, lo: 0, hi: 100, needs: ['brake'], series: (L) => map(L.brake, (v) => v * 100), fmt: r0, title: 'Brake pedal, %. With ABS on the lane: shaded where ABS acts, dashed for the share of force it removed' },
     { key: 'steer', group: 'driving', label: 'Steering', unit: '°', h: 58, centre: true, needs: ['steer'], series: (L) => map(L.steer, (v) => v * DEG), fmt: r0, title: 'Steering-wheel angle in degrees, + left' },
@@ -211,6 +211,13 @@
         const m = Math.min(p.maxSpan || Infinity, Math.max(Math.abs(lo), Math.abs(hi), p.minSpan || 5));
         return [-m, m];
       }
+      if (p.zero) {
+        // Fits the data plus zero rather than mirroring it, so a lap that is all behind uses the whole lane.
+        lo = Math.min(lo, 0);
+        hi = Math.max(hi, 0);
+        const grow = Math.max(0, (p.minSpan || 0) * 2 - (hi - lo)) / 2, pad = (hi - lo + grow * 2) * 0.08;
+        return [lo - grow - pad, hi + grow + pad];
+      }
       if (p.step) return [Math.max(0, lo - 0.5), hi + 0.5];
       const pad = (hi - lo) * 0.08 || 1;
       return [lo - pad, hi + pad];
@@ -295,8 +302,24 @@
           g.fillStyle = Th.line;
           g.fillRect(0, y, W, 1);
         }
+        if (p.grid) {
+          // Labelled gridlines so small gains and losses can be read off, not just seen.
+          const step = [0.02, 0.05, 0.1, 0.2, 0.25, 0.5, 1, 2, 5, 10].find((t) => (hi - lo) / t <= 6) || 20;
+          g.font = '500 9.5px ' + FONT;
+          g.textAlign = 'left';
+          g.textBaseline = 'middle';
+          for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) {
+            const gy = Math.round(yOf(v));
+            if (Math.abs(v) < step / 2 || gy < top + 6) continue;
+            g.fillStyle = 'rgba(161,169,183,0.12)';
+            g.fillRect(PADL, gy, W - PADL - PADR, 1);
+            g.fillStyle = Th.dim;
+            g.fillText(p.fmt(v), PADL + 4, gy - 6);
+          }
+          g.textBaseline = 'alphabetic';
+        }
         // zero line for centred panes
-        if (p.centre) {
+        if (p.centre || p.zero) {
           g.fillStyle = 'rgba(161,169,183,0.35)';
           g.fillRect(PADL, Math.round(yOf(0)), W - PADL - PADR, 1);
         }
@@ -318,6 +341,16 @@
           if (arr) {
             shade(a, b, every, arr.arr, (i) => arr.arr[i] > 0, yOf, yOf(0), alpha(Th.sky, 0.34));
             shade(a, b, every, arr.arr, (i) => arr.arr[i] < 0, yOf, yOf(0), alpha(Th.peach, 0.38));
+          }
+        }
+        // delta: where the one compared lap is losing (rose) or gaining (mint), from its slope over ~40 m
+        const dk = F ? F.k : cmp.laps.length === 2 ? 1 : -1;
+        if (p.key === 'delta' && cmp.laps[dk]) {
+          const d = seriesOf(p, cmp.laps[dk])[0], w = Math.max(1, Math.round(20 / (cmp.step || 1)));
+          if (d) {
+            const sl = (i) => (d.arr[Math.min(cmp.n - 1, i + w)] - d.arr[Math.max(0, i - w)]) / (2 * w * (cmp.step || 1));
+            columns(a, b, every, (i) => sl(i) > 0.0002, y + 2, y + ph(p) - 2, alpha(Th.rose, 0.13));
+            columns(a, b, every, (i) => sl(i) < -0.0002, y + 2, y + ph(p) - 2, alpha(Th.mint, 0.11));
           }
         }
         if (p.key === 'balDiff' && F && cmp.laps[F.k]) {

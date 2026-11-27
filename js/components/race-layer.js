@@ -364,10 +364,10 @@
       g.fillRect(x0, dy, dw, 8);
       g.fillRect(x0 + bw - dw, dy, dw, 8);
       const frac = Math.abs(this.delta) / 0.9;
-      g.fillStyle = this.delta < 0 ? '#2bd15a' : '#ff453a';
+      g.fillStyle = this.delta < 0 ? IST.Theme.hit : IST.Theme.miss;
       if (this.delta < 0) g.fillRect(x0 + bw - dw, dy, dw * frac, 8);
       else g.fillRect(x0 + dw * (1 - frac), dy, dw * frac, 8);
-      Sym.text(g, (this.delta < 0 ? '−' : '+') + Math.abs(this.delta).toFixed(2), x0, dy + 26, { size: 14, weight: 720, shadow: false, color: this.delta < 0 ? '#2bd15a' : '#ff453a' });
+      Sym.text(g, (this.delta < 0 ? '−' : '+') + Math.abs(this.delta).toFixed(2), x0, dy + 26, { size: 14, weight: 720, shadow: false, color: this.delta < 0 ? IST.Theme.hit : IST.Theme.miss });
       if (this.warn && Math.floor(ts / 250) % 2 === 0)
         Sym.text(g, this.warn.text, x0 + bw, dy + 26, { size: 14, weight: 820, align: 'right', shadow: false, color: '#ffb000' });
     }

@@ -85,12 +85,12 @@
 .rv-legend:empty { display: none; }
 .rv-legend-grad b { font-weight: var(--w-semi); font-size: var(--fs-label); color: var(--muted); }
 .rv-legend-note { font-size: var(--fs-label); color: var(--muted); }
-.rv-key-abs { background: repeating-linear-gradient(90deg, #ff453a 0 3px, #8a1a14 3px 6px); }
+.rv-key-abs { background: repeating-linear-gradient(90deg, var(--miss) 0 3px, var(--miss-dark) 3px 6px); }
 .rv-stage.rv-drawer-open .rv-legend { right: 320px; }
 .rv-key { display: inline-block; width: 12px; height: 10px; }
-.rv-key-thr { background: #30d158; }
-.rv-key-brk { background: #ff453a; }
-.rv-key-cap { background: rgba(48, 209, 88, .4); border-top: 2px solid var(--sky); border-bottom: 1px solid rgba(159, 203, 239, .5); }
+.rv-key-thr { background: var(--hit); }
+.rv-key-brk { background: var(--miss); }
+.rv-key-cap { background: color-mix(in srgb, var(--hit) 40%, transparent); border-top: 2px solid var(--sky); border-bottom: 1px solid rgba(159, 203, 239, .5); }
 .rv-key-gear { width: 3px; height: 12px; background: var(--butter); }
 .rv-nogl { position: absolute; inset: 0; display: grid; place-items: center; padding: 20px; color: var(--muted); text-align: center; }
 .rv-flash {
@@ -350,6 +350,27 @@ table.grid.rv-table td:last-child, table.grid.rv-table th:last-child { padding-r
 .rv-watch-prompt li { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
 .rv-watch-file { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rv-watch-prompt .modal-actions { margin-top: 10px; }
+.rv-watch-stint { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; color: var(--text); }
+.rv-head-stint { display: contents; }
+.rv-stint-ctl { display: inline-flex; align-items: center; gap: 8px; }
+.rv-stint-ctl.on { background: var(--butter); border-color: var(--butter); color: var(--ink); }
+.rv-stint-ctl.on .rv-watch-dot.on { background: var(--ink); }
+/* Stint mode: the latest stint's laps above its coaching */
+.rv-stint { margin: 0 0 14px; padding: 0 0 12px; border-bottom: 1px solid var(--line); font-size: var(--fs-small); }
+.rv-stint-head { margin: 0 0 8px; color: var(--text2); }
+.rv-stint-head b { color: var(--text); font-weight: var(--w-semi); }
+.rv-stint-laps { list-style: none; margin: 0; padding: 0; }
+.rv-stint-lap { appearance: none; width: 100%; display: grid; grid-template-columns: 3.5em 1fr 4.5em 2.5em; gap: 8px; align-items: baseline; padding: 6px; border: 0; background: none; font: inherit; color: var(--text); text-align: left; cursor: pointer; font-variant-numeric: tabular-nums; }
+.rv-stint-lap:hover:not(:disabled) { background: var(--panel2); }
+.rv-stint-lap.on { background: color-mix(in srgb, var(--butter) 18%, var(--panel2)); }
+.rv-stint-lap.on .rv-stint-no { color: var(--text); font-weight: var(--w-semi); }
+.rv-stint-lap:disabled { color: var(--muted); cursor: default; }
+.rv-stint-lap:focus-visible { outline: 2px solid var(--accent2); outline-offset: -2px; }
+.rv-stint-no { color: var(--text2); }
+.rv-stint-gap, .rv-stint-inc { text-align: right; }
+.rv-stint-gap.bad, .rv-stint-inc.bad { color: var(--bad); }
+.rv-stint-gap.good { color: var(--good); }
+.rv-lap-inc { font-size: 11px; font-weight: var(--w-semi); color: var(--bad); font-variant-numeric: tabular-nums; }
 
 /* ------------------------------------------------------- driver vs driver */
 .rv-mode { margin: 2px 0 8px; }

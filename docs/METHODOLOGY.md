@@ -342,7 +342,7 @@ The slip ratio per wheel; the yaw correction for inside and outside wheels is ab
 
 ### 8.7 Lining laps up
 
-- **Distance grid.** Each lap is resampled every metre along its own distance. Laps are then compared **by fraction of lap**: point k of the reference sits at k/(n−1) of every other lap. The same corner then lands at the same index even when one line is a few metres longer.
+- **Distance grid.** Each lap is resampled every metre along its own distance. Whole laps are then lined up **by place on the track**: the sim's own lap fraction (iRacing's `LapDistPct`), so a wider line through a hairpin doesn't push the cars apart or bend the delta there (it did by up to 0.4 s at La Source, with the cars drawn up to 4 m out). Without that channel, laps fall back to **fraction of lap**: point k of the reference sits at k/(n−1) of every other lap.
 - **Delta** at any point is that lap's time to there minus the reference's, so at the line it equals the lap-time difference.
 - **Time gain / loss** (line paint) is the slope of the delta: s per 100 m over a ±10 m window. **[heuristic]** window.
 - **Delta fence** draws one lap's delta as a fence on its line. Height is |delta|, full height at that lap's biggest gap. The fill is the gain rate, saturating at the lap's own 90th-percentile |rate| (at least 0.004 s per 100 m) so small gaps still show where they open and close. It shows one lap at a time because stacked gap fences on adjacent lines can't be told apart: the lap picked in Whose, or the first compared lap when Whose is on all laps. **[heuristic]** scaling.

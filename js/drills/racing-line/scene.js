@@ -187,7 +187,7 @@
       const dt = LL.timeAt(q.user.sim, s) - LL.timeAt(q.ideal.sim, s);
       Sym.text(g, 'you ' + sec(dt) + ' vs ideal', w - 14, 26, { align: 'right', size: 18, weight: 900, color: dt > 0.005 ? COL.bad : COL.ideal });
       Sym.text(g, L.name, 14, 26, { size: 16, weight: 900, color: lineColor(L) });
-      Sym.text(g, (L.isIdeal ? 'orange car / line: yours' : 'green car / line: ideal'), 14, 46, { size: 12, color: COL.dim });
+      Sym.text(g, (L.isIdeal ? IST.Theme.names.pick + ' car / line: yours' : IST.Theme.names.ideal + ' car / line: ideal'), 14, 46, { size: 12, color: COL.dim });
       // phase banner while paused
       if (rp.cur && rp.hold > 0) {
         const P = PH[rp.cur.kind];

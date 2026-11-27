@@ -30,6 +30,10 @@
   --sky: #9fcbef;
   --lilac: #c4b4ef;
   --rose: #f09ca6;
+  --hit: #30d158;           /* throttle / right; js/render/palettes.js swaps these per colour vision mode */
+  --miss: #ff453a;
+  --miss-dark: #8a1a14;
+  --neutral: #a1a9b7;
 
   --accent: var(--peach);  /* primary actions */
   --accent2: var(--butter);/* tags, links, focus */
@@ -232,6 +236,7 @@ h2 { font-size: var(--fs-small); text-transform: uppercase; letter-spacing: .14e
 .field { display: grid; grid-template-columns: 1fr 200px; gap: 4px 16px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); }
 .field-l small { color: var(--muted); }
 .field .hint { grid-column: 1 / -1; font-size: var(--fs-small); color: var(--muted); }
+.field > .btn { justify-self: start; }
 input[type=number], select {
   background: var(--bg-deep); color: var(--text); border: 1px solid var(--line-strong);
   padding: 6px 8px; font: inherit; width: 100%;
