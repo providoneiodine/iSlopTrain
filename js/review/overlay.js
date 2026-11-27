@@ -4,7 +4,8 @@
  * ends of a zoomed stretch.
  *
  *   const ov = IST.Review.Overlay.create()
- *   ov.draw(g, W, H, f)    f: { vp, scene, cmp, cursorF, cars, gaps, range, gears, tags, fences, markers, chipsBeside, dt }
+ *   ov.draw(g, W, H, f)    f: { vp, scene, cmp, cursorF, cars, gaps, range, gears, tags, fences, markers, chipsBeside, dt, card }
+ *           card: { ghost, arc, cue } balance cues on the info card (all on by default)
  *     markers: Set of event kinds (derive.js) to mark: a pip at each event's peak, and a
  *           label chip ("Entry US 14°") within LABEL_DIST of the camera or near the cursor
  *           gaps[k]: lap k's distance behind the reference (m), for the cursor posts
@@ -36,25 +37,54 @@
     g.fill();
   }
 
-  /**
-   * The steering wheel over a car's chip, turned by the lap's wheel angle (+ left). With a
-   * balance channel, a strip on the rim spans the lock the car's yaw didn't need (sky, understeer)
-   * or was short of (peach, oversteer); strong where the balance state calls it, faint below.
+  /*
+   * What the card shows for balance (the Layers drawer's "Info card" toggles):
+   *   ghost: a hollow pointer on the rim at the lock the car is turning to, when there is more lock than that
+   *   arc:   the path the held lock asks for (dashed) beside the path the car drives (solid)
+   *   cue:   an outline on the input in use when the balance went off (brake, throttle, or the wheel mid-corner)
    */
-  function wheel(g, L, j, cx, cy, R) {
-    const s = L.steer[j], us = L.us ? L.us[j] : NaN, st = L.balState ? L.balState[j] : 0;
-    const turn = L.latG && L.latG[j] < 0 ? -1 : 1;
+  let CARD = { ghost: true, arc: true, cue: true };
+  const BAL_LAT = 2.5, BAL_MIN = 2 * DEG, BAL_SHOW = 1.5 * DEG, BAL_TAU = 0.12; // lateral m/s², raw and shown thresholds, easing (s)
+  const ARC_W = 30, ARC_MAX = 1.5; // steering arc box width (px), its widest sweep (rad)
+  /** Arc sweep for a wheel angle: eases toward ARC_MAX so a hairpin's lock still fits the box. */
+  const sweep = (a) => 1.2 * Math.tanh(a / (40 * DEG));
+
+  /**
+   * The lap's balance at j, eased per chip so it can't flicker: only while cornering and clear of noise.
+   * us > 0 = more lock than the car's rotation needs, < 0 = the car turning more than the lock.
+   */
+  function balance(L, j, m, dt) {
+    if (!L.us) return null;
+    const raw = L.us[j], st = L.balState ? L.balState[j] : 0;
+    const real = isFinite(raw) && (!L.latG || Math.abs(L.latG[j]) > BAL_LAT) && (st !== 0 || Math.abs(raw) > BAL_MIN);
+    m.bal = (m.bal || 0) + ((real ? raw : 0) - (m.bal || 0)) * (1 - Math.exp(-dt / BAL_TAU));
+    const us = m.bal, on = Math.abs(us) > BAL_SHOW;
+    const phase = L.phase ? Math.round(L.phase[j]) : L.brake && L.brake[j] > 0.05 ? 1 : L.throttle && L.throttle[j] > 0.2 ? 3 : 2;
+    return { us, on, strong: us > 0 ? st === 1 : st === -1, turn: L.latG && L.latG[j] < 0 ? -1 : 1, phase, col: us > 0 ? Th.sky : Th.peach };
+  }
+
+  /**
+   * The steering wheel over a car's chip, turned by the lap's wheel angle (+ left). With more lock than the
+   * car's rotation used, a hollow sky pointer marks the lock it was turning to. Oversteer gets no pointer:
+   * the lock matching the rotation is more lock, and pointing there would read as "turn in more".
+   */
+  function wheel(g, L, j, cx, cy, R, b) {
+    const s = L.steer[j];
     const at = (a) => -Math.PI / 2 - a; // wheel angle to canvas angle: 12 o'clock, anticlockwise for left
-    // dark disc, then a quiet rim so the coloured strip is the loudest thing on the wheel
     g.fillStyle = Th.deep;
     g.beginPath();
     g.arc(cx, cy, R + 5, 0, Math.PI * 2);
     g.fill();
-    g.strokeStyle = Th.dim;
+    // the rim: quiet, or outlined when the balance went off with neither pedal in use
+    const cue = CARD.cue && b && b.on && b.phase === 2;
+    g.strokeStyle = cue ? b.col : Th.dim;
+    g.globalAlpha = cue && !b.strong ? 0.6 : 1;
     g.lineWidth = 3;
     g.beginPath();
     g.arc(cx, cy, R, 0, Math.PI * 2);
     g.stroke();
+    g.globalAlpha = 1;
+    g.strokeStyle = Th.dim;
     // three spokes and the hub, turned with the wheel
     g.save();
     g.translate(cx, cy);
@@ -71,27 +101,32 @@
     g.arc(0, 0, R * 0.3, 0, Math.PI * 2);
     g.fill();
     g.restore();
-    if (isFinite(us) && Math.abs(us) > 0.5 * DEG) {
-      // from the lock the yaw needed to the lock held, along the rim: a thick band with round
-      // ends over the rim, full colour where the balance state calls it, half below
-      const need = s - us * turn, d = Math.max(-Math.PI, Math.min(Math.PI, s - need));
-      const strong = us > 0 ? st === 1 : st === -1, a0 = at(s), a1 = at(s - d);
-      g.lineCap = 'round';
-      g.strokeStyle = Th.deep;
-      g.lineWidth = strong ? 9 : 7;
+    if (CARD.ghost && b && b.on && b.us > 0) {
+      // faint arc from the held lock to the lock the rotation matches, then the hollow pointer there
+      const need = s - Math.min(Math.PI, b.us) * b.turn;
+      g.globalAlpha = b.strong ? 0.6 : 0.35;
+      g.strokeStyle = Th.sky;
+      g.lineWidth = 2;
       g.beginPath();
-      g.arc(cx, cy, R, a0, a1, d < 0);
-      g.stroke();
-      g.strokeStyle = us > 0 ? Th.sky : Th.peach;
-      g.globalAlpha = strong ? 1 : 0.55;
-      g.lineWidth = strong ? 6 : 4;
-      g.beginPath();
-      g.arc(cx, cy, R, a0, a1, d < 0);
+      g.arc(cx, cy, R + 6, at(s), at(need), b.turn < 0);
       g.stroke();
       g.globalAlpha = 1;
-      g.lineCap = 'butt';
+      g.save();
+      g.translate(cx, cy);
+      g.rotate(-need);
+      g.fillStyle = Th.deep;
+      g.strokeStyle = Th.sky;
+      g.lineWidth = 1.6;
+      g.beginPath();
+      g.moveTo(-3.5, -R - 10);
+      g.lineTo(3.5, -R - 10);
+      g.lineTo(0, -R - 2);
+      g.closePath();
+      g.fill();
+      g.stroke();
+      g.restore();
     }
-    // top marker last, so it reads over the strip at the held lock
+    // top marker last, so it reads over the pointer's arc at the held lock
     g.save();
     g.translate(cx, cy);
     g.rotate(-s);
@@ -106,9 +141,6 @@
 
   const clutchUsed = new WeakMap(); // lap -> whether its clutch moves at all in the lap
   const PW = 5, PG = 2, HOLD = 0.15; // pedal bar width and gap (px), lock / spin hold (s)
-  const BAL_FULL = 20 * DEG, BAL_W = 54; // balance gauge full scale (wheel lock), its label's width (px)
-  const PHASE = ['', 'braking', 'mid-corner', 'on throttle'];
-  const BAL_LAT = 2.5, BAL_MIN = 2 * DEG, BAL_SHOW = 1.5 * DEG, BAL_TAU = 0.12; // lateral m/s², raw and shown thresholds, easing (s)
 
   /** How many pedal bars: throttle and brake, plus the clutch only when it moves during the lap. */
   function pedalCount(L) {
@@ -120,15 +152,30 @@
     }
     return 2 + (L.clutch && clutchUsed.get(L) ? 1 : 0);
   }
-  /** Width of the pedal block: the bars, then the balance gauge and its label when the lap has balance. */
-  const pedalWidth = (L, n) => n * PW + (n - 1) * PG + 8 + (L.us ? 6 + PW + 4 + BAL_W : 0);
+  /** Width of the pedal block: the bars, then the steering arc when the lap has balance and it's on. */
+  const pedalWidth = (L, n) => n * PW + (n - 1) * PG + 8 + (L.us && L.steer && CARD.arc ? ARC_W : 0);
+
+  /** A path from the bottom of the box, turning through th (rad, + left) over a fixed length. */
+  function arcPath(g, x0, y0, len, th) {
+    th = Math.max(-ARC_MAX, Math.min(ARC_MAX, th));
+    const N = 12, ds = len / N;
+    let x = x0, y = y0, hd = 0;
+    g.beginPath();
+    g.moveTo(x, y);
+    for (let q = 0; q < N; q++) {
+      hd -= th / N;
+      x += Math.sin(hd) * ds;
+      y -= Math.cos(hd) * ds;
+      g.lineTo(x, y);
+    }
+  }
 
   /**
    * Pedal bars beside the wheel, filling from the bottom: throttle mint, brake rose, clutch lilac. A butter
-   * outline and cap mark a pedal past grip (lockup, wheelspin). Then a centre-zero balance gauge (up sky =
-   * understeer, down peach = oversteer, full at 20° of wheel) labelled with its size and the phase it happens in.
+   * outline and cap mark a pedal past grip (lockup, wheelspin); a sky or peach outline marks the pedal in use
+   * when the balance went off. Then the steering arc: dashed where the lock asks to go, solid where the car went.
    */
-  function pedals(g, L, j, x, top, hgt, m, c, dt) {
+  function pedals(g, L, j, x, top, hgt, m, c, dt, b) {
     const n = pedalCount(L);
     if (!n) return;
     const wl = c.wheels ? Object.values(c.wheels) : [];
@@ -137,6 +184,7 @@
     m.spinT = spin > 0.3 ? HOLD : Math.max(0, (m.spinT || 0) - dt);
     const bars = [[L.throttle, Th.mint, m.spinT > 0], [L.brake, Th.rose, m.lockT > 0]];
     if (n > 2) bars.push([null, Th.lilac, false, 1 - L.clutch[j]]);
+    const cueBar = CARD.cue && b && b.on ? (b.phase === 1 ? 1 : b.phase === 3 ? 0 : -1) : -1;
     g.fillStyle = Th.deep;
     g.fillRect(x, top - 4, pedalWidth(L, n), hgt + 8);
     bars.forEach(([a, col, past, val], q) => {
@@ -146,6 +194,13 @@
       g.fillRect(bx, top, PW, hgt);
       g.fillStyle = col;
       g.fillRect(bx, top + hgt - fh, PW, fh);
+      if (q === cueBar) {
+        g.strokeStyle = b.col;
+        g.globalAlpha = b.strong ? 1 : 0.6;
+        g.lineWidth = 1.5;
+        g.strokeRect(bx - 2, top - 2, PW + 4, hgt + 4);
+        g.globalAlpha = 1;
+      }
       if (past) {
         g.strokeStyle = Th.butter;
         g.lineWidth = 1;
@@ -154,37 +209,29 @@
         g.fillRect(bx, top + hgt - fh - 2, PW, 2);
       }
     });
-    if (!L.us) return;
-    const usRaw = L.us[j], st = L.balState ? L.balState[j] : 0, gx = x + 4 + n * (PW + PG) + 6, mid = top + hgt / 2;
-    // only while cornering (past BAL_LAT) and clear of noise, then eased so it can't flicker
-    const real = isFinite(usRaw) && (!L.latG || Math.abs(L.latG[j]) > BAL_LAT) && (st !== 0 || Math.abs(usRaw) > BAL_MIN);
-    m.bal = (m.bal || 0) + ((real ? usRaw : 0) - (m.bal || 0)) * (1 - Math.exp(-dt / BAL_TAU));
-    const us = m.bal;
-    g.fillStyle = Th.panel2;
-    g.fillRect(gx, top, PW, hgt);
-    g.fillStyle = Th.dim;
-    g.fillRect(gx - 1, Math.round(mid), PW + 2, 1);
-    const on = Math.abs(us) > BAL_SHOW;
-    if (on) {
-      const strong = us > 0 ? st === 1 : st === -1, len = Math.min(1, Math.abs(us) / BAL_FULL) * (hgt / 2);
-      g.globalAlpha = strong ? 1 : 0.6;
-      g.fillStyle = us > 0 ? Th.sky : Th.peach;
-      if (us > 0) g.fillRect(gx, mid - len, PW, len);
-      else g.fillRect(gx, mid, PW, len);
-      g.globalAlpha = 1;
-    }
-    // the label: what and how much, then where in the corner
-    const lx = gx + PW + 4;
-    g.textAlign = 'left';
-    g.font = '800 10.5px ' + FONT;
-    g.fillStyle = on ? (us > 0 ? Th.sky : Th.peach) : Th.dim;
-    g.fillText(on ? (us > 0 ? 'US ' : 'OS ') + Math.round(Math.abs(us) / DEG) + '°' : 'Neutral', lx, mid - 6);
-    const ph = L.phase ? PHASE[Math.round(L.phase[j])] : L.brake && L.brake[j] > 0.05 ? 'braking' : L.throttle && L.throttle[j] > 0.2 ? 'on throttle' : '';
-    if (on && ph) {
-      g.font = '500 10px ' + FONT;
-      g.fillStyle = Th.dim;
-      g.fillText(ph, lx, mid + 7);
-    }
+    if (!b || !L.steer || !CARD.arc) return;
+    // start on the side away from the turn so the bend has room; asked first, driven over it
+    const s = L.steer[j], ax = x + n * PW + (n - 1) * PG + 8 + ARC_W / 2 + (s >= 0 ? 7 : -7), ay = top + hgt, len = hgt - 2;
+    g.lineCap = 'round';
+    g.setLineDash([2.5, 2.5]);
+    g.strokeStyle = Th.dim;
+    g.lineWidth = 1.5;
+    // the driven arc keeps the lock ratio to the asked one, so the gap still shows at hairpin lock
+    const need = b.on ? s - b.us * b.turn : s, thA = sweep(s), thD = Math.abs(s) > 3 * DEG ? thA * (need / s) : sweep(need);
+    arcPath(g, ax, ay, len, thA);
+    g.stroke();
+    g.setLineDash([]);
+    g.strokeStyle = b.on ? b.col : Th.text2;
+    g.globalAlpha = b.on && !b.strong ? 0.7 : 1;
+    g.lineWidth = 2.2;
+    arcPath(g, ax, ay, len, thD);
+    g.stroke();
+    g.globalAlpha = 1;
+    g.lineCap = 'butt';
+    g.fillStyle = Th.butter;
+    g.beginPath();
+    g.arc(ax, ay, 2, 0, Math.PI * 2);
+    g.fill();
   }
 
   function create() {
@@ -237,6 +284,7 @@
 
     function draw(g, W, H, f) {
       frameNo++;
+      if (f.card) CARD = f.card;
       g.clearRect(0, 0, W, H);
       const S = f.scene, cmp = f.cmp, vp = f.vp, top = S.fenceH * 1.25;
       const k = 1 - Math.exp(-FADE * (f.dt || 0.016));
@@ -362,8 +410,9 @@
         g.font = '500 11px ' + FONT;
         g.fillStyle = Th.dim;
         g.fillText(sub, x + tw + 8, y + 25);
-        if (hasWheel) wheel(g, L, jw, x + tw / 2, y - WR - 8, WR);
-        if (np) pedals(g, L, jw, hasWheel ? x + tw / 2 + WR + 8 : x, y - WR * 2 - 6, WR * 2 - 4, m, c, f.dt || 0.016);
+        const bal = balance(L, jw, m, f.dt || 0.016);
+        if (hasWheel) wheel(g, L, jw, x + tw / 2, y - WR - 8, WR, bal);
+        if (np) pedals(g, L, jw, hasWheel ? x + tw / 2 + WR + 8 : x, y - WR * 2 - 6, WR * 2 - 4, m, c, f.dt || 0.016, bal);
       });
 
       // ---- event pips, and the fading labels: event chips, lap tags along the lines and gear numbers

@@ -37,7 +37,7 @@
 
   const state = {
     sessions: [], laps: [], refId: null, sel: [], errors: [], warnings: [],
-    opts: { inputs: 'all', lean: false, cars: true, exag: 1, map: true, paint: 'balance', fence: 'inputs', absTint: true, attScale: 1, motion: 1, wheels: true, passthru: true,
+    opts: { inputs: 'all', lean: false, cars: true, exag: 1, map: true, paint: 'balance', fence: 'inputs', absTint: true, attScale: 1, motion: 1, wheels: true, passthru: true, cardGhost: true, cardArc: true, cardCue: true,
       markers: new Set(['lock', 'off', 'spin', 'kerb', 'us', 'os']) },
     lanes: { on: new Set(['speed', 'delta', 'throttle', 'brake', 'steer', 'gear']), picks: [], tyreMode: 'temp', tyreBand: 'avg', abs: true, labels: {}, folded: false },
     drawer: false,
@@ -79,7 +79,7 @@
       const o = JSON.parse(localStorage.getItem(LAYERS_KEY) || 'null');
       if (o) {
         // (Passthru became default on in v2: a choice saved before then is the old default, not a pick)
-        ['lean', 'cars', 'exag', 'map', 'paint', 'fence', 'absTint', 'attScale', 'motion', 'wheels'].concat(o.v >= 2 ? ['passthru'] : []).forEach((k) => o[k] != null && (state.opts[k] = o[k]));
+        ['lean', 'cars', 'exag', 'map', 'paint', 'fence', 'absTint', 'attScale', 'motion', 'wheels', 'cardGhost', 'cardArc', 'cardCue'].concat(o.v >= 2 ? ['passthru'] : []).forEach((k) => o[k] != null && (state.opts[k] = o[k]));
         if (o.mapFolded != null) state.mapFolded = !!o.mapFolded;
         if (Array.isArray(o.markers)) state.opts.markers = new Set(o.markers);
       }
@@ -98,7 +98,7 @@
   function saveLayers() {
     try {
       const o = state.opts;
-      localStorage.setItem(LAYERS_KEY, JSON.stringify({ v: 2, lean: o.lean, cars: o.cars, exag: o.exag, map: o.map, paint: o.paint, fence: o.fence, absTint: o.absTint, attScale: o.attScale, motion: o.motion, wheels: o.wheels, passthru: o.passthru, markers: [...o.markers], mapFolded: state.mapFolded }));
+      localStorage.setItem(LAYERS_KEY, JSON.stringify({ v: 2, lean: o.lean, cars: o.cars, exag: o.exag, map: o.map, paint: o.paint, fence: o.fence, absTint: o.absTint, attScale: o.attScale, motion: o.motion, wheels: o.wheels, passthru: o.passthru, cardGhost: o.cardGhost, cardArc: o.cardArc, cardCue: o.cardCue, markers: [...o.markers], mapFolded: state.mapFolded }));
     } catch (e) {
       /* not kept */
     }
@@ -1731,6 +1731,13 @@
       att.addEventListener('input', () => ((o.attScale = +att.value), layersChanged()));
       D.append(h('label', { class: 'rv-field', title: 'Exaggerate the drawn slip angle (arrows and the yawed cars). Real slip is a few degrees' }, h('span', null, 'Attitude angle'), att));
     }
+    // balance cues on the cars' info cards: each can go if it's too much to read
+    if (hasCh(cmp, 'us')) {
+      D.append(h('h2', null, 'Info card'),
+        check('Lock pointer', 'cardGhost', 'With more lock than the car turned for, a hollow sky pointer on the wheel marks the lock it was turning to', dirty),
+        check('Steering arc', 'cardArc', 'Beside the pedals: the path your lock asks for (dashed) and the path the car drove (solid), sky when running wide, peach when turning in more', dirty),
+        check('Attention outline', 'cardCue', 'When the balance goes off, outline what was in use: the brake, the throttle, or the wheel mid-corner', dirty));
+    }
     // 4. view
     const elev = h('select', { 'aria-label': 'Elevation scale' }, [[1, '×1'], [2, '×2'], [4, '×4'], [8, '×8']].map(([v, l]) => h('option', { value: v, selected: v === o.exag }, l)));
     elev.addEventListener('input', () => {
@@ -2106,7 +2113,7 @@
     V.ov.draw(g, W, H, {
       vp: m.vp, scene: V.scene, cmp: V.cmp, cursorF: state.cursorF, cars: state.opts.cars ? C : [], gaps: C.map((c) => c.gapM), range: V.range,
       gears: markerOn('gears'), tags: markerOn('tags'), attitude: attitudeOn(), fences: V.fences, markers: V.markerKinds, chipsBeside: V.cam.mode === 'top', dt,
-      zero: V.focus ? V.focus.w.a0 : -1,
+      card: { ghost: state.opts.cardGhost, arc: state.opts.cardArc, cue: state.opts.cardCue }, zero: V.focus ? V.focus.w.a0 : -1,
     });
   }
 
