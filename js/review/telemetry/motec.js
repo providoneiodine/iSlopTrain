@@ -109,6 +109,15 @@
           units[k] = c.unit;
           if (opt && opt.progress) opt.progress(++done / keys.length);
         }
+        // iRacing's BrakeABScutPct is the share of brake force kept: store the share removed, as ibt.js does
+        if (ch.absCut) for (let i = 0; i < n; i++) ch.absCut[i] = Math.max(0, Math.min(1, 1 - ch.absCut[i]));
+        // iRacing's TrackWetness, carried over as its 0..7 enum (an integer channel), would read as 100 % wet
+        if (ch.cWet && (pick.cWet.typeA !== 0x07 || (ch.cWet.some((v) => v > 1) && ch.cWet.every((v) => !isFinite(v) || (v === Math.round(v) && v >= 0 && v <= 7)))) && !T.wetShare(ch.cWet)) delete ch.cWet;
+        // the .ldx names the venue; an iRacing export uses the sim's own track id, which finds the official corner numbers
+        const venue = opt && opt.sidecar && /<String Id="Venue" Value="([^"]+)"/.exec(opt.sidecar);
+        const vLen = opt && opt.sidecar && /<Numeric Id="Venue Length" Value="([\d.]+)" Unit="km"/.exec(opt.sidecar);
+        if (venue && !meta.trackId) meta.trackId = venue[1].trim();
+        if (vLen && parseFloat(vLen[1]) > 0.5) meta.trackLen = parseFloat(vLen[1]) * 1000;
         // a lap-number channel in i2 often counts from the first timed lap; it's only a marker
         const beacons = opt && opt.sidecar ? T.ldxBeacons(opt.sidecar) : null;
         const warnings = [];

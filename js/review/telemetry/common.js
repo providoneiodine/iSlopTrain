@@ -47,9 +47,9 @@
       lapDist: ['lapdist', 'lapdistance', 'distancelap', 'lapdistm', 'distance', 'dist'],
       lapPct: ['lapdistpct', 'lapdistancepct', 'lappct', 'lapfraction', 'normalizedcarposition', 'splinepos'],
       speed: ['speed', 'groundspeed', 'vehiclespeed', 'carspeed', 'speedkmh', 'speedkph', 'speedmph', 'speedms', 'gpsspeed', 'velocity'],
-      throttle: ['throttle', 'throttlepos', 'throttleposition', 'throttlepedal', 'gas', 'accelerator', 'pedalthrottle', 'tps'],
+      throttle: ['throttleraw', 'throttle', 'throttlepos', 'throttleposition', 'throttlepedal', 'gas', 'accelerator', 'pedalthrottle', 'tps'],
       clutch: ['clutch', 'clutchpos', 'clutchposition', 'clutchpedal', 'pedalclutch'],
-      brake: ['brake', 'brakepos', 'brakeposition', 'brakepedal', 'pedalbrake', 'brakepedalpos', 'brakepressure', 'brakepressfront'],
+      brake: ['brakeraw', 'brake', 'brakepos', 'brakeposition', 'brakepedal', 'pedalbrake', 'brakepedalpos', 'brakepressure', 'brakepressfront'],
       steer: ['steeringwheelangle', 'steeringangle', 'steerangle', 'steer', 'steering', 'steeringwheel', 'steeringpos'],
       gear: ['gear', 'currentgear', 'gearpos'],
       rpm: ['rpm', 'rpms', 'enginerpm', 'enginespeed', 'engrpm'],
@@ -93,6 +93,11 @@
       bb: ['dcbrakebias', 'brakebias'],
       absSet: ['dcabs', 'abssetting', 'abslevel'],
       tcSet: ['dctractioncontrol', 'tcsetting', 'tclevel'],
+      // iRacing channels a MoTeC conversion of an .ibt keeps under their own names
+      absCut: ['brakeabscutpct'],
+      inc: ['playercarmyincidentcount'],
+      tow: ['playercartowtime'],
+      fuel: ['fuellevel'],
       // track conditions sampled through the run (never cut per metre: laps.js averages them per lap)
       cTrack: ['tracktempcrew', 'tracktemp', 'tracksurfacetemp', 'roadtemp', 'roadtemperature'],
       cAir: ['airtemp', 'ambienttemp', 'ambienttemperature', 'airtemperature'],
@@ -114,6 +119,14 @@
     /** iRacing's sky and wetness enums. */
     T.SKIES = ['Clear', 'Partly cloudy', 'Mostly cloudy', 'Overcast'];
     T.WETNESS = [NaN, 0, 0.1, 0.2, 0.35, 0.5, 0.75, 1]; // irsdk_TrackWetness 0..7: unknown, dry .. extremely wet
+    /** A TrackWetness channel from iRacing's 0..7 scale to a share in place (0 = unknown: NaN); false when none is left. */
+    T.wetShare = function (a) {
+      for (let i = 0; i < a.length; i++) {
+        const w = T.WETNESS[Math.round(a[i])];
+        a[i] = w != null ? w : NaN;
+      }
+      return a.some(isFinite);
+    };
     /** A share given as 0..1 or as a percentage. */
     T.share = (v) => (isFinite(v) ? (Math.abs(v) > 1.0001 ? v / 100 : v) : NaN);
 

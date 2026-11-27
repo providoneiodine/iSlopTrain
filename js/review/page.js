@@ -767,7 +767,7 @@
   function keyLegend() {
     const n = IST.Review.Rigs.MODES.length;
     const key = (k, what) => h('span', { class: 'rv-key-item' }, k.map((x) => h('kbd', null, x)), ' ' + what);
-    const zoom = 'Drag across the traces to zoom both views to that stretch · shift-drag to pan · wheel to zoom · double-click for the whole lap';
+    const zoom = 'Drag across the traces to zoom both views to that stretch · shift-drag to pan · wheel to zoom · double-click for the whole lap · the corner icon by a lane’s name expands it';
     return h('div', { class: 'rv-traces-hint rv-keys', 'aria-label': 'Keyboard shortcuts' },
       key(['Space'], 'play'), key(['1–' + n], 'camera'), key(['C'], 'next camera'), key(['L'], 'layers'), key(['M'], 'map'),
       key(['←', '→'], '10 m, with Shift 100 m'), key(['Shift'], 'click a corner: loop it'), key(['Esc'], 'close'),

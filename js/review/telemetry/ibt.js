@@ -143,13 +143,7 @@
         // a car without ABS logs zeros: no ABS channels at all, so its lanes read "Not in this file"
         if (ch.absActive && !ch.absActive.some((v) => v > 0)) delete ch.absActive, delete ch.absCut;
         // wetness from iRacing's 0..7 scale to a share (0 = unknown: dropped)
-        if (ch.cWet) {
-          for (let i = 0; i < n; i++) {
-            const w = T.WETNESS[Math.round(ch.cWet[i])];
-            ch.cWet[i] = w != null ? w : NaN;
-          }
-          if (!ch.cWet.some(isFinite)) delete ch.cWet;
-        }
+        if (ch.cWet && !T.wetShare(ch.cWet)) delete ch.cWet;
         return T.session({ format: 'ibt', name, meta, n, rate: i32(8) || 60, ch, units });
       },
     };

@@ -12,6 +12,7 @@
  *   tr.zoom(a, b)        show indices a..b (no arguments: the whole lap)
  *   tr.focus(f)          corner comparison { a0, b1, k } or null: shows a0..b1, the delta counted
  *                        from a0, and a Balance vs ref lane (shaded for lap k)
+ *   tr.expand(key, on?)  grow a lane for a closer look, or shrink it back (toggles without on)
  *   tr.draw()            redraw (sizes itself to the canvas's CSS width)
  *   tr.destroy()
  *   Traces.LANES         the lane catalogue, in display order
@@ -25,7 +26,7 @@
  * Mouse: hover moves the cursor; drag selects a stretch of track and zooms
  * to it on release (onRange, so the 3D view can follow); shift- or
  * middle-drag pans; wheel zooms around the pointer; double-click resets
- * (onReset). Drawn in the page's style (IST.Theme).
+ * (onReset). The corner icon by each lane's name expands that lane. Drawn in the page's style (IST.Theme).
  */
 (function () {
   'use strict';
@@ -136,6 +137,8 @@
   }
 
   const AXIS = 22, PADL = 10, PADR = 10, MIN_LANE = 30;
+  const EXP_MIN = 200, EXP_SHARE = 0.62; // an expanded lane: at least this tall, or this share of the strip
+  const GRID_STEPS = [0.02, 0.05, 0.1, 0.2, 0.25, 0.5, 1, 2, 5, 10, 20, 25, 50, 100, 250, 500, 1000, 2000, 5000];
 
   function create(canvas, o) {
     // The lanes are drawn once into an offscreen layer; a cursor move only copies that
@@ -149,6 +152,8 @@
     let cfg = Object.assign({}, DEFAULT, { on: new Set(DEFAULT.on) });
     const st = { drag: null };
     let cache = new WeakMap(); // lap -> Map(lane key -> [{ arr, dash }])
+    const expanded = new Set(); // lane keys grown for a closer look
+    let hoverIcon = null, baseTitle = canvas.title, eh = new Map(); // eh: expanded pane -> height
 
     function seriesOf(p, L) {
       let m = cache.get(L);
@@ -164,14 +169,20 @@
       panes = cmp ? lanesFor(cmp, cfg, F) : [];
       // o.fit(): the height the page gives the traces. Lanes stretch or squeeze toward it
       // (within readable limits); past that the strip scrolls in its box
-      const nat = panes.reduce((s, p) => s + p.h, 0), fit = o.fit ? o.fit() : 0;
+      const fit = o.fit ? o.fit() : 0;
+      // Expanded lanes take a fixed height first; the others stretch or squeeze into the rest.
+      const exp = panes.filter((p) => expanded.has(p.key));
+      eh = new Map();
+      exp.forEach((p) => eh.set(p, Math.round(Math.max(EXP_MIN, p.h * 3, fit > AXIS ? ((fit - AXIS) * EXP_SHARE) / exp.length : 0))));
+      const flex = panes.filter((p) => !eh.has(p)), avail = fit - AXIS - exp.reduce((s, p) => s + eh.get(p), 0);
+      const nat = flex.reduce((s, p) => s + p.h, 0);
       k = 1;
       if (fit > AXIS && nat) {
         // lanes that would drop under MIN_LANE stay there; the rest share what is left
-        k = Math.min(1.6, (fit - AXIS) / nat);
-        const low = panes.filter((p) => p.h * k < MIN_LANE);
+        k = Math.min(1.6, avail / nat);
+        const low = flex.filter((p) => p.h * k < MIN_LANE);
         const rest = nat - low.reduce((s, p) => s + p.h, 0);
-        if (low.length && rest) k = (fit - AXIS - low.length * MIN_LANE) / rest;
+        if (low.length && rest) k = (avail - low.length * MIN_LANE) / rest;
         k = Math.max(0.4, Math.min(1.6, k));
         // whole pixels and the floor can still overshoot by a few: ease off until it fits
         for (let t = 0; t < 12 && k > 0.4 && panes.reduce((s, p) => s + ph(p), 0) + AXIS > fit; t++) k -= 0.02;
@@ -189,7 +200,7 @@
       }
       g.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
-    const ph = (p) => (k === 1 ? p.h : Math.max(MIN_LANE, Math.floor(p.h * k)));
+    const ph = (p) => eh.get(p) || (k === 1 ? p.h : Math.max(MIN_LANE, Math.floor(p.h * k)));
     const xOf = (i) => PADL + ((i - v0) / (v1 - v0)) * (W - PADL - PADR);
     const iOf = (x) => v0 + ((x - PADL) / (W - PADL - PADR)) * (v1 - v0);
 
@@ -285,6 +296,38 @@
       g.stroke();
     }
 
+    /** Four corner marks, 10 px square at (x, y): pointing out to expand, in to shrink back. */
+    function expandIcon(x, y, on, hot) {
+      const s = 10, t = 3.5;
+      g.save();
+      g.strokeStyle = hot ? Th.text : Th.dim;
+      g.globalAlpha = hot || on ? 1 : 0.7;
+      g.lineWidth = 1.4;
+      g.lineCap = 'round';
+      g.lineJoin = 'round';
+      g.beginPath();
+      [[0, 0, 1, 1], [s, 0, -1, 1], [0, s, 1, -1], [s, s, -1, -1]].forEach(([cx, cy, dx, dy]) => {
+        // out: an L at each corner; in: the same L moved inward, its elbow facing the centre
+        const ox = on ? x + cx + dx * t : x + cx, oy = on ? y + cy + dy * t : y + cy;
+        const ex = on ? -dx : dx, ey = on ? -dy : dy;
+        g.moveTo(ox + ex * t, oy);
+        g.lineTo(ox, oy);
+        g.lineTo(ox, oy + ey * t);
+      });
+      g.stroke();
+      g.restore();
+    }
+    /** The lane whose expand icon is under (x, y), or null. */
+    function iconAt(x, y) {
+      const hd = heads.find((h) => y >= h.y && y < h.y + 20);
+      return hd && x >= hd.ix - 6 && x <= hd.ix + 16 ? hd.p : null;
+    }
+    function toggle(key, on) {
+      if (on == null ? expanded.has(key) : !on) expanded.delete(key);
+      else expanded.add(key);
+      draw();
+    }
+
     /** Everything but the cursor, into the layer. */
     function paint() {
       heads = [];
@@ -302,15 +345,17 @@
           g.fillStyle = Th.line;
           g.fillRect(0, y, W, 1);
         }
-        if (p.grid) {
-          // Labelled gridlines so small gains and losses can be read off, not just seen.
-          const step = [0.02, 0.05, 0.1, 0.2, 0.25, 0.5, 1, 2, 5, 10].find((t) => (hi - lo) / t <= 6) || 20;
+        const big = eh.has(p);
+        if ((p.grid || big) && bot - top >= 28) {
+          // Labelled gridlines so small gains and losses can be read off, not just seen; an expanded lane gets more.
+          const lines = big ? Math.max(6, Math.floor((bot - top) / 34)) : Math.min(6, Math.floor((bot - top) / 14));
+          const step = GRID_STEPS.find((t) => (hi - lo) / t <= lines && (!p.step || t >= 1)) || 10000;
           g.font = '500 9.5px ' + FONT;
           g.textAlign = 'left';
           g.textBaseline = 'middle';
           for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) {
             const gy = Math.round(yOf(v));
-            if (Math.abs(v) < step / 2 || gy < top + 6) continue;
+            if ((Math.abs(v) < step / 2 && (p.centre || p.zero)) || gy < top + 6 || gy > bot) continue;
             g.fillStyle = 'rgba(161,169,183,0.12)';
             g.fillRect(PADL, gy, W - PADL - PADR, 1);
             g.fillStyle = Th.dim;
@@ -387,12 +432,15 @@
         g.textAlign = 'left';
         g.textBaseline = 'alphabetic';
         const label = (cfg.labels && cfg.labels[p.key]) || p.label;
-        g.fillText(label.toUpperCase() + (p.unit ? ' · ' + p.unit : ''), PADL + 4, y + 13);
+        const text = label.toUpperCase() + (p.unit ? ' · ' + p.unit : '');
+        g.fillText(text, PADL + 4, y + 13);
+        const ix = Math.round(PADL + 4 + g.measureText(text).width + 8);
         g.letterSpacing = '0px';
+        expandIcon(ix, y + 4, big, hoverIcon === p.key);
         g.font = '500 10px ' + FONT;
         g.textAlign = 'right';
         g.fillText(p.fmt(hi), W - PADR - 2, y + 13);
-        heads.push({ p, y, x: W - PADR - 2 - g.measureText(p.fmt(hi)).width - 18 });
+        heads.push({ p, y, x: W - PADR - 2 - g.measureText(p.fmt(hi)).width - 18, ix });
         y += ph(p);
       });
 
@@ -496,6 +544,13 @@
       if (!cmp) return;
       const p = local(e);
       const d = st.drag;
+      const ic = d ? null : iconAt(p.x, p.y);
+      if ((ic ? ic.key : null) !== hoverIcon) {
+        hoverIcon = ic ? ic.key : null;
+        canvas.style.cursor = ic ? 'pointer' : '';
+        canvas.title = ic ? (eh.has(ic) ? 'Shrink ' : 'Expand ') + ((cfg.labels && cfg.labels[ic.key]) || ic.label) : baseTitle;
+        if (!d) draw();
+      }
       if (d && d.pan) {
         const di = ((d.x - p.x) / (W - PADL - PADR)) * (v1 - v0);
         const w = v1 - v0;
@@ -511,7 +566,9 @@
     };
     const onDown = (e) => {
       if (!cmp || e.button > 1) return;
-      const x = local(e).x;
+      const q = local(e), ic = e.button === 0 && iconAt(q.x, q.y);
+      if (ic) return toggle(ic.key);
+      const x = q.x;
       // drag selects a stretch to zoom into; shift- or middle-drag pans
       st.drag = { x0: x, x, moved: false, pan: e.shiftKey || e.button === 1 };
       canvas.setPointerCapture(e.pointerId);
@@ -547,8 +604,10 @@
       v0 = Math.max(0, v1 - w);
       draw();
     };
-    const onDbl = () => {
+    const onDbl = (e) => {
       if (!cmp) return;
+      const q = local(e);
+      if (iconAt(q.x, q.y)) return;
       v0 = 0;
       v1 = cmp.n - 1;
       draw();
@@ -560,6 +619,14 @@
     canvas.addEventListener('pointercancel', onUp);
     canvas.addEventListener('wheel', onWheel, { passive: false });
     canvas.addEventListener('dblclick', onDbl);
+    const onLeave = () => {
+      if (hoverIcon == null) return;
+      hoverIcon = null;
+      canvas.style.cursor = '';
+      canvas.title = baseTitle;
+      if (cmp) draw();
+    };
+    canvas.addEventListener('pointerleave', onLeave);
 
     return {
       set(c, lanes) {
@@ -624,6 +691,10 @@
         previewEnd = j;
         if (cmp) compose();
       },
+      /** Grow lane `key` for a closer look, or shrink it back; toggles when on is left out. */
+      expand(key, on) {
+        toggle(key, on);
+      },
       draw,
       destroy() {
         canvas.removeEventListener('pointermove', onMove);
@@ -632,6 +703,7 @@
         canvas.removeEventListener('pointercancel', onUp);
         canvas.removeEventListener('wheel', onWheel);
         canvas.removeEventListener('dblclick', onDbl);
+        canvas.removeEventListener('pointerleave', onLeave);
       },
     };
   }

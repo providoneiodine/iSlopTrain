@@ -235,29 +235,31 @@
     }
     /**
      * A one-lap export cut on the samples either side of the line (Garage 61's) starts just past
-     * it and ends just short of it, so the lap was a sample or so short. Adds a sample on the line
-     * at each end, extrapolated from the lap distance, so its time and grid match the .ibt's lap.
+     * it and ends just short of it, or one sample past it, so the lap was a sample or so short.
+     * Adds a sample on the line at the start (and at the end when it stops short), extrapolated from the lap distance.
      */
     function lineEnds(S) {
       const C = S.ch, n = S.n, p = C.lapPct;
-      if (C.lap || !p || n < 3 || !(p[0] >= 0 && p[0] < 0.01 && p[n - 1] > 0.99 && p[n - 1] <= 1)) return;
-      for (let i = 1; i < n; i++) if (p[i] < p[i - 1]) return;
-      const r0 = p[1] > p[0] ? p[0] / (p[1] - p[0]) : 0, r1 = p[n - 1] > p[n - 2] ? (1 - p[n - 1]) / (p[n - 1] - p[n - 2]) : 0;
+      if (C.lap || !p || n < 3) return;
+      const over = p[n - 1] < 0.01 && p[n - 2] > 0.99, m = over ? n - 1 : n; // last sample already over the line
+      if (!(p[0] >= 0 && p[0] < 0.01 && p[m - 1] > 0.99 && p[m - 1] <= 1)) return;
+      for (let i = 1; i < m; i++) if (p[i] < p[i - 1]) return;
+      const r0 = p[1] > p[0] ? p[0] / (p[1] - p[0]) : 0, r1 = over ? 0 : p[n - 1] > p[n - 2] ? (1 - p[n - 1]) / (p[n - 1] - p[n - 2]) : 0;
       if (!(r0 <= 3 && r1 <= 3)) return;
-      const rate = S.rate || 60, step = new Set(T.STEP_CHANNELS.concat(['yaw', 'lap', 'onPit']));
+      const rate = S.rate || 60, step = new Set(T.STEP_CHANNELS.concat(['yaw', 'lap', 'onPit'])), add = over ? 1 : 2;
       if (!C.t) C.t = Float64Array.from({ length: n }, (_, i) => i / rate);
       for (const k in C) {
         const a = C[k];
         if (!a || a.length !== n) continue;
-        const o = new Float64Array(n + 2);
+        const o = new Float64Array(n + add);
         o.set(a, 1);
         o[0] = step.has(k) ? a[0] : a[0] - (a[1] - a[0]) * r0;
-        o[n + 1] = step.has(k) ? a[n - 1] : a[n - 1] + (a[n - 1] - a[n - 2]) * r1;
+        if (!over) o[n + 1] = step.has(k) ? a[n - 1] : a[n - 1] + (a[n - 1] - a[n - 2]) * r1;
         C[k] = o;
       }
       C.lapPct[0] = 0;
-      C.lapPct[n + 1] = 1;
-      S.n = n + 2;
+      if (!over) C.lapPct[n + 1] = 1;
+      S.n = n + add;
     }
 
     /** Time per sample, never running backwards: a step back in the file's clock counts as one sample. */
