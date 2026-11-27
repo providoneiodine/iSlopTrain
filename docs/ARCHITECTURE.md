@@ -95,8 +95,6 @@ Reach for these before writing a loop over `ctx.history` or a new counter:
 
 A telemetry viewer, kept apart from the drills. Nothing outside the folder depends on it except three lines in `app.js` (screen, tab, card buttons) and `css/review.css`.
 
-How iRacing records telemetry, the `.ibt` layout and the live-session options are in [IRACING-TELEMETRY.md](IRACING-TELEMETRY.md).
-
 | Path | Role |
 |---|---|
 | `telemetry/common.js` | `IST.Telemetry`: the factory registry, channel aliases, unit conversion, the common session record, `T.LAP_CHANNELS` (every channel a lap carries) and `T.STEP_CHANNELS` (resampled by nearest, never blended) |
