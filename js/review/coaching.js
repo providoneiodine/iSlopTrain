@@ -10,8 +10,30 @@
   const DEG = Math.PI / 180;
 
   // which pattern explains a phase best when several match, root causes first
-  const ORDER = ['off', 'lock', 'trail', 'entryUs', 'cliff', 'overslow', 'softPeak', 'lift', 'unusedIn', 'exitOs', 'overdrive', 'pump', 'lateThrottle', 'partThrottle', 'unusedOut'];
+  const ORDER = ['off', 'lock', 'early', 'trail', 'entryUs', 'cliff', 'overslow', 'softPeak', 'lift', 'unusedIn', 'exitOs', 'overdrive', 'lineLift', 'pump', 'lateThrottle', 'partThrottle', 'unusedOut'];
   const NEAR = 150; // m: how far either side of a stretch's start its braking may begin
+  // grip used past 105 % is a vertical-load spike (Eau Rouge's compression), not the tyres' limit
+  const grip = (v) => (v > 1.05 ? NaN : Math.min(1, v));
+  const absDeg = (v) => Math.abs(v) / DEG;
+
+  /** True when the throttle is past 15 % off the brake at i and stays there for 0.3 s: a pickup, not a downshift blip. */
+  function held(L, i, b) {
+    if (!(L.throttle[i] > 0.15) || L.brake[i] >= 0.03) return false;
+    for (let k = i; k <= b && L.t[k] - L.t[i] < 0.3; k++) if (L.throttle[k] <= 0.15 || L.brake[k] >= 0.03) return false;
+    return true;
+  }
+
+  /** Whether lap R also eases the throttle by 30 % within 20 m of i: a lift both drivers make (a chicane) is not a fault. */
+  function bothLift(R, i, step) {
+    if (!R || !R.throttle) return false;
+    const w = Math.round(20 / step), a = Math.max(0, i - 3 * w), b = Math.min(R.throttle.length - 1, i + w);
+    let top = 0;
+    for (let k = a; k <= b; k++) {
+      top = Math.max(top, R.throttle[k]);
+      if (k >= i - w && R.throttle[k] < top - 0.3) return true;
+    }
+    return false;
+  }
 
   /** Mean of a channel over [i0, i1], skipping gaps; NaN when the file has no such channel. */
   function avg(a, i0, i1, f) {
@@ -34,7 +56,7 @@
     let iMin = a;
     for (let i = a; i <= Math.min(b, iRef + back); i++) if (speed[i] < speed[iMin]) iMin = i;
     const m = { iMin, minV: speed[iMin], braked: false, coast: 0, lift: 0, tPeak: 0, peak: 0, release: NaN, tThr: NaN, ramp: NaN, half: NaN, pumps: 0,
-      brakeTurn: NaN, trailIn: NaN, gripIn: NaN, gripOut: NaN, gripMin: NaN, usIn: NaN, ev: {} };
+      brakeTurn: NaN, trailIn: NaN, gripIn: NaN, gripOut: NaN, gripMin: NaN, usIn: NaN, steerMin: NaN, iB: -1, iT: -1, iThr: -1, iHalf: -1, parts: [], ev: {} };
     if (!brake || !throttle) return m;
     let iB = -1;
     for (let i = Math.max(0, a - back); i <= Math.min(b, a + back); i++) if (brake[i] > 0.1) { iB = i; break; }
@@ -50,7 +72,7 @@
       let i90 = iB, i50 = iB;
       while (i90 < iEnd && brake[i90] < 0.9 * pk) i90++;
       for (let i = iB; i <= iEnd; i++) if (brake[i] >= 0.5 * pk) i50 = i;
-      Object.assign(m, { braked: true, peak: pk, tPeak: t[i90] - t[iB], release: t[iEnd] - t[i50] });
+      Object.assign(m, { braked: true, peak: pk, tPeak: t[i90] - t[iB], release: t[iEnd] - t[i50], iB });
       let iL = iB;
       while (iL > Math.max(0, iB - back) && throttle[iL - 1] < 0.9) iL--;
       m.lift = t[iB] - t[iL];
@@ -63,43 +85,64 @@
         // trailing ends where the brake first drops away after turn-in, not at a later dab for the next corner
         let iOff = iT;
         while (iOff < iMin1 && brake[iOff] > 0.03) iOff++;
-        if (top > 0) (m.brakeTurn = brake[iT]), (m.trailIn = brake[iT] > 0.03 ? t[iOff] - t[iT] : -(t[iT] - t[Math.min(iEnd, iT)]));
+        if (top > 0) (m.brakeTurn = brake[iT]), (m.trailIn = brake[iT] > 0.03 ? t[iOff] - t[iT] : -(t[iT] - t[Math.min(iEnd, iT)])), (m.iT = iT);
       }
       m.usIn = avg(L.us, iB, iMin1, (u) => Math.max(0, u) / DEG);
     }
-    // throttle back on, to half, then flat out
+    // throttle back on (held, not a blip), to half, then flat out
     let iThr = -1, iFull = -1;
-    for (let i = Math.max(iEnd, a); i <= b; i++) if (throttle[i] > 0.15) { iThr = i; break; }
+    for (let i = Math.max(iEnd, a); i <= b; i++) if (held(L, i, b)) { iThr = i; break; }
     if (iThr >= 0) {
       let top = throttle[iThr];
       for (let i = iThr; i <= b; i++) {
         if (throttle[i] > 0.95) { iFull = i; break; }
-        // a real lift soon after the pickup; easing between the corners of a complex later on is not one
-        if (throttle[i] < top - 0.3 && t[i] - t[iThr] < 2) (m.pumps++, (top = throttle[i]));
+        // a real lift soon after the pickup, unless the comparison lap lifts there too
+        if (throttle[i] < top - 0.3 && t[i] - t[iThr] < 2) {
+          if (!bothLift(R && R !== L ? R : null, i, step)) m.pumps++;
+          top = throttle[i];
+        }
         top = Math.max(top, throttle[i]);
       }
-      for (let i = iThr; i <= b; i++) if (throttle[i] >= 0.5) { m.half = t[i] - t[iThr]; break; }
+      for (let i = iThr; i <= b; i++) if (throttle[i] >= 0.5) { m.half = t[i] - t[iThr]; m.iHalf = i; break; }
       m.tThr = t[iThr] - t[iMin];
+      m.iThr = iThr;
       if (iFull >= 0) m.ramp = t[iFull] - t[iThr];
     }
     const c1 = iFull >= 0 ? iFull : b;
     for (let i = Math.max(1, iB >= 0 ? iB : a); i <= c1; i++) if (brake[i] < 0.03 && throttle[i] < 0.05) m.coast += t[i] - t[i - 1];
-    // off full throttle where the reference was flat (and neither was braking), and where that starts
+    // each run off full throttle where the comparison lap was flat (neither braking): its time, what it cost
+    // up to the next run or braking point, and whether it came with far more lock or understeer than that lap
     m.part = 0;
     m.partAt = -1;
     if (R && R !== L && R.throttle) {
+      const off = (i) => R.throttle[i] > 0.95 && throttle[i] < 0.9 && brake[i] < 0.03 && R.brake[i] < 0.03, gap = Math.round(10 / step);
+      const runs = [];
       for (let i = Math.max(a + 1, iThr >= 0 ? iThr : a); i <= b; i++) {
-        if (R.throttle[i] > 0.95 && throttle[i] < 0.9 && brake[i] < 0.03 && R.brake[i] < 0.03) {
-          m.part += t[i] - t[i - 1];
-          if (m.partAt < 0) m.partAt = i;
-        }
+        if (!off(i)) continue;
+        const last = runs[runs.length - 1];
+        if (last && i - last.i1 <= gap) last.i1 = i;
+        else runs.push({ i0: i, i1: i });
       }
+      const lost = (i, j) => t[j] - t[i] - (R.t[j] - R.t[i]);
+      runs.forEach((r, q) => {
+        let dur = 0;
+        for (let i = r.i0 + 1; i <= r.i1; i++) if (off(i)) dur += t[i] - t[i - 1];
+        if (dur < 0.25) return;
+        const next = q < runs.length - 1 ? runs[q + 1].i0 : b;
+        const sL = avg(steer, r.i0, r.i1, absDeg), sR = avg(R.steer, r.i0, r.i1, absDeg);
+        const uL = avg(L.us, r.i0, r.i1, (u) => u / DEG), uR = avg(R.us, r.i0, r.i1, (u) => u / DEG);
+        const line = (isFinite(sL) && isFinite(sR) && sL >= 1.5 * sR && sL - sR > 15) || (isFinite(uL) && isFinite(uR) && uL - uR > 8);
+        m.parts.push({ i0: r.i0, i1: r.i1, dur, cost: Math.max(0, lost(Math.max(a, r.i0 - 1), next)), line, sL, sR, uL, uR, dv: (R.speed[r.i1] - speed[r.i1]) * 3.6 });
+        m.part += dur;
+        if (m.partAt < 0) m.partAt = r.i0;
+      });
     }
     // grip used: braking to the first apex, the slowest moment itself, and the drive out
     const g0 = iB >= 0 ? iB : a, w = Math.round(15 / step);
-    m.gripIn = avg(L.gripUse, g0, iMin1);
-    m.gripMin = avg(L.gripUse, iMin1 - w, iMin1 + w);
-    m.gripOut = avg(L.gripUse, iMin, c1);
+    m.gripIn = avg(L.gripUse, g0, iMin1, grip);
+    m.gripMin = avg(L.gripUse, iMin1 - w, iMin1 + w, grip);
+    m.gripOut = avg(L.gripUse, iMin, c1, grip);
+    m.steerMin = avg(steer, iMin1 - w, iMin1 + w, absDeg);
     (L.events || []).forEach((e) => {
       if (e.iPeak < a || e.iPeak > b) return;
       const k = e.kind === 'spin' || e.kind === 'counter' ? 'os' : e.kind;
@@ -134,29 +177,49 @@
     const usTxt = usWorse ? 'understeer averaged ' + m.usIn.toFixed(1) + '° on entry (' + rl + ': ' + r.usIn.toFixed(1) + '°)' : '';
     const gripTxt = (a, b, where) => (ok(a, b) ? pc(a) + ' of the grip used ' + where + ' (' + rl + ': ' + pc(b) + ')' : '');
     if (inLost) {
+      // braked earlier or arrived slower at the comparison lap's turn-in, and that is most of the entry loss
+      const early = m.braked && r.braked && m.iB >= 0 && r.iB >= 0 ? (r.iB - m.iB) * step : NaN, slowIn = ok(ph.vTurn, ph.vTurnRef) ? (ph.vTurnRef - ph.vTurn) * 3.6 : NaN;
+      const arrival = (early > 15 || slowIn > 5) && ok(ph.toTurn) && ph.toTurn > 0.6 * ph.entry;
+      if (arrival) add('early', early > 15 ? 'Started braking ' + Math.round(early) + ' m earlier than ' + rl : '', slowIn > 5 ? kmh(ph.vTurn) + ' at its turn-in (' + rl + ': ' + kmh(ph.vTurnRef) + ')' : '', s2(ph.toTurn) + ' of the ' + s2(ph.entry) + ' lost on entry is before turn-in');
       // released before the car had turned, where the comparison lap carried brake into the corner
       // turn-in can only be timed on a single corner; inside a complex the steering never settles
-      if (single && m.braked && r.braked && ok(m.trailIn, r.trailIn, m.brakeTurn, r.brakeTurn) && r.trailIn > 0.15 && r.trailIn - m.trailIn > Math.max(0.25, 0.3 * r.trailIn) && m.brakeTurn <= r.brakeTurn + 0.05) {
+      if (!arrival && single && m.braked && r.braked && ok(m.trailIn, r.trailIn, m.brakeTurn, r.brakeTurn) && r.trailIn > 0.15 && r.trailIn - m.trailIn > Math.max(0.25, 0.3 * r.trailIn) && m.brakeTurn <= r.brakeTurn + 0.05) {
         add('trail', 'Brake fully off ' + (m.trailIn >= 0 ? s1(m.trailIn) + ' after' : s1(-m.trailIn) + ' before') + ' turn-in (' + rl + ': ' + s1(r.trailIn) + ' after)',
           ok(m.brakeTurn, r.brakeTurn) ? pc(m.brakeTurn) + ' brake at turn-in (' + rl + ': ' + pc(r.brakeTurn) + ')' : '', usTxt);
       }
       if (usWorse && m.ev['us:entry']) add('entryUs', usTxt);
       if (m.braked && r.braked && ok(m.release, r.release) && m.peak > 0.4 && m.release < 0.12 && r.release > m.release + 0.15) add('cliff', 'Brake from half to off in ' + s2(m.release) + ' (' + rl + ': ' + s2(r.release) + ')', usTxt);
-      // slower at the apex with grip to spare: under-driven, not a different line
-      if (r.minV - m.minV > 1 && (!ok(m.gripMin, r.gripMin) || m.gripMin < r.gripMin - 0.05)) add('overslow', 'Slowest point ' + kmh(m.minV) + ', ' + rl + ': ' + kmh(r.minV), gripTxt(m.gripMin, r.gripMin, 'there'));
-      if (m.braked && r.braked && r.peak > 0.6 && m.tPeak - r.tPeak > 0.15 && m.tPeak > 0.3) add('softPeak', 'Peak brake ' + pc(m.peak) + ' after ' + s2(m.tPeak) + ' (' + rl + ': ' + pc(r.peak) + ' after ' + s2(r.tPeak) + ')');
+      if (!arrival && m.braked && r.braked && r.peak > 0.6 && m.tPeak - r.tPeak > 0.15 && m.tPeak > 0.3) add('softPeak', 'Peak brake ' + pc(m.peak) + ' after ' + s2(m.tPeak) + ' (' + rl + ': ' + pc(r.peak) + ' after ' + s2(r.tPeak) + ')');
       if (m.braked && r.braked && m.lift - r.lift > 0.15 && m.lift > 0.25) add('lift', s1(m.lift) + ' off the throttle before braking (' + rl + ': ' + s1(r.lift) + ')');
       if (ok(m.gripIn, r.gripIn) && m.gripIn < r.gripIn - 0.08) add('unusedIn', gripTxt(m.gripIn, r.gripIn, 'from braking to the apex'), m.coast - r.coast > 0.15 ? s1(m.coast) + ' with neither pedal (' + rl + ': ' + s1(r.coast) + ')' : '');
+    }
+    // slower at the apex with grip to spare (under-driven), or with far more lock (scrubbing); a slow apex can cost on the way out alone
+    const scrub = ok(m.steerMin, r.steerMin) && m.steerMin > 1.3 * r.steerMin && m.steerMin - r.steerMin > 10;
+    if ((inLost || ph.exit > 0.05) && r.minV - m.minV > 1 && (!ok(m.gripMin, r.gripMin) || m.gripMin < r.gripMin - 0.05 || scrub)) {
+      add('overslow', 'Slowest point ' + kmh(m.minV) + ', ' + rl + ': ' + kmh(r.minV), scrub ? Math.round(m.steerMin) + '° of lock there (' + rl + ': ' + Math.round(r.steerMin) + '°), so the tyres were scrubbing speed' : gripTxt(m.gripMin, r.gripMin, 'there'));
+      out[out.length - 1].cost = Math.max(0, ph.entry + ph.exit);
     }
     if (outLost) {
       // a lift and rebuild already explains a slow climb to full; then only a late pickup counts
       const lifted = out.some((f) => f.id === 'pump');
-      if (ok(m.tThr, r.tThr) && (m.tThr - r.tThr > 0.2 || (!lifted && ((ok(m.half, r.half) && m.half - r.half > 0.3) || (ok(m.ramp, r.ramp) && m.ramp - r.ramp > Math.max(0.3, 0.25 * r.ramp)))))) {
-        const late = m.tThr - r.tThr > 0.2, slowHalf = ok(m.half, r.half) && m.half - r.half > 0.3;
-        add('lateThrottle', late ? 'Throttle back on ' + s1(m.tThr - r.tThr) + ' later than ' + rl + ', from the slowest point' : slowHalf ? 'Throttle took ' + s1(m.half) + ' to reach half (' + rl + ': ' + s1(r.half) + ')' : 'Throttle took ' + s1(m.ramp) + ' to reach full (' + rl + ': ' + s1(r.ramp) + ')', gripTxt(m.gripOut, r.gripOut, 'on the way out'));
+      // late by time from the slowest point, or by distance at the same spot (15 m is a late pickup even when quick)
+      const dThr = m.iThr >= 0 && r.iThr >= 0 ? (m.iThr - r.iThr) * step : NaN;
+      if (ok(m.tThr, r.tThr) && (m.tThr - r.tThr > 0.2 || dThr > 15 || (!lifted && ((ok(m.half, r.half) && m.half - r.half > 0.3) || (ok(m.ramp, r.ramp) && m.ramp - r.ramp > Math.max(0.3, 0.25 * r.ramp)))))) {
+        const late = m.tThr - r.tThr > 0.2 || dThr > 15, slowHalf = ok(m.half, r.half) && m.half - r.half > 0.3;
+        add('lateThrottle', late ? 'Throttle back on ' + (dThr > 15 ? Math.round(dThr) + ' m' : s1(m.tThr - r.tThr)) + ' later than ' + rl : slowHalf ? 'Throttle took ' + s1(m.half) + ' to reach half (' + rl + ': ' + s1(r.half) + ')' : 'Throttle took ' + s1(m.ramp) + ' to reach full (' + rl + ': ' + s1(r.ramp) + ')',
+          ok(m.steerMin, r.steerMin) && m.steerMin - r.steerMin > 10 ? Math.round(m.steerMin) + '° of lock at the apex (' + rl + ': ' + Math.round(r.steerMin) + '°)' : '', gripTxt(m.gripOut, r.gripOut, 'on the way out'));
       } else if (ok(m.gripOut, r.gripOut) && m.gripOut < r.gripOut - 0.08) add('unusedOut', gripTxt(m.gripOut, r.gripOut, 'on the way out'));
     }
-    if (ph.entry + ph.exit > 0.03 && m.part > 0.25) add('partThrottle', s1(m.part) + ' below full throttle where ' + rl + ' was flat out, from ' + (m.partAt * step / 1000).toFixed(2) + ' km');
+    // part throttle, one line per run with where it was and what it cost; with far more lock or understeer the car was pushing
+    const at = (p) => (ph.where ? ph.where(p.i0) : (p.i0 * step / 1000).toFixed(2) + ' km');
+    const runText = (p) => 'at ' + at(p) + ': ' + s1(p.dur) + ' below full throttle' + (p.dv >= 2 ? ', ' + Math.round(p.dv) + ' km/h down after' : '') + ', about ' + s2(p.cost);
+    [false, true].forEach((line) => {
+      const ps = (m.parts || []).filter((p) => p.line === line && p.cost > 0.02);
+      const cost = ps.reduce((x, p) => x + p.cost, 0);
+      if (cost < 0.05) return;
+      add(line ? 'lineLift' : 'partThrottle', ...ps.map((p) => runText(p) + (line ? ' (' + Math.round(p.sL) + '° of lock, ' + rl + ': ' + Math.round(p.sR) + '°' + (ok(p.uL, p.uR) ? '; understeer ' + Math.round(p.uL) + '° vs ' + Math.round(p.uR) + '°' : '') + ')' : '')), 'where ' + rl + ' was flat out');
+      out[out.length - 1].cost = cost;
+    });
     return out;
   }
 
@@ -204,6 +267,12 @@
     if (alone) coached = [0];
     const sec = corners(cmp);
     const T = (L, i) => lerp(L.t, i);
+    // a spot on the lap by its turn when the track's corners are known, always with its distance
+    const where = (i) => {
+      const km = (i * cmp.step / 1000).toFixed(2) + ' km', turns = cmp.turns || [];
+      const c = turns.find((x) => i >= x.a && i <= x.b) || turns.filter((x) => Math.abs(x.apex - i) * cmp.step < 200).sort((p, q) => Math.abs(p.apex - i) - Math.abs(q.apex - i))[0];
+      return c ? c.label + (c.name ? ' ' + c.name : '') + ' (' + km + ')' : km;
+    };
     const best = sec.map((s) => used.reduce((p, k) => (T(L0[k], s.b) - T(L0[k], s.a) < T(L0[p], s.b) - T(L0[p], s.a) ? k : p), used[0]));
     const laps = L0.map(() => []);
     sec.forEach((s, j) => {
@@ -218,12 +287,15 @@
       const mB = measure(B, s.a, s.b, iRef, cmp.step, B);
       const label = best[j] === 0 ? 'ref lap' : 'lap ' + B.lap.lapNo;
       const tB = T(B, s.b) - T(B, s.a), eB = T(B, iRef) - T(B, s.a);
+      // the comparison lap's turn-in (its apex when the file has no steering)
+      const iT = mB.iT >= 0 ? mB.iT : iRef, tT = T(B, iT) - T(B, s.a);
       for (let k = 0; k < n; k++) {
         const L = L0[k], m = k === best[j] ? mB : measure(L, s.a, s.b, iRef, cmp.step, B);
         const time = T(L, s.b) - T(L, s.a), lost = time - tB, entry = T(L, iRef) - T(L, s.a) - eB, exit = lost - entry;
-        const found = (k === best[j] && !alone) || !coached.includes(k) ? [] : match(m, alone ? null : mB, { entry, exit, label }, s.single, cmp.step).map((f) => {
-          const ph = KB().PATTERNS[f.id].phase;
-          return Object.assign(f, { cost: Math.max(0, ph === 'entry' ? entry : ph === 'exit' ? exit : lost) });
+        const ph = { entry, exit, label, where, vTurn: L.speed[iT], vTurnRef: B.speed[iT], toTurn: T(L, iT) - T(L, s.a) - tT };
+        const found = (k === best[j] && !alone) || !coached.includes(k) ? [] : match(m, alone ? null : mB, ph, s.single, cmp.step).map((f) => {
+          const at = KB().PATTERNS[f.id].phase;
+          return Object.assign(f, { cost: Math.max(0, f.cost != null ? f.cost : at === 'entry' ? entry : at === 'exit' ? exit : lost) });
         });
         if (!alone && coached.includes(k) && k !== best[j] && entry < -0.03 && exit > -entry + 0.03) found.push({ id: 'overdrive', ev: 'Gained ' + s2(-entry) + ' in, lost ' + s2(exit) + ' out, against ' + label, cost: lost });
         // the corner itself, braking to back on full throttle; the straight after varies with traffic and tow
@@ -237,6 +309,7 @@
 
   const mean = (a) => a.reduce((s, x) => s + x, 0) / Math.max(1, a.length);
   const median = (a) => {
+    if (!a.length) return 0; // no lap to compare: your lap was the quickest here
     const s = a.slice().sort((p, q) => p - q), m = s.length >> 1;
     return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
   };

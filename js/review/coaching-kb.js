@@ -46,8 +46,8 @@
     },
     overslow: {
       title: 'Slower than needed at the apex', icon: 'speed', phase: 'entry',
-      cue: 'If you find yourself letting the brake off early to keep the car rolling, arrive faster next lap rather than braking later in the turn.',
-      why: 'The lap was slower than the comparison lap at the apex while using less of the car\'s grip there, so it was under the limit rather than on a different line. Driver61 names over-slowing fast corners as a common amateur error, and Kasdorp\'s rule for the next lap is: had to release more brake, arrive faster; missed the apex, arrive slower.',
+      cue: 'If you find yourself letting the brake off early to keep the car rolling, arrive faster next lap rather than braking later in the turn. If the evidence shows much more lock, turn in so the car is rotated by the apex instead of winding on more steering.',
+      why: 'The lap was slower than the comparison lap at the apex, either using less of the car\'s grip there (under the limit) or with far more steering lock, where the front tyres scrub off speed. Driver61 names over-slowing fast corners as a common amateur error, and Kasdorp\'s rule for the next lap is: had to release more brake, arrive faster; missed the apex, arrive slower.',
       sources: ['driver61', 'kasdorpTrail'], drills: ['oneCorner', 'loseRear'],
     },
     softPeak: {
@@ -83,8 +83,20 @@
     partThrottle: {
       title: 'Off full throttle where the quicker lap was flat', icon: 'throttle', phase: 'any',
       cue: 'Commit once the car is pointed: throttle only goes up until the next braking point.',
-      why: 'On this stretch the comparison lap was flat out where this lap was not, outside the braking zones. Bentley\'s one-lap data review found more full-throttle time was the main gain, and Kasdorp\'s throttle rule is to pick it up once and only add. The distance shows where on the lap it starts, so you can check the trace.',
+      why: 'The comparison lap was flat out where this lap was not, outside the braking zones, with no sign the car was pushing. Each lift is listed with where it was and what it cost, counting the speed carried down to the next braking point. Bentley\'s one-lap data review found more full-throttle time was the main gain, and Kasdorp\'s throttle rule is to pick it up once and only add.',
       sources: ['bentleyData', 'kasdorpThrottle'], drills: ['throttleTiming', 'oneCorner'],
+    },
+    lineLift: {
+      title: 'Lifting because the car was pushing', icon: 'us', phase: 'any',
+      cue: 'Fix the entry, not the throttle: a touch less speed into the turn, or a turn-in that gets the car rotated early, so you can stay flat without extra lock.',
+      why: 'The lift came with far more steering lock or understeer than the comparison lap had there, so the car was running wide and the lift was the cure, not the fault. Kasdorp ties understeer to too little weight on the front and a missed entry, and his rule for a missed apex is a slower arrival. Forcing the throttle here would only widen the line.',
+      sources: ['kasdorpTrail', 'kasdorpBasics'], drills: ['turnInFeel', 'oneCorner'],
+    },
+    early: {
+      title: 'Braking earlier and arriving slower', icon: 'brake', phase: 'entry',
+      cue: 'Brake later and arrive at the turn-in faster. If you then have to let the brake off sooner to make the apex, that is speed you were leaving.',
+      why: 'Most of the time lost on entry was gone before turn-in: the brakes went on well before the comparison lap\'s, or the car reached its turn-in clearly slower. Kasdorp\'s rule is: had to release more brake, arrive faster. Trail braking and brake build are not judged here, as the slower arrival explains them.',
+      sources: ['kasdorpTrail', 'kasdorpBasics'], drills: ['oneCorner', 'refPoints'],
     },
     unusedOut: {
       title: 'Grip left unused on the way out', icon: 'grip', phase: 'exit',
