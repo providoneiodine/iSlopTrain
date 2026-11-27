@@ -1,4 +1,4 @@
-# iSlopTrain: sim-racing trainer (proof of concept)
+# iSlopTrain: I got tired of all the setup shops charging for slopapps that u have to download, so I slopped together one u can use anywhere
 
 > [!WARNING]
 > ## ⚠️ This project is vibecoded
