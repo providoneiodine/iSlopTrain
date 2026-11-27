@@ -10,7 +10,7 @@
   const DEG = Math.PI / 180;
 
   // which pattern explains a phase best when several match, root causes first
-  const ORDER = ['off', 'lock', 'early', 'trail', 'entryUs', 'cliff', 'overslow', 'softPeak', 'lift', 'unusedIn', 'exitOs', 'overdrive', 'lineLift', 'pump', 'lateThrottle', 'partThrottle', 'unusedOut'];
+  const ORDER = ['off', 'lock', 'early', 'trail', 'brakeAfterTurn', 'entryUs', 'cliff', 'overslow', 'softPeak', 'lateBuild', 'lift', 'unusedIn', 'exitOs', 'overdrive', 'lineLift', 'pump', 'lateThrottle', 'partThrottle', 'unusedOut'];
   const NEAR = 150; // m: how far either side of a stretch's start its braking may begin
   // grip used past 105 % is a vertical-load spike (Eau Rouge's compression), not the tyres' limit
   const grip = (v) => (v > 1.05 ? NaN : Math.min(1, v));
@@ -21,6 +21,29 @@
     if (!(L.throttle[i] > 0.15) || L.brake[i] >= 0.03) return false;
     for (let k = i; k <= b && L.t[k] - L.t[i] < 0.3; k++) if (L.throttle[k] <= 0.15 || L.brake[k] >= 0.03) return false;
     return true;
+  }
+
+  /**
+   * A second squeeze on [i0, i1]: the brake back up 10 points above its lowest so far, held 0.08 s, once it has
+   * eased `ease` off its peak (from the start when fromStart, for the stretch after turn-in). -> { from, to, at } or null.
+   */
+  function squeeze(L, i0, i1, ease, fromStart) {
+    const { brake, t } = L;
+    let top = 0, low = fromStart ? brake[i0] : 1;
+    for (let i = i0; i <= i1; i++) {
+      top = Math.max(top, brake[i]);
+      if (fromStart || top - brake[i] >= ease) low = Math.min(low, brake[i]);
+      if (low < 1 && brake[i] - low >= 0.1) {
+        let k = i;
+        while (k < i1 && brake[k + 1] - low >= 0.08) k++;
+        if (t[k] - t[i] >= 0.08) {
+          let hi = brake[i];
+          for (let q = i; q <= k; q++) hi = Math.max(hi, brake[q]);
+          return { from: low, to: hi, at: i };
+        }
+      }
+    }
+    return null;
   }
 
   /** Whether lap R also eases the throttle by 30 % within 20 m of i: a lift both drivers make (a chicane) is not a fault. */
@@ -88,6 +111,15 @@
         if (top > 0) (m.brakeTurn = brake[iT]), (m.trailIn = brake[iT] > 0.03 ? t[iOff] - t[iT] : -(t[iT] - t[Math.min(iEnd, iT)])), (m.iT = iT);
       }
       m.usIn = avg(L.us, iB, iMin1, (u) => Math.max(0, u) / DEG);
+      // where the pressure peaks between brake on and turn-in (release when there is no steering), and any second squeeze
+      const iT = m.iT >= 0 ? m.iT : -1, zEnd = iT > iB ? iT : iEnd;
+      // the peak is where it first comes within 5 % of the most, so a held plateau isn't read as a late peak
+      let hiZ = 0, iTop = iB;
+      for (let i = iB; i <= zEnd; i++) hiZ = Math.max(hiZ, brake[i]);
+      while (iTop < zEnd && brake[iTop] < 0.95 * hiZ) iTop++;
+      Object.assign(m, { tTop: t[iTop] - t[iB], zoneT: t[zEnd] - t[iB], peakAt: zEnd > iB ? (t[iTop] - t[iB]) / (t[zEnd] - t[iB]) : 0 });
+      m.reRise = squeeze(L, iB, iT >= 0 ? iT : iEnd, 0.08, false);
+      if (iT >= 0) m.afterTurn = squeeze(L, iT, Math.max(iT, iMin1), 0, true);
     }
     // throttle back on (held, not a blip), to half, then flat out
     let iThr = -1, iFull = -1;
@@ -176,6 +208,20 @@
     const usWorse = ok(m.usIn, r.usIn) && m.usIn > r.usIn + 0.5;
     const usTxt = usWorse ? 'understeer averaged ' + m.usIn.toFixed(1) + '° on entry (' + rl + ': ' + r.usIn.toFixed(1) + '°)' : '';
     const gripTxt = (a, b, where) => (ok(a, b) ? pc(a) + ' of the grip used ' + where + ' (' + rl + ': ' + pc(b) + ')' : '');
+    // brake squeezed again after turn-in, where the comparison lap only eased off; the brake was on, so trail is not the issue.
+    // Both brake checks also run when entry gained but the corner lost (fast in, slow out): they name its cause.
+    const cornerLost = inLost || ph.entry + ph.exit > 0.03, brakeCost = Math.max(0, ph.entry, ph.entry + ph.exit);
+    const afterTurn = cornerLost && m.braked && r.braked && !!m.afterTurn && !r.afterTurn;
+    if (afterTurn) {
+      add('brakeAfterTurn', 'Brake went from ' + pc(m.afterTurn.from) + ' back up to ' + pc(m.afterTurn.to) + ' just after turn-in (' + rl + ': only easing off)');
+      out[out.length - 1].cost = brakeCost;
+    }
+    // pressure built towards turn-in (a late peak or a second squeeze), where the comparison lap peaked early
+    const lateBuild = cornerLost && m.braked && r.braked && (!!m.reRise || m.peakAt > 2 / 3) && r.peakAt < 1 / 3 && !r.reRise;
+    if (lateBuild) {
+      add('lateBuild', (m.reRise ? 'Brake eased to ' + pc(m.reRise.from) + ' then went back up to ' + pc(m.reRise.to) + ' before turn-in' : 'Peak brake ' + s1(m.tTop) + ' after braking began, with turn-in at ' + s1(m.zoneT)) + ' (' + rl + ': peak ' + s1(r.tTop) + ' in)');
+      out[out.length - 1].cost = brakeCost;
+    }
     if (inLost) {
       // braked earlier or arrived slower at the comparison lap's turn-in, and that is most of the entry loss
       const early = m.braked && r.braked && m.iB >= 0 && r.iB >= 0 ? (r.iB - m.iB) * step : NaN, slowIn = ok(ph.vTurn, ph.vTurnRef) ? (ph.vTurnRef - ph.vTurn) * 3.6 : NaN;
@@ -183,13 +229,13 @@
       if (arrival) add('early', early > 15 ? 'Started braking ' + Math.round(early) + ' m earlier than ' + rl : '', slowIn > 5 ? kmh(ph.vTurn) + ' at its turn-in (' + rl + ': ' + kmh(ph.vTurnRef) + ')' : '', s2(ph.toTurn) + ' of the ' + s2(ph.entry) + ' lost on entry is before turn-in');
       // released before the car had turned, where the comparison lap carried brake into the corner
       // turn-in can only be timed on a single corner; inside a complex the steering never settles
-      if (!arrival && single && m.braked && r.braked && ok(m.trailIn, r.trailIn, m.brakeTurn, r.brakeTurn) && r.trailIn > 0.15 && r.trailIn - m.trailIn > Math.max(0.25, 0.3 * r.trailIn) && m.brakeTurn <= r.brakeTurn + 0.05) {
+      if (!arrival && !afterTurn && single && m.braked && r.braked && ok(m.trailIn, r.trailIn, m.brakeTurn, r.brakeTurn) && r.trailIn > 0.15 && r.trailIn - m.trailIn > Math.max(0.25, 0.3 * r.trailIn) && m.brakeTurn <= r.brakeTurn + 0.05) {
         add('trail', 'Brake fully off ' + (m.trailIn >= 0 ? s1(m.trailIn) + ' after' : s1(-m.trailIn) + ' before') + ' turn-in (' + rl + ': ' + s1(r.trailIn) + ' after)',
           ok(m.brakeTurn, r.brakeTurn) ? pc(m.brakeTurn) + ' brake at turn-in (' + rl + ': ' + pc(r.brakeTurn) + ')' : '', usTxt);
       }
       if (usWorse && m.ev['us:entry']) add('entryUs', usTxt);
       if (m.braked && r.braked && ok(m.release, r.release) && m.peak > 0.4 && m.release < 0.12 && r.release > m.release + 0.15) add('cliff', 'Brake from half to off in ' + s2(m.release) + ' (' + rl + ': ' + s2(r.release) + ')', usTxt);
-      if (!arrival && m.braked && r.braked && r.peak > 0.6 && m.tPeak - r.tPeak > 0.15 && m.tPeak > 0.3) add('softPeak', 'Peak brake ' + pc(m.peak) + ' after ' + s2(m.tPeak) + ' (' + rl + ': ' + pc(r.peak) + ' after ' + s2(r.tPeak) + ')');
+      if (!arrival && !lateBuild && m.braked && r.braked && r.peak > 0.6 && m.tPeak - r.tPeak > 0.15 && m.tPeak > 0.3) add('softPeak', 'Peak brake ' + pc(m.peak) + ' after ' + s2(m.tPeak) + ' (' + rl + ': ' + pc(r.peak) + ' after ' + s2(r.tPeak) + ')');
       if (m.braked && r.braked && m.lift - r.lift > 0.15 && m.lift > 0.25) add('lift', s1(m.lift) + ' off the throttle before braking (' + rl + ': ' + s1(r.lift) + ')');
       if (ok(m.gripIn, r.gripIn) && m.gripIn < r.gripIn - 0.08) add('unusedIn', gripTxt(m.gripIn, r.gripIn, 'from braking to the apex'), m.coast - r.coast > 0.15 ? s1(m.coast) + ' with neither pedal (' + rl + ': ' + s1(r.coast) + ')' : '');
     }
@@ -297,7 +343,9 @@
           const at = KB().PATTERNS[f.id].phase;
           return Object.assign(f, { cost: Math.max(0, f.cost != null ? f.cost : at === 'entry' ? entry : at === 'exit' ? exit : lost) });
         });
-        if (!alone && coached.includes(k) && k !== best[j] && entry < -0.03 && exit > -entry + 0.03) found.push({ id: 'overdrive', ev: 'Gained ' + s2(-entry) + ' in, lost ' + s2(exit) + ' out, against ' + label, cost: lost });
+        // a brake habit found here is the specific cause of fast in, slow out, so it replaces the general cue
+        const braking = found.some((f) => f.id === 'lateBuild' || f.id === 'brakeAfterTurn');
+        if (!alone && !braking && coached.includes(k) && k !== best[j] && entry < -0.03 && exit > -entry + 0.03) found.push({ id: 'overdrive', ev: 'Gained ' + s2(-entry) + ' in, lost ' + s2(exit) + ' out, against ' + label, cost: lost });
         // the corner itself, braking to back on full throttle; the straight after varies with traffic and tow
         const core = T(L, s.iFull) - T(L, s.a);
         laps[k][j] = { lost, entry, exit, time, core, m, found };

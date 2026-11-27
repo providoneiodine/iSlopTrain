@@ -92,6 +92,18 @@
       why: 'The lift came with far more steering lock or understeer than the comparison lap had there, so the car was running wide and the lift was the cure, not the fault. Kasdorp ties understeer to too little weight on the front and a missed entry, and his rule for a missed apex is a slower arrival. Forcing the throttle here would only widen the line.',
       sources: ['kasdorpTrail', 'kasdorpBasics'], drills: ['turnInFeel', 'oneCorner'],
     },
+    lateBuild: {
+      title: 'Brake building into the turn', icon: 'brake', phase: 'entry',
+      cue: 'Once you\'re on the brake, pressure only goes down. If you need more near turn-in, it belonged at the start: hit your peak harder and earlier, then bleed it off.',
+      why: 'The pressure peaked late in the braking zone, or eased and then rose again before turn-in, where the comparison lap peaked early. Von Moltke wants peak pressure nearly right away, then a steady release. Kasdorp makes the braking zone\'s job setting the speed for turn-in, and the tyres take the most brake while the car is still straight, so pressure added near turn-in is braking done at the wrong moment.',
+      sources: ['vonMoltke', 'kasdorpBraking'], drills: ['crispBrake', 'pedalCal'],
+    },
+    brakeAfterTurn: {
+      title: 'Brake added after turning in', icon: 'brake', phase: 'entry',
+      cue: 'Make your speed call while the wheel is straight. If you\'re fast at your check point, squeeze harder there. Once you turn, the brake only comes off. If it\'s still too quick, apex a little later rather than braking more.',
+      why: 'After turn-in the brake went back up, where the comparison lap only eased off. Kasdorp\'s trail braking is the more you steer, the less brake, and his fix for a missed apex is not braking harder but arriving slower next lap. With the wheel turned, the front tyres are already using their grip to turn, so extra brake there pushes the car wide.',
+      sources: ['kasdorpTrail', 'kasdorpBasics'], drills: ['checkPoint', 'pedalCal'],
+    },
     early: {
       title: 'Braking earlier and arriving slower', icon: 'brake', phase: 'entry',
       cue: 'Brake later and arrive at the turn-in faster. If you then have to let the brake off sooner to make the apex, that is speed you were leaving.',
@@ -143,6 +155,7 @@
     loseRear: { name: 'Find the edge on entry', how: 'On a slow corner, trail more brake each lap until the rear steps out on the brake alone, then dial back to just short of that.', sources: ['kasdorpBasics'] },
     releaseLadder: { name: 'Brake release experiments', how: 'Same brake point, a few laps each with a quicker and a slower release. Notice which lets the car turn with the least steering.', sources: ['bentleyData'] },
     turnInFeel: { name: 'Turn-in feel', how: 'A few laps paying attention only to turn-in: the wheel should get heavy, then the rear go light and follow, like a shopping cart\'s back wheels.', sources: ['kasdorpBasics'] },
+    checkPoint: { name: 'Check-point laps', how: 'Pick a mark a few car lengths before turn-in. For a few laps the only goal is to make the speed call there, squeezing harder if needed, and never add brake once the wheel turns.', sources: ['kasdorpTrail', 'kasdorpBasics'] },
     crispBrake: { name: 'Back off and commit', how: 'Take a brake point you are sure of, go from full throttle to hard brake in one step, and only move deeper once that is crisp every lap.', sources: ['vonMoltke'] },
     throttleTiming: { name: 'Throttle timing', how: 'On the named corner, pick up 50 to 70 % in one movement as the car finishes rotating, then only add. Check the rotation from the chase camera: the rear wing against the mirror edge.', sources: ['kasdorpThrottle'] },
     exitFirst: { name: 'Exit-first laps', how: 'At the corner named, give up some entry speed on purpose. Count the lap a success when you reach full throttle sooner.', sources: ['driver61', 'kasdorpTrail'] },
