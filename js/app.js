@@ -11,7 +11,7 @@
 
   // the tab title follows the visible screen; the menu's names its tab, a drill's names the drill
   const TITLES = { 'screen-stats': 'Stats', 'screen-view': 'View', 'screen-review': 'Lap Viewer' };
-  let curTab = 'sessions';
+  let curTab = 'review';
   function show(id, title) {
     SCREENS.forEach((s) => document.getElementById(s).classList.toggle('hidden', s !== id));
     window.scrollTo(0, 0);
@@ -568,7 +568,7 @@
   const TABS = { sessions: 'Sessions', vision: 'Vision', mind: 'Mind', reflex: 'Reflex', review: 'Review' };
   const tabBtns = Array.from(document.querySelectorAll('.tab'));
   function setTab(name, focus) {
-    if (!TABS[name]) name = 'sessions';
+    if (!TABS[name]) name = 'review'; // the Lap Viewer is the landing tab
     tabBtns.forEach((b) => {
       const on = b.dataset.tab === name;
       b.classList.toggle('on', on);
@@ -580,7 +580,7 @@
     $('#brand-sub').textContent = name === 'sessions' ? 'Guided Sessions' : name === 'review' ? 'Lap Review' : TABS[name] + ' Trainer';
     curTab = name;
     if (!$('#screen-menu').classList.contains('hidden')) document.title = 'iSlopTrain ' + TABS[name];
-    history.replaceState(null, '', name === 'sessions' ? location.pathname + location.search : '#' + name);
+    history.replaceState(null, '', name === 'review' ? location.pathname + location.search : '#' + name);
   }
   tabBtns.forEach((b, i) => {
     b.addEventListener('click', () => setTab(b.dataset.tab));

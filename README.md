@@ -19,15 +19,12 @@
 > | AI-dev-C | Mostly AI-written, supervised by a novice developer |
 > | AI-V | Entirely AI-written; support depends on AI |
 
-A growing suite of short, adaptive sim-racing training drills, grouped into three tabs:
+A browser sim-racing toolkit with two halves:
 
-- **Vision:** getting your eyes to the next apex early and keeping attention wide.
-- **Mind:** holding the apex under threat, recovering from a run of mistakes and reading the racing line.
-- **Reflex:** start reactions and a daily readiness check.
+- **Lap Viewer:** drop in iRacing, MoTeC or Garage 61 telemetry and compare laps on a 3D track map, with traces, gaps and car cues.
+- **Training drills:** short, adaptive vision, mind and reflex drills, with a stats page that tracks your progress.
 
-The drills draw on driver eye-tracking research, sport psychology, vehicle-dynamics modelling and established motor-learning principles. More modules are planned. See [docs/METHODOLOGY.md](docs/METHODOLOGY.md).
-
-No dependencies, no build step: plain HTML + Canvas 2D + classic scripts.
+No dependencies, no build step: plain HTML + Canvas 2D / WebGL + classic scripts.
 
 ## Run it
 
@@ -39,36 +36,11 @@ python -m http.server 8765
 
 then go to http://localhost:8765. Run fullscreen on the monitor you race on and set each drill's FOV to match your sim.
 
-## Drills
+## Lap Viewer: 3D telemetry review
 
-| Drill | Tab | Trains | Primary metric |
-|---|---|---|---|
-| **Start Lights** (warm-up) | Reflex | Alertness, simple visual reaction, no anticipating | Median reaction (ms) |
-| **Two-Point Focus** | Vision | Far fixation + peripheral near-field awareness (UFOV-style) | Exposure threshold (ms) |
-| **Apex Snap** (core) | Vision | "Clip the apex → eyes to the next apex" reflex at speed, optional peripheral dual task | Flash threshold (ms), Snap score |
-| **Apex Snap: Race Mode** (under load) | Vision | The same reflex with traffic (brake lights, car alongside), a relative timing box, dash (shift lights, delta, warnings), engineer radio, spotter calls, optional engine/speech audio. Confirm only for threats (go/no-go) | Load cost (ms), threats caught |
-| **Eyes Off the Wall** | Mind | Holding the apex while a threat on the outside competes for your eyes: walls, wrecks, waved yellows, spinning cars. Threat level adapts between sessions. Optional self-talk comparison | Eyes captured (%), threat cost |
-| **Eyes Off the Wall: Call the Hazard** | Mind | The same, plus a go/no-go call: press Confirm for a wreck, a waved yellow or a spinning car, never for a wall. The flash shows whether you looked to make the call | Seen, not stared (%), hazards called |
-| **Clean Slate** | Mind | Recovering from a run of errors. Rhythm-game lane: rows of arrows scroll to a hit line on a beat; press the blue arrow's direction (orange = opposite) in the hit window, with a chain multiplier and timing grades. Unannounced bursts (squeeze, rush, clutter, flip, double hit) force real mistakes, then difficulty snaps back so the dip afterwards is yours. Burst and distraction ladders (1-6) adapt between sessions. Optional reset cue | Recovery (rows), error chaining, post-error shift |
-| **Draw the Line** | Mind | Placing the car through a corner complex. Draw the line you'd drive from the approach to the straight; it's read for intent (hand wobble smoothed out, then polished within ±1 m of your drawing), run through a lap-time model and judged corner by corner against the minimum-time line: early / late turn-in or apex, road left unused at entry, apex and exit, the wrong corner prioritised, and the time each corner cost. The level sets the pass mark. Then replay your line or the ideal from the driver's seat beside the top-down view and a speed trace, paused at braking, turn-in, apex and track-out | Line level, lines passed (%), corners placed right (%) |
-| **Class Traffic** | Mind | Responsible calls in multiclass traffic, from both sides of the speed gap. A prototype closing on a GT down a long straight into a corner; you're one of them (alternating, or fixed in settings). Prototype: pass on the straight, out-brake on the inside, round the outside, or follow it through. GT: hold your line, ease off and let it by, leave room, move across, move over under braking, cover the inside. Every option is driven by a two-car model (each car's own lap-time profile, car following, contact / squeeze / cut-off detection), so the time lost and the risk are computed. Pick a blue-flag rule set before the run (hold your line, give way, point-by; differences under Info). Replay any option from your seat, with a mirror, beside the top-down view and a gap trace | Traffic level, call score (%), best calls (%), risky picks (%) |
+The app opens on the **Review** tab.
 
-Circuits are generated fresh each run from a corner vocabulary: kinks, sweepers, tight corners, hairpins, decreasing- and increasing-radius corners, chicanes, esses and double apexes. Each driving drill also has **Track** (Mixed / Technical / Fast) and **Elevation** (Flat / Rolling / Hilly, with blind crests and compressions) settings. The corner types, mixes and elevation profiles are defined in `track.js` (`CORNER_TYPES`, `MIXES`, `ELEVATION`).
-
-Guided sessions chain drills across all three trainers and live on their own **Sessions** tab (the landing tab):
-
-- **Quick:** Pre-drive (~3 min), Line check (~5 min), Reset (~4 min)
-- **Daily:** Daily vision (~8 min), Daily mind (~10 min), Full circuit (~15 min)
-- **Pressure:** Race pressure (~7 min), Composure (~9 min), Racecraft (~10 min)
-- **Multiclass:** Race briefing (~6 min), Prototype stint (~9 min), GT stint (~9 min), Quick calls (~6 min), Rule switch (~10 min)
-
-Each is a `registerSession` entry in `js/sessions.js` with a `group`, a one-line `blurb`, per-step setting overrides and an optional step `note` shown on the card. A session that names an unregistered drill is hidden, so playlists can be written ahead of a drill landing.
-
-Controls: arrows / WASD to answer, Space / Enter to confirm, Esc to pause, **F** to toggle fullscreen (never automatic unless enabled under Data). Standard gamepads work automatically. Wheels and button boxes can be bound under **Controls** (buttons, POV hats, axes).
-
-**Game feel:** every drill builds a chain with multiplier tiers, scores points (with bonuses for early snaps, short flashes and fast starts), plays rising tones and calls out new best chains and PB pace. The results screen grades each session S / A / B / C against your own history, with record badges, a score count-up and a short highlight on records. **Data → Game feel** sets Full, Silent or Off; "summary only" feedback keeps it hidden during a drill. Design rules: METHODOLOGY section 5c.
-
-## Review tab: 3D lap viewer (proof of concept)
+![Lap Viewer comparing two laps on a 3D track map, with the trace lanes underneath](docs/screenshots/lap-viewer.png)
 
 **Review → Lap Viewer** opens telemetry from a sim and draws the laps on a 3D track map. Files are read in the browser (in a Web Worker for big files); telemetry is never uploaded or saved. With **Map** on, the track's location (or, for sims without GPS, its name) is sent to OpenStreetMap and Esri for the real track centreline and satellite ground (common iRacing circuits come bundled in [data/tracks](data/tracks/README.md), so only the imagery is fetched for those); lines that clip an apex then show off centre.
 
@@ -83,9 +55,56 @@ Controls: arrows / WASD to answer, Space / Enter to confirm, Esc to pause, **F**
 
 Not yet: per-corner mistake finding (brake points, minimum speed, coasting) and jump-to-corner. Track edges are estimated, since telemetry has none.
 
-## Stats page
+## Training drills
+
+A growing suite of short, adaptive sim-racing training drills, grouped into three tabs:
+
+- **Vision:** getting your eyes to the next apex early and keeping attention wide.
+- **Mind:** holding the apex under threat, recovering from a run of mistakes and reading the racing line.
+- **Reflex:** start reactions and a daily readiness check.
+
+The drills draw on driver eye-tracking research, sport psychology, vehicle-dynamics modelling and established motor-learning principles. More modules are planned. See [docs/METHODOLOGY.md](docs/METHODOLOGY.md).
+
+![Vision tab drill cards with threshold sparklines from recent sessions](docs/screenshots/drill-cards.png)
+
+### Drills
+
+| Drill | Tab | Trains | Primary metric |
+|---|---|---|---|
+| **Start Lights** (warm-up) | Reflex | Alertness, simple visual reaction, no anticipating | Median reaction (ms) |
+| **Two-Point Focus** | Vision | Far fixation + peripheral near-field awareness (UFOV-style) | Exposure threshold (ms) |
+| **Apex Snap** (core) | Vision | "Clip the apex → eyes to the next apex" reflex at speed, optional peripheral dual task | Flash threshold (ms), Snap score |
+| **Apex Snap: Race Mode** (under load) | Vision | The same reflex with traffic (brake lights, car alongside), a relative timing box, dash (shift lights, delta, warnings), engineer radio, spotter calls, optional engine/speech audio. Confirm only for threats (go/no-go) | Load cost (ms), threats caught |
+| **Eyes Off the Wall** | Mind | Holding the apex while a threat on the outside competes for your eyes: walls, wrecks, waved yellows, spinning cars. Threat level adapts between sessions. Optional self-talk comparison | Eyes captured (%), threat cost |
+| **Eyes Off the Wall: Call the Hazard** | Mind | The same, plus a go/no-go call: press Confirm for a wreck, a waved yellow or a spinning car, never for a wall. The flash shows whether you looked to make the call | Seen, not stared (%), hazards called |
+| **Clean Slate** | Mind | Recovering from a run of errors. Rhythm-game lane: rows of arrows scroll to a hit line on a beat; press the blue arrow's direction (orange = opposite) in the hit window, with a chain multiplier and timing grades. Unannounced bursts (squeeze, rush, clutter, flip, double hit) force real mistakes, then difficulty snaps back so the dip afterwards is yours. Burst and distraction ladders (1-6) adapt between sessions. Optional reset cue | Recovery (rows), error chaining, post-error shift |
+| **Draw the Line** | Mind | Placing the car through a corner complex. Draw the line you'd drive from the approach to the straight; it's read for intent (hand wobble smoothed out, then polished within ±1 m of your drawing), run through a lap-time model and judged corner by corner against the minimum-time line: early / late turn-in or apex, road left unused at entry, apex and exit, the wrong corner prioritised, and the time each corner cost. The level sets the pass mark. Then replay your line or the ideal from the driver's seat beside the top-down view and a speed trace, paused at braking, turn-in, apex and track-out | Line level, lines passed (%), corners placed right (%) |
+| **Class Traffic** | Mind | Responsible calls in multiclass traffic, from both sides of the speed gap. A prototype closing on a GT down a long straight into a corner; you're one of them (alternating, or fixed in settings). Prototype: pass on the straight, out-brake on the inside, round the outside, or follow it through. GT: hold your line, ease off and let it by, leave room, move across, move over under braking, cover the inside. Every option is driven by a two-car model (each car's own lap-time profile, car following, contact / squeeze / cut-off detection), so the time lost and the risk are computed. Pick a blue-flag rule set before the run (hold your line, give way, point-by; differences under Info). Replay any option from your seat, with a mirror, beside the top-down view and a gap trace | Traffic level, call score (%), best calls (%), risky picks (%) |
+
+![Two-Point Focus: the apex board flashes an arrow while a yellow flag shows on one verge](docs/screenshots/two-point.png)
+
+![Apex Snap Race Mode: arrow flash on the apex board, marshal light lit, chain building, relative box and dash](docs/screenshots/apex-race.png)
+
+Circuits are generated fresh each run from a corner vocabulary: kinks, sweepers, tight corners, hairpins, decreasing- and increasing-radius corners, chicanes, esses and double apexes. Each driving drill also has **Track** (Mixed / Technical / Fast) and **Elevation** (Flat / Rolling / Hilly, with blind crests and compressions) settings. The corner types, mixes and elevation profiles are defined in `track.js` (`CORNER_TYPES`, `MIXES`, `ELEVATION`).
+
+Guided sessions chain drills across all three trainers and live on their own **Sessions** tab:
+
+- **Quick:** Pre-drive (~3 min), Line check (~5 min), Reset (~4 min)
+- **Daily:** Daily vision (~8 min), Daily mind (~10 min), Full circuit (~15 min)
+- **Pressure:** Race pressure (~7 min), Composure (~9 min), Racecraft (~10 min)
+- **Multiclass:** Race briefing (~6 min), Prototype stint (~9 min), GT stint (~9 min), Quick calls (~6 min), Rule switch (~10 min)
+
+Each is a `registerSession` entry in `js/sessions.js` with a `group`, a one-line `blurb`, per-step setting overrides and an optional step `note` shown on the card. A session that names an unregistered drill is hidden, so playlists can be written ahead of a drill landing.
+
+Controls: arrows / WASD to answer, Space / Enter to confirm, Esc to pause, **F** to toggle fullscreen (never automatic unless enabled under Data). Standard gamepads work automatically. Wheels and button boxes can be bound under **Controls** (buttons, POV hats, axes).
+
+**Game feel:** every drill builds a chain with multiplier tiers, scores points (with bonuses for early snaps, short flashes and fast starts), plays rising tones and calls out new best chains and PB pace. The results screen grades each session S / A / B / C against your own history, with record badges, a score count-up and a short highlight on records. **Data → Game feel** sets Full, Silent or Off; "summary only" feedback keeps it hidden during a drill. Design rules: METHODOLOGY section 5c.
+
+### Stats page
 
 **Stats** in the header (or **Full stats →** on any results screen) opens an aim-trainer-style dashboard:
+
+![Stats page with in-sim advice, notes, activity calendar and per-drill trends (simulated history)](docs/screenshots/stats.png)
 
 - **Filters:** time range (7 / 30 / 90 days / all) and drill. They scope everything below them.
 - **Overview:** sessions, training time, active days, current streak, and an activity calendar.
