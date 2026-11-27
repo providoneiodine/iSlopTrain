@@ -46,8 +46,40 @@
     };
   }
 
+  /** Laps iRacing counted in a closed .ibt (its disk header): 1 for sitting in the pits, 3+ once a lap was driven. */
+  async function lapsIn(f) {
+    try {
+      return new DataView(await f.slice(0, 144).arrayBuffer()).getInt32(136, true);
+    } catch (e) {
+      return 0;
+    }
+  }
+  // the out lap, one timed lap, and the lap begun at the line
+  const MIN_LAPS = 3;
+
   IST.Review.Watch = { tracker };
-  if (typeof window === 'undefined' || typeof window.showDirectoryPicker !== 'function' || typeof indexedDB === 'undefined') return;
+  if (typeof window === 'undefined') return;
+  if (typeof window.showDirectoryPicker !== 'function' || typeof indexedDB === 'undefined') {
+    // no folder access (Firefox, Safari): one click per stint picks the folder and loads its newest .ibt
+    IST.Review.Watch.control = () => {
+      const h = IST.util.h;
+      const go = () => {
+        const input = h('input', { type: 'file', webkitdirectory: true, class: 'hidden' });
+        input.addEventListener('change', async () => {
+          const ibt = Array.from(input.files).filter((f) => EXT.test(f.name)).sort((a, b) => b.lastModified - a.lastModified);
+          input.remove();
+          // the newest stint with a lap driven in it, not a trip to the car and back
+          let pick = ibt[0];
+          for (const f of ibt) if ((await lapsIn(f)) >= MIN_LAPS) { pick = f; break; }
+          if (pick) IST.Review.open({ files: [pick], stint: true });
+        });
+        document.body.append(input);
+        input.click();
+      };
+      return h('button', { class: 'btn rv-stint-ctl', onclick: go, title: 'After a stint, pick Documents\iRacing\telemetry: its newest .ibt loads and the Coaching tab reads it against your reference lap. Chrome and Edge can watch the folder and do this on their own' }, 'Load latest stint');
+    };
+    return;
+  }
 
   const U = IST.util, h = U.h;
   IST.Review.Watch.control = () => h('span', { class: 'rv-head-stint' }, control());
@@ -185,8 +217,11 @@
         /* gone since it was offered */
       }
     }
-    if (!files.length) return;
-    IST.Review.open({ files, stint });
+    // in Stint mode a stint with no lap driven (in the car and straight out again) is skipped
+    const keep = [];
+    for (const f of files) if (!stint || (await lapsIn(f)) >= MIN_LAPS) keep.push(f);
+    if (!keep.length) return;
+    IST.Review.open({ files: keep, stint });
   }
 
   // --------------------------------------------------------------- the card
